@@ -1,6 +1,7 @@
 name: Build native CPA plugin
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 jobs:
@@ -27,6 +28,15 @@ jobs:
           if [[ "${GITHUB_REF}" != refs/tags/* ]]; then VERSION=0.1.0; fi
           (cd dist/release && zip "cpa-mini-usage_${VERSION}_linux_amd64.zip" cpa-mini-usage.so)
           (cd dist/release && sha256sum "cpa-mini-usage_${VERSION}_linux_amd64.zip" > checksums.txt)
+      - name: Save downloadable Linux AMD64 plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpa-mini-usage-linux-amd64
+          path: |
+            dist/release/cpa-mini-usage.so
+            dist/release/cpa-mini-usage_*.zip
+            dist/release/checksums.txt
+          if-no-files-found: error
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         env:
