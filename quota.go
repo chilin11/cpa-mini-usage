@@ -147,10 +147,14 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 		e.recordQuotaError(entry, "Quota response was not recognized")
 		return false
 	}
+	resetRemaining := parseManualResetRemaining(body)
+	if entry.Provider == "codex" {
+		resetRemaining = codexResetRemaining(body, headers, safeProviderGET)
+	}
 	e.mu.Lock()
 	e.quotaUpdated = time.Now().UTC()
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339), ManualResetRemaining: parseManualResetRemaining(body)}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339), ManualResetRemaining: resetRemaining}
 	e.mu.Unlock()
 	return true
 }
@@ -296,7 +300,7 @@ func extractJWTAccountID(token string) string {
 
 func safeProviderGET(url string, headers http.Header) ([]byte, error) {
 	// Explicit allow-list prevents credentials being sent to arbitrary hosts.
-	if url != "https://api.anthropic.com/api/oauth/usage" && url != "https://chatgpt.com/backend-api/wham/usage" {
+	if url != "https://api.anthropic.com/api/oauth/usage" && url != "https://chatgpt.com/backend-api/wham/usage" && url != codexResetCreditsURL {
 		return nil, fmt.Errorf("endpoint not permitted")
 	}
 	request := map[string]any{"Method": "GET", "URL": url, "Headers": headers, "Header": headers}
@@ -321,7 +325,7 @@ func safeProviderGET(url string, headers http.Header) ([]byte, error) {
 		}
 	}
 	// Legacy hosts may not implement host.http.do; fixed HTTPS fallback.
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header = headers
 	resp, err := client.Do(req)
@@ -437,6 +441,12 @@ func parseManualResetRemaining(body []byte) *int64 {
 		v := int64(n)
 		return &v
 	}
+	// Official Codex usage response (openai/codex backend-client/src/types.rs).
+	if credits, ok := response["rate_limit_reset_credits"].(map[string]any); ok {
+		if value, present := credits["available_count"]; present {
+			return count(value)
+		}
+	}
 	for _, key := range []string{"manual_reset_remaining", "manual_resets_remaining", "remaining_manual_resets"} {
 		if value, present := response[key]; present {
 			return count(value)
@@ -452,4 +462,28 @@ func parseManualResetRemaining(body []byte) *int64 {
 		}
 	}
 	return nil
+}
+
+const codexResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+
+// GET-only details fallback used by the official Codex client. Never call /consume.
+func codexResetRemaining(usage []byte, headers http.Header, get func(string, http.Header) ([]byte, error)) *int64 {
+	if count := parseManualResetRemaining(usage); count != nil {
+		return count
+	}
+	details, err := get(codexResetCreditsURL, headers)
+	if err != nil {
+		return nil
+	} // Missing optional reset data must not break quotas.
+	var response map[string]json.RawMessage
+	if json.Unmarshal(details, &response) != nil {
+		return nil
+	}
+	value, present := response["available_count"]
+	if !present {
+		return nil
+	}
+	// Reuse strict integer validation without accepting ordinary usage credits.
+	wrapped, _ := json.Marshal(map[string]any{"rate_limit_reset_credits": map[string]any{"available_count": value}})
+	return parseManualResetRemaining(wrapped)
 }

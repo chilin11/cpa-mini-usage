@@ -28,7 +28,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(){}, setTimeout(callback){callback();}, addEventListener(){},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, guessKey, load, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, guessKey, load, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements};
 }
@@ -55,7 +55,7 @@ test('all token displays use compact units, retaining full values in tooltips', 
     recent:[{auth_id:'account', at:'2026-10-09T00:00:00Z', model:'gpt', total:1250000}],
   });
   const quotaNodes = descendants(elements.get('quota-cards'));
-  assert(quotaNodes.some(n => n.textContent === '1.8b' && n.title === '1,800,000,000 tokens'));
+  assert(quotaNodes.some(n => n.textContent === '1.8b tokens 剩余' && n.title === '1,800,000,000 tokens'));
   assert(quotaNodes.some(n => n.textContent === '2.4b tokens' && n.title === '2,400,000,000 tokens'));
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
@@ -124,4 +124,39 @@ test('recent request unknown model and provider filtering are explicit', () => {
   api.renderSample({recent:[{provider:'claude',auth_id:'a',model:'claude-model'},{provider:'codex',auth_id:'b',model:''}]},'codex');
   const nodes=descendants(elements.get('recent-table'));
   assert(nodes.some(n=>n.textContent==='未知模型'));assert(!nodes.some(n=>n.textContent==='claude-model'));
+});
+
+test('official percentage precedes USD and readable compact tokens', () => {
+  const {api,elements}=dashboard();
+  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:100,estimated_total_cost:120,estimated_total_tokens:4000000}}]});
+  const nodes=descendants(elements.get('quota-cards'));
+  const stats=nodes.filter(n=>n.className==='windowstats');
+  assert.equal(stats[0].children[0].textContent,'估算剩余价值');
+  assert.equal(stats[0].children[1].className,'estimate-cost');
+  assert.equal(stats[0].children[1].textContent,'$90.00');
+  assert.equal(stats[0].children[2].textContent,'3m tokens 剩余');
+  assert.equal(stats[1].children[1].textContent,'$0.000');
+  const window=nodes.find(n=>n.className==='window');
+  assert.equal(window.children[1].className,'quota-value');
+  assert.equal(window.children[3].className,'windowstats');
+});
+test('missing model price does not display a false USD amount', () => {
+  const {api,elements}=dashboard();
+  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}}]});
+  const nodes=descendants(elements.get('quota-cards'));
+  assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'—');
+  assert(nodes.some(n=>n.textContent==='3m tokens 剩余'));
+});
+
+test('reset times show days/hours/minutes and never a negative countdown', () => {
+  const {api}=dashboard();const now=Date.parse('2026-10-09T00:00:00Z');
+  for(const [offset,want] of [[(2*24+3)*3600000,'还有 2 天 3 小时重置'],[2*3600000+15*60000,'还有 2 小时 15 分钟重置'],[20*60000,'还有 20 分钟重置'],[1,'还有 1 分钟重置'],[0,'等待额度更新'],[-1000,'等待额度更新']])assert.equal(api.resetCountdown(new Date(now+offset).toISOString(),now),want);
+  assert.equal(api.resetCountdown(null,now),'重置时间待更新');
+  assert.equal(api.resetCountdown('invalid',now),'重置时间待更新');
+});
+test('reset countdown retains full date in tooltip', () => {
+  const {api,elements}=dashboard();const at=new Date(Date.now()+7200000).toISOString();
+  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,reset_at:at}}]});
+  const reset=descendants(elements.get('quota-cards')).find(n=>n.className==='reset');
+  assert.match(reset.textContent,/还有 2 小时/);assert.notEqual(reset.title,'待更新');
 });
