@@ -9,7 +9,7 @@ No React, no Node runtime, no separate web service, no inference probes, no data
 
 ## Install
 
-Download the Linux amd64 plugin binary from [GitHub Releases](https://github.com/chilin11/cpa-mini-usage/releases) or build from source:
+Use the bundled Linux amd64 binary (`dist/cpa-mini-usage.so`) or build from source:
 
 ```sh
 CGO_ENABLED=1 go build -buildmode=c-shared -o cpa-mini-usage.so .
@@ -58,17 +58,19 @@ This first release is tested locally with a fake CPA host callback harness, not 
 
 ## Optional CPA Plugin Store source
 
-After the GitHub Actions first-release build finishes,
+Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
 append the registry URL to the existing plugin store sources (do not replace your other sources):
 
 ```yaml
 plugins:
   store-sources:
-    - "https://raw.githubusercontent.com/chilin11/cpa-mini-usage/main/registry.json"
+    - "https://raw.githubusercontent.com/YOUR_GITHUB_USER/cpa-mini-usage/main/registry.json"
 ```
 
 The included `registry.json` and release workflow provide the exact platform ZIP asset
 and SHA256 checksum format expected by CPA's plugin store. Alternatively, installing the
 `.so` manually does not require a GitHub Release.
 
-The GitHub Actions workflow builds an installable artifact on `main` pushes and creates the initial `v0.1.0` Release if it does not already exist. Later releases can be triggered by pushing a new version tag.
+To publish from a locally authenticated GitHub CLI, `./publish-to-github.sh` creates a
+public repository in your account and tags `v0.1.0`. The workflow then creates the release.
+Do **not** run the script against an existing repository of the same name without reviewing it.
