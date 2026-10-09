@@ -1,0 +1,36 @@
+name: Build CPA native plugin
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: Build
+        run: |
+          mkdir -p dist/release
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -o dist/release/cpa-mini-usage.so .
+          rm -f dist/release/cpa-mini-usage.h
+          (cd dist/release && zip cpa-mini-usage_0.1.0_linux_amd64.zip cpa-mini-usage.so)
+          (cd dist/release && sha256sum cpa-mini-usage_0.1.0_linux_amd64.zip > checksums.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpa-mini-usage-linux-amd64
+          path: dist/release/*.zip
+      - name: Publish first release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view v0.1.0 >/dev/null 2>&1; then
+            gh release create v0.1.0 dist/release/*.zip dist/release/checksums.txt --target "$GITHUB_SHA"
+          fi
