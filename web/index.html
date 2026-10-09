@@ -5,32 +5,22 @@
 <meta name="color-scheme" content="light dark">
 <title>用量与额度 · CPA Mini Usage</title>
 <style>
-/* Keep the native blue / neutral system. 4px rhythm; official quota first, estimates second. */
-:root{color-scheme:light dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;--bg:#f5f7fb;--panel:#fff;--subtle:#f8f9fc;--ink:#202838;--muted:#667287;--line:#e4e9f1;--accent:#4069dc;--accent-soft:#edf2ff;--track:#e9edf5;--good:#25826b;--good-soft:#eaf6f1;--bad:#b44735;--bad-soft:#fff0eb;--warm:#aa6a38;--warm-soft:#fbf1e9;--radius:16px;--shadow:0 3px 14px #20283804}
-@media(prefers-color-scheme:dark){:root{--bg:#11161f;--panel:#1a2230;--subtle:#161d29;--ink:#ecf1fa;--muted:#a0aec2;--line:#2b3749;--accent:#94aeff;--accent-soft:#273754;--track:#303d51;--good:#80d3b8;--good-soft:#203c35;--bad:#ffa88f;--bad-soft:#422b2a;--warm:#e1b087;--warm-soft:#3b302b;--shadow:none}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}button,select{font:inherit}button,a,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer}button:disabled{cursor:wait;opacity:.55}a{color:var(--accent);text-underline-offset:4px}button:focus-visible,a:focus-visible,select:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid var(--accent);outline-offset:4px}button:active:not(:disabled){transform:translateY(1px)}h1,h2,h3,p{margin:0}h1{font-size:28px;letter-spacing:-.8px;font-weight:720;line-height:1.3}h2{font-size:17px;letter-spacing:-.3px;font-weight:650}h3{font-size:14px;font-weight:650}small{font-size:12px}.muted{color:var(--muted)}.hide,[hidden]{display:none!important}.tabnum{font-variant-numeric:tabular-nums}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;clip-path:inset(50%);white-space:nowrap;overflow:hidden}
-main{max-width:1280px;margin:0 auto;padding:36px 32px 32px}.masthead{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}.brandline{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.2px;margin-bottom:12px}.brandmark{display:flex;gap:3px;align-items:flex-end;background:var(--accent);width:24px;height:24px;border-radius:7px;padding:6px}.brandmark i{display:block;background:var(--panel);width:3px;border-radius:1px;height:6px}.brandmark i:nth-child(2){height:11px}.brandmark i:nth-child(3){height:8px}.version{font-size:10px;font-weight:500;color:var(--muted);border:1px solid var(--line);padding:1px 6px;border-radius:5px;letter-spacing:0}.subtitle{margin-top:8px;color:var(--muted);font-size:13px}.header-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px;padding-top:4px}.statusbar{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.dot{width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block;flex-shrink:0}.dot.off{background:var(--bad)}.dot.busy{background:var(--accent)}.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 12px;min-height:36px;font-size:12px;font-weight:550;box-shadow:var(--shadow);transition:border-color 120ms,background-color 120ms}.button:hover:not(:disabled){border-color:var(--accent);background:var(--accent-soft)}.button svg{width:14px;height:14px;flex-shrink:0}.session-note{font-size:11px;color:var(--muted)}
-.gate{margin-top:24px;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:24px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}.gate h2{font-size:14px;margin-bottom:4px}.gate p{color:var(--muted);font-size:12px;line-height:1.8;max-width:760px}.gate a{flex-shrink:0;font-size:12px}.alert{padding:12px 16px;border:1px solid var(--line);border-left:3px solid var(--bad);background:var(--panel);color:var(--bad);font-size:12px;border-radius:8px;margin-top:16px;overflow-wrap:anywhere}
-.tabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin-top:28px}.tabs button{display:flex;align-items:center;gap:8px;padding:14px 2px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--muted);font-weight:550;min-height:48px}.tabs button:hover{color:var(--accent)}.tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent)}.tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:21px;padding:1px 5px;border-radius:5px;font-size:10px;line-height:1.6;background:var(--track);color:var(--muted);font-variant-numeric:tabular-nums}.tabs button[aria-selected=true] .tab-count{background:var(--accent-soft);color:var(--accent)}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0 24px}.filter-control{display:flex;align-items:center;gap:10px;flex-shrink:0}.filter-control label{font-size:12px;color:var(--muted)}select{border:1px solid var(--line);border-radius:8px;padding:7px 30px 7px 10px;min-height:36px;background:var(--panel);color:var(--ink);font-size:12px;max-width:100%;cursor:pointer}.results{font-size:11px;color:var(--muted);text-align:right;line-height:1.8}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head p{font-size:12px;color:var(--muted);margin-top:4px}.section-label{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:4px 8px;border-radius:6px;white-space:nowrap}.quota-overview{display:flex;gap:24px;margin-bottom:20px;color:var(--muted);font-size:12px;flex-wrap:wrap}.quota-overview strong{font-size:16px;color:var(--ink);font-weight:650;margin-right:5px;letter-spacing:-.3px}.quota-overview .warning{color:var(--bad)}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);animation:arrive 260ms cubic-bezier(.2,.8,.25,1.08) both;animation-delay:var(--enter-delay,0ms)}.accounttop{padding:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line)}.identity{display:flex;align-items:center;gap:10px;min-width:0}.account-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:15px;font-weight:650;flex-shrink:0}.account-icon.claude{background:var(--warm-soft);color:var(--warm)}.identity-text{min-width:0}.account{font-size:13px;font-weight:650;overflow-wrap:anywhere}.account-meta{font-size:10px;color:var(--muted);margin-top:2px}.provider{border:1px solid var(--line);border-radius:5px;padding:3px 7px;font-size:10px;color:var(--muted);font-weight:500;max-width:120px;overflow-wrap:anywhere}.windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.window{padding:20px;min-width:0}.window+.window{border-left:1px solid var(--line)}.windowhead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600}.windowhead .period{font-size:10px;font-weight:500;color:var(--muted)}.quota-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin-top:12px}.percent{font-size:38px;letter-spacing:-1.8px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}.percent-unit{font-size:18px;letter-spacing:-.5px;margin-left:2px}.remaining-label{font-size:11px;color:var(--muted)}.low .percent{color:var(--bad)}.track{height:5px;border-radius:5px;background:var(--track);margin:12px 0}.fill{height:100%;background:var(--accent);border-radius:5px;transition:width 240ms cubic-bezier(.2,.8,.2,1)}.low .fill{background:var(--bad)}.unknown .track{background:repeating-linear-gradient(135deg,var(--track),var(--track) 4px,var(--subtle) 4px,var(--subtle) 8px)}.unknown .percent{color:var(--muted)}.reset{min-height:32px;color:var(--muted);font-size:10px;line-height:1.6}.windowstats{background:var(--subtle);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px}.estimate-label{font-size:10px;color:var(--muted)}.estimate-value{font-size:18px;letter-spacing:-.4px;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin:3px 0}.estimate-value .unit{font-size:10px;letter-spacing:0;font-weight:450;color:var(--muted);margin-left:4px}.estimate-cost{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}.window-total{font-size:10px;color:var(--muted);line-height:1.8;margin-top:9px;overflow-wrap:anywhere}.hint{font-size:10px;color:var(--warm);margin-top:7px;line-height:1.7}.account-error{margin:12px 20px 0;padding:8px 10px;background:var(--bad-soft);color:var(--bad);border-radius:7px;font-size:11px;overflow-wrap:anywhere}.empty{grid-column:1/-1;padding:44px 24px;text-align:center;background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);color:var(--muted)}.empty-symbol{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:10px;color:var(--accent);margin:0 auto 12px;background:var(--subtle);font-size:18px}.empty strong{display:block;color:var(--ink);font-size:14px;font-weight:600}.empty p{font-size:12px;max-width:500px;margin:6px auto 0;line-height:1.8}.method-note{display:flex;gap:12px;margin-top:20px;padding:16px 20px;background:var(--accent-soft);border-radius:10px;font-size:11px;color:var(--muted);line-height:1.9}.note-icon{color:var(--accent);font-weight:650;font-size:14px}.method-note strong{color:var(--ink);font-weight:550}
-.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:28px;padding:20px 0}.summary-item{padding:0 24px;min-width:0}.summary-item+.summary-item{border-left:1px solid var(--line)}.summary-label{font-size:11px;color:var(--muted);margin-bottom:5px}.summary-value{font-size:25px;line-height:1.3;font-weight:650;letter-spacing:-.7px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.summary-note{font-size:10px;color:var(--muted);margin-top:5px}.request-section+.request-section{margin-top:28px}.tablewrap{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:var(--panel);box-shadow:var(--shadow);scrollbar-color:var(--line) transparent}.tablewrap .empty{border:0;border-radius:12px}table{border-collapse:collapse;width:100%;table-layout:fixed;min-width:990px;font-size:12px}caption{text-align:left}th{font-size:10px;color:var(--muted);font-weight:550;text-align:left;padding:12px 14px;background:var(--subtle);white-space:nowrap}td{padding:14px;border-top:1px solid var(--line);vertical-align:middle;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}tbody tr:hover{background:var(--subtle)}td.num,th.num{text-align:right;white-space:nowrap}.timestamp{font-size:11px;white-space:nowrap}.cell-secondary{font-size:10px;color:var(--muted);display:block;margin-top:3px}.model{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;overflow-wrap:anywhere}.model+.model{margin-top:5px}.request-state{display:inline-flex;align-items:center;gap:5px;border-radius:5px;padding:3px 6px;font-size:10px;color:var(--good);background:var(--good-soft);white-space:nowrap}.request-state.failed{color:var(--bad);background:var(--bad-soft)}.cache-pair{font-size:11px}.cache-pair .slash{color:var(--muted);padding:0 3px}.table-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:11px;color:var(--muted)}.pagination{display:flex;align-items:center;gap:10px}.pagination .button{min-width:32px;min-height:32px;padding:4px 10px;font-size:15px}.pagination .button:disabled{cursor:default}.credential-button{border:0;padding:0;background:transparent;color:var(--ink);text-align:left;font:inherit;font-weight:550;display:flex;align-items:baseline;gap:7px;width:100%}.credential-button:hover{color:var(--accent)}.chevron{font-size:11px;color:var(--muted);flex-shrink:0}.credential-name{overflow-wrap:anywhere;min-width:0}.details-cell{padding:0 20px!important;background:var(--subtle)}.details{padding:16px 0}.details h3{font-size:11px;color:var(--muted);margin-bottom:8px}.modelrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;padding:8px 0;font-size:11px;border-top:1px solid var(--line)}.modelrow span{overflow-wrap:anywhere}.failure-count{color:var(--bad)}.foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:28px;padding-top:16px;border-top:1px solid var(--line)}
-@keyframes arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@media(min-width:1500px){main{padding-top:44px}}
-@media(max-width:1000px){main{padding:28px 24px}.window{padding:16px}.accounttop{padding:16px}.percent{font-size:34px}.summary-item{padding:0 16px}.grid{gap:12px}}
-@media(max-width:760px){main{padding:24px 16px}.grid{grid-template-columns:minmax(0,1fr)}.masthead{gap:16px}h1{font-size:24px}.subtitle{font-size:12px;max-width:235px}.session-note{display:none}.header-actions{gap:14px}.statusbar{font-size:10px}.tabs{margin-top:20px;gap:24px}.toolbar{align-items:flex-start;gap:12px;margin:16px 0 24px}.results{max-width:160px}.filter-control{gap:8px}.filter-control label{display:none}.section-head{gap:8px}.section-head p{font-size:11px}.section-label{font-size:10px}.quota-overview{gap:16px;font-size:11px}.window{padding:20px}.accounttop{padding:16px 20px}.percent{font-size:38px}.gate{padding:16px;display:block}.gate a{display:inline-block;margin-top:12px}.summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:16px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.summary-value{font-size:24px}.summary-note{min-height:15px}.method-note{padding:12px 16px}.table-foot{align-items:flex-start}.table-foot>span{max-width:210px}.foot{margin-top:24px}.brandline{font-size:11px}}
-@media(max-width:380px){.window{padding:16px 12px}.percent{font-size:34px}.brandline{gap:6px}.header-actions .button{padding:8px}.version{font-size:9px}.results{max-width:130px}.section-label{display:none}.table-foot{flex-wrap:wrap}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}button:active:not(:disabled){transform:none}}
-.provider-section{grid-column:1/-1}.provider-section+.provider-section{margin-top:12px}.provider-section>.section-head{margin-bottom:12px}.account-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
-/* Official percentage first, monetary estimate second, legible compact tokens third. */
-.windowstats{margin-top:12px;padding:12px}.estimate-cost{font-size:22px;font-weight:650;letter-spacing:-.4px;line-height:1.3;color:var(--ink);margin:5px 0}.estimate-cost .unit{font-size:11px;font-weight:500;letter-spacing:0;color:var(--muted);margin-left:5px}.estimate-value{font-size:14px;font-weight:500;letter-spacing:0;color:var(--muted);margin-top:6px}.quota-value{margin-top:12px;gap:5px}.percent{font-size:22px;letter-spacing:-.4px;line-height:1.3}.percent-unit{font-size:14px;letter-spacing:0}.remaining-label{font-size:12px}.track{height:4px;margin:8px 0}.reset{min-height:0;margin-top:10px;font-size:12px}.usd-value{font-size:15px;font-weight:650;color:var(--ink)}.method-note{display:block}.method-note summary{cursor:pointer}.method-note p{margin-top:8px}
-@media(max-width:380px){.window{padding:14px 12px}}
+:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;font-size:14px;--bg:#f5f7fa;--panel:#fff;--subtle:#f8f9fb;--ink:#202838;--muted:#667287;--line:#e4e9f1;--accent:#4069dc;--accent-soft:#edf2ff;--track:#e9edf5;--good:#25826b;--bad:#b44735;--warm:#aa6a38}
+@media(prefers-color-scheme:dark){:root{--bg:#11161f;--panel:#1a2230;--subtle:#161d29;--ink:#ecf1fa;--muted:#a0aec2;--line:#2b3749;--accent:#94aeff;--accent-soft:#273754;--track:#303d51;--good:#80d3b8;--bad:#ffa88f;--warm:#e1b087}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}h1,h2,h3,p{margin:0}h1{font-size:20px;font-weight:650;letter-spacing:-.5px}h2{font-size:15px;font-weight:650}h3{font-size:13px;font-weight:600}button,select{font:inherit}button,a,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer}button:disabled{opacity:.6;cursor:default}a{color:var(--accent)}button:focus-visible,a:focus-visible,select:focus-visible,[tabindex="0"]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.hide,[hidden]{display:none!important}.muted{color:var(--muted)}.tabnum{font-variant-numeric:tabular-nums}.sr-only{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-items:center;justify-content:space-between;gap:16px}.brandline{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px}.version{font-size:10px;border:1px solid var(--line);border-radius:4px;padding:0 5px}.header-actions{display:flex;align-items:center;gap:14px}.statusbar{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}.dot{width:6px;height:6px;border-radius:50%;background:var(--good)}.dot.off{background:var(--bad)}.dot.busy{background:var(--accent)}.button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:7px 10px;font-size:12px;min-height:34px}.button:hover:not(:disabled){border-color:var(--accent)}.button svg{width:14px;height:14px}.gate{margin-top:18px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;justify-content:space-between;gap:20px}.gate h2{font-size:13px}.gate p{font-size:12px;color:var(--muted);margin-top:4px}.gate a{white-space:nowrap;font-size:12px}.alert{margin-top:14px;padding:9px 12px;border-left:3px solid var(--bad);background:var(--panel);border-radius:5px;font-size:12px;color:var(--bad)}
+.tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-top:18px}.tabs button{padding:11px 0;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;color:var(--muted);font-size:13px}.tabs button[aria-selected=true]{color:var(--accent);border-color:var(--accent);font-weight:600}.tab-count{margin-left:5px;font-size:11px;color:var(--muted)}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 18px}.filter-control{display:flex;align-items:center;gap:8px}.filter-control label{display:none}select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:6px 8px;font-size:12px;min-height:32px}.results{font-size:11px;color:var(--muted)}.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.section-label{font-size:11px;color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}.provider-section{grid-column:1/-1}.provider-section+.provider-section{margin-top:8px}.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px}.accounttop{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line)}.identity{display:flex;align-items:center;gap:9px;min-width:0}.account-icon{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:650;flex-shrink:0}.account-icon.claude{color:var(--warm)}.identity-text{min-width:0}.account{font-size:13px;overflow-wrap:anywhere}.manual-reset{display:flex;align-items:center;gap:7px;flex-shrink:0;font-size:12px;color:var(--muted)}.manual-reset strong{font-size:18px;line-height:1.2;color:var(--ink);font-variant-numeric:tabular-nums}.windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.window{padding:14px 16px;min-width:0}.window+.window{border-left:1px solid var(--line)}.windowhead h3{font-size:12px;color:var(--muted);font-weight:500}.quota-value{display:flex;align-items:baseline;gap:5px;margin-top:7px}.percent{font-size:22px;letter-spacing:-.4px;font-weight:650;line-height:1.3;font-variant-numeric:tabular-nums}.percent-unit{font-size:14px;margin-left:1px}.remaining-label{font-size:11px;color:var(--muted)}.low .percent{color:var(--bad)}.track{height:3px;border-radius:4px;background:var(--track);margin:7px 0 10px;overflow:hidden}.fill{height:100%;background:var(--accent);border-radius:4px}.low .fill{background:var(--bad)}.unknown .percent{color:var(--muted)}.windowstats{margin:0;padding:0;border:0;background:none}.estimate-cost{display:flex;align-items:baseline;gap:7px;font-size:22px;font-weight:600;letter-spacing:-.4px;line-height:1.3;font-variant-numeric:tabular-nums}.estimate-cost .unit{font-size:11px;font-weight:400;letter-spacing:0;color:var(--muted)}.estimate-value{font-size:14px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.reset{font-size:12px;color:var(--muted);margin-top:10px}.account-error{margin:8px 16px 0;font-size:11px;color:var(--bad);overflow-wrap:anywhere}.empty{grid-column:1/-1;padding:28px 16px;border:1px dashed var(--line);border-radius:10px;background:var(--panel);text-align:center;color:var(--muted)}.empty-symbol{display:none}.empty strong{font-size:13px;color:var(--ink)}.empty p{font-size:12px;margin-top:5px}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:14px 0;margin-bottom:20px}.summary-item{padding:0 16px;min-width:0}.summary-item+.summary-item{border-left:1px solid var(--line)}.summary-label{font-size:11px;color:var(--muted)}.summary-value{font-size:21px;font-weight:650;letter-spacing:-.4px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.summary-note{display:none}.request-section+.request-section{margin-top:20px}.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px;background:var(--panel)}.tablewrap .empty{border:0}table{border-collapse:collapse;table-layout:fixed;width:100%;min-width:990px;font-size:12px}th{font-size:11px;color:var(--muted);font-weight:500;text-align:left;padding:10px 12px;background:var(--subtle)}td{padding:11px 12px;border-top:1px solid var(--line);overflow-wrap:anywhere;vertical-align:middle;font-variant-numeric:tabular-nums}td.num,th.num{text-align:right;white-space:nowrap}.usd-value{font-size:14px;font-weight:650}.timestamp{font-size:11px}.cell-secondary{display:block;font-size:10px;color:var(--muted);margin-top:2px}.model{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}.model+.model{margin-top:4px}.request-state{font-size:11px;color:var(--good)}.request-state.failed,.failure-count{color:var(--bad)}.cache-pair .slash{padding:0 3px;color:var(--muted)}.table-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;color:var(--muted);margin-top:10px}.pagination{display:flex;align-items:center;gap:8px}.pagination .button{padding:3px 9px;min-height:28px}.credential-button{display:flex;align-items:baseline;gap:6px;background:none;border:0;padding:0;text-align:left;color:var(--ink);font:inherit;font-weight:550;width:100%}.credential-button:hover{color:var(--accent)}.chevron{color:var(--muted)}.credential-name{min-width:0;overflow-wrap:anywhere}.details-cell{background:var(--subtle);padding:0 16px}.details{padding:10px 0}.details h3{font-size:11px;color:var(--muted);margin-bottom:6px}.modelrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:11px}.foot{margin-top:18px;font-size:10px;color:var(--muted)}
+@media(max-width:760px){main{padding:18px 14px}.grid{grid-template-columns:minmax(0,1fr)}.masthead{gap:10px}.header-actions{gap:8px}.statusbar{display:none}.toolbar{margin-bottom:16px}.results{font-size:10px;text-align:right}.accounttop{padding:11px 14px}.window{padding:12px 14px}.summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:10px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block}.gate a{display:inline-block;margin-top:8px}.table-foot>span{max-width:220px}}
+@media(max-width:380px){.window{padding:12px}.accounttop{align-items:flex-start;flex-wrap:wrap}.results{max-width:145px}.manual-reset{margin-left:auto}}
+.needs-login .tabs,.needs-login .toolbar,.needs-login [role=tabpanel],.needs-login .foot{display:none}
 </style>
 </head>
 <body>
-<main>
+<main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span class="brandmark" aria-hidden="true"><i></i><i></i><i></i></span><span>CPA Mini Usage</span><span class="version">v0.1.3</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.4</span></div>
     <h1>用量与额度</h1>
   </div>
   <div class="header-actions">
@@ -46,10 +36,7 @@ main{max-width:1280px;margin:0 auto;padding:36px 32px 32px}.masthead{display:fle
 </div>
 <div class="toolbar"><div class="filter-control"><label for="provider">服务商</label><select id="provider" aria-label="筛选服务商"><option value="">全部服务商</option><option value="claude">Claude</option><option value="codex">Codex</option></select></div><span id="updated" class="results" aria-live="polite">等待同步</span></div>
 <section id="page-quota" role="tabpanel" aria-labelledby="tab-quota" tabindex="0">
-  <div class="section-head"><h2>剩余额度</h2><span class="section-label">OAuth</span></div>
-  <div id="quota-overview" class="quota-overview"></div>
   <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
-  <details class="method-note"><summary>估算说明</summary><p>剩余比例来自官方额度；token / USD 为观测用量外推，不是官方额度上限。历史不足或价格缺失时估算不可用。</p></details>
 </section>
 <section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" class="hide">
   <div id="request-summary" class="summary" aria-label="近 7 天观测统计"></div>
@@ -63,13 +50,14 @@ main{max-width:1280px;margin:0 auto;padding:36px 32px 32px}.masthead{display:fle
     <div id="credential-table" class="tablewrap" role="region" aria-label="凭证用量表，窄屏可横向滚动" tabindex="0"><div class="empty">等待同步</div></div>
   </section>
 </section>
-<footer class="foot" id="footer"><span>额度自动检查 60 秒 · 快照同步 10 秒</span></footer>
+<footer class="foot" id="footer">页面每分钟同步 · 额度每 3 分钟检查</footer>
 </main>
 <script>
 (() => {
 'use strict';
 let key = '', data = null, tab = 'quota', filter = '', expanded = '';
 let loading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
+let quotaStamp='',requestStamp='',lastSyncAt=0;
 const pageSize = 10;
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
@@ -114,6 +102,22 @@ function remainingEstimate(total,percent){
   if(total==null || percent==null || !['number','string'].includes(typeof total) || (typeof total==='string' && !total.trim()))return null;
   if(!Number.isFinite(Number(total)) || Number(total)<0 || !Number.isFinite(Number(percent)))return null;
   return Number(total)*(Math.max(0,Math.min(100,Number(percent)))/100);
+}
+function updateCountdowns(){
+  document.querySelectorAll('[data-reset-at]').forEach(node=>{const value=resetCountdown(node.dataset.resetAt);if(node.textContent!==value)node.textContent=value;});
+}
+function quotaContent(snapshot){return JSON.stringify(list(snapshot?.quotas).map(({fetched_at,...account})=>account));}
+function requestContent(snapshot){return JSON.stringify([snapshot?.credentials,snapshot?.recent,list(snapshot?.quotas).map(({auth_id,name,provider})=>({auth_id,name,provider}))]);}
+function acceptSnapshot(snapshot){
+  const quotas=quotaContent(snapshot),requests=requestContent(snapshot),focused=document.activeElement?.id;
+  data=snapshot;phase='ready';
+  if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
+  if(requests!==requestStamp){renderRequests();requestStamp=requests;}
+  updateCountdowns();updateSyncInfo();restoreFocus(focused);
+}
+function updateSyncInfo(){
+  $('updated').textContent=data?'额度更新 '+clock(data.quota_updated_at):loading?'正在同步…':'尚未同步';
+  $('updated').title=data?'快照：'+when(data.generated_at)+'\n额度：'+when(data.quota_updated_at):'';
 }
 function empty(title,description){
   const box=el('div','empty');const icon=add(box,'span','empty-symbol','—');icon.setAttribute('aria-hidden','true');
@@ -164,15 +168,17 @@ function syncControls(){
 }
 function clearSnapshot(needsLogin,message){
   data=null;expanded='';recentPage=0;phase=needsLogin?'waiting':'error';
+  $('dashboard').classList.toggle('needs-login',needsLogin);
   $('status').textContent=needsLogin?'等待 CPA 登录':'连接失败';$('gate').classList.toggle('hide',!needsLogin);
   setAlert(message);render();
 }
 async function load(force=false){
   const serial=++loadSerial, saved=guessKey();
   if(key!==saved){data=null;expanded='';recentPage=0;}
-  key=saved;setAlert('');
+  const quiet=!force&&Boolean(data)&&key===saved;
+  key=saved;if(!quiet)setAlert('');
   if(!key){loading=false;clearSnapshot(true,'');syncControls();return;}
-  loading=true;phase='loading';$('gate').classList.add('hide');$('status').textContent=force?'正在请求额度检查':'正在同步快照';syncControls();
+  loading=true;phase='loading';$('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');if(!quiet){$('status').textContent=force?'正在刷新额度':'正在连接';syncControls();}
   if(!data)render();
   try {
     let finishedBefore=data?.quota_refresh_finished_at;
@@ -184,18 +190,19 @@ async function load(force=false){
       if(serial!==loadSerial)return;
       if(guessKey()!==saved){await load();return;}
       if(!snapshot || typeof snapshot!=='object' || Array.isArray(snapshot))throw Error('CPA 快照格式异常。');
-      data=snapshot;phase='ready';render();
+      acceptSnapshot(snapshot);lastSyncAt=Date.now();
       waiting=force&&(snapshot.quota_refreshing||!snapshot.quota_refresh_finished_at||snapshot.quota_refresh_finished_at===finishedBefore);
       if(!waiting)break;
       $('status').textContent='正在刷新额度';
-      await new Promise(resolve=>setTimeout(resolve,1000));
+      await new Promise(resolve=>setTimeout(resolve,2000));
       if(serial!==loadSerial)return;
     }while(Date.now()<deadline);
     const issues=[data.storage_error,data.price_error,data.quota_error,waiting?'额度接口响应较慢，稍后自动同步。':''].filter(Boolean);
     $('status').textContent=data.quota_refreshing?'额度刷新中':issues.length?'部分数据异常':'已连接';setAlert(issues.join(' · '));
   } catch(err) {
     if(serial!==loadSerial)return;
-    loading=false;clearSnapshot(Boolean(err.auth),err.message||'无法连接 CPA，请检查网络后重试。');
+    loading=false;
+    if(quiet&&!err.auth){setAlert(err.message||'同步失败，可手动重试。');}else{clearSnapshot(Boolean(err.auth),err.message||'无法连接 CPA。');}
   } finally {
     if(serial===loadSerial){loading=false;syncControls();}
   }
@@ -203,29 +210,24 @@ async function load(force=false){
 function addWindow(parent,title,period,win){
   const remaining=remainingPercent(win);
   const section=add(parent,'section','window'+(remaining==null?' unknown':remaining<20?' low':''));
-  const h=add(section,'div','windowhead');add(h,'h3','',title);add(h,'span','period',period);
+  const h=add(section,'div','windowhead');add(h,'h3','',title);
   const value=add(section,'div','quota-value');const percent=add(value,'span','percent',remaining==null?'—':remaining.toFixed(1));
   if(remaining!=null)add(percent,'span','percent-unit','%');add(value,'span','remaining-label',remaining==null?'额度未知':'剩余');
   const track=add(section,'div','track');track.setAttribute('role','meter');track.setAttribute('aria-label',title+'官方剩余额度');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
   if(remaining!=null)track.setAttribute('aria-valuenow',String(remaining));track.setAttribute('aria-valuetext',remaining==null?'未知':remaining.toFixed(1)+'% 剩余');
   const fill=add(track,'div','fill');fill.style.width=(remaining??0)+'%';
   const cost=win?.missing_price?null:remainingEstimate(win?.estimated_total_cost,remaining);
-  const stats=add(section,'div','windowstats');add(stats,'div','estimate-label','估算剩余价值');
-  const amount=add(stats,'div','estimate-cost',money(cost));add(amount,'span','unit','USD');
+  const stats=add(section,'div','windowstats');
+  const amount=add(stats,'div','estimate-cost',money(cost));add(amount,'span','unit','USD 估算');
   const available=remainingEstimate(win?.estimated_total_tokens,remaining);
-  addTokens(stats,'div','estimate-value',available,' tokens 剩余');
-  const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);
-  const total=add(section,'div','window-total');add(total,'span','','窗口估值 '+money(win?.missing_price?null:win?.estimated_total_cost)+' / ');
-  addTokens(total,'span','',win?.estimated_total_tokens,' tokens');
-  if(win?.partial_history)add(section,'p','hint','历史不完整 · 估算可能偏低或不准确');
-  if(win?.missing_price)add(section,'p','hint','缺少模型价格 · USD 估算不可用');
+  addTokens(stats,'div','estimate-value',available,' tokens');
+  const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
+  if(win?.missing_price)amount.title='缺少模型单价，金额暂不可用';
 }
 function renderQuotas(){
-  const root=$('quota-cards'), overview=$('quota-overview');root.replaceChildren();overview.replaceChildren();
+  const root=$('quota-cards');root.replaceChildren();
   const quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
   if(!data){root.append(noData());return;}
-  const windows=quotas.flatMap(q=>[q.five_hour,q.seven_day]);const known=windows.map(remainingPercent).filter(p=>p!=null);const low=known.filter(p=>p<20).length;
-  [[quotas.length,'个 OAuth 账户'],[known.length+'/'+windows.length,'个已知窗口'],[low,'个窗口余量低于 20%']].forEach(([value,label],i)=>{const item=add(overview,'span','');add(item,'strong',i===2&&low?'warning':'',typeof value==='number'?fmt(value):value);add(item,'span','',label);});
   if(!quotas.length){root.append(empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新额度”重新检查。'));return;}
   const providers=[...new Set(quotas.map(q=>q.provider))].sort((a,b)=>a.localeCompare(b));
   providers.forEach(provider=>{
@@ -234,14 +236,13 @@ function renderQuotas(){
     const heading=add(section,'div','section-head');add(heading,'h2','',providerName(provider));add(heading,'span','section-label',accounts.length+' 个账户');
     const cards=add(section,'div','grid');
     accounts.forEach((item,i)=>{
-      const panel=el('article','panel');panel.style.setProperty('--enter-delay',Math.min(i,4)*35+'ms');
+      const panel=el('article','panel');
       const head=add(panel,'div','accounttop');const identity=add(head,'div','identity');
       const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':''),item.provider==='claude'?'C':'⌘');icon.setAttribute('aria-hidden','true');
-      const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));add(head,'span','provider',providerName(item.provider));
+      const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));
       if(item.error)add(panel,'p','account-error',item.error);
       const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);
-      const footer=add(panel,'div','account-footer');add(footer,'span','','更新 '+clock(item.fetched_at));
-      if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0)add(footer,'span','manual-reset','Manual reset 剩余 '+fmt(item.manual_reset_remaining)+' 次');
+      if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const bank=add(head,'div','manual-reset');add(bank,'span','','Reset bank');add(bank,'strong','',fmt(item.manual_reset_remaining));add(bank,'span','','次');}
       cards.append(panel);
     });
   });
@@ -256,8 +257,8 @@ function makeTable(root,caption,columns){
 function renderSummary(credentials){
   const root=$('request-summary');root.replaceChildren();const sum=field=>credentials.reduce((n,s)=>n+(Number(s[field])||0),0);
   const priceMissing=credentials.some(s=>s.missing_price||s.cost==null);
-  const stats=[['观测请求',data?fmt(sum('requests')):'—','近 7 天 · 当前筛选'],['实际用量',data?tokens(sum('total')):'—','tokens · 非剩余额度'],['请求失败',data?fmt(sum('failures')):'—','近 7 天 · 失败记录'],['用量估值',data?priceMissing?'—':money(sum('cost')):'—',priceMissing?'价格缺失，不展示部分合计':'USD · 非订阅费用']];
-  stats.forEach(([label,value,note],i)=>{const item=add(root,'div','summary-item');add(item,'div','summary-label',label);const metric=add(item,'div','summary-value',value);if(i===1&&data)metric.title=fmt(sum('total'))+' tokens';add(item,'div','summary-note',note);});
+  const stats=[['近 7 天请求',data?fmt(sum('requests')):'—'],['tokens',data?tokens(sum('total')):'—'],['失败',data?fmt(sum('failures')):'—'],['USD 估算',data?priceMissing?'—':money(sum('cost')):'—']];
+  stats.forEach(([label,value],i)=>{const item=add(root,'div','summary-item');add(item,'div','summary-label',label);const metric=add(item,'div','summary-value',value);if(i===1&&data)metric.title=fmt(sum('total'))+' tokens';});
 }
 function renderCredentials(credentials){
   const root=$('credential-table');root.replaceChildren();$('credential-count').textContent=(data?fmt(credentials.length):'—')+' 个凭证';
@@ -287,7 +288,7 @@ function renderRecent(){
   const root=$('recent-table');root.replaceChildren();const recent=recentRequests();const pages=Math.ceil(recent.length/pageSize);recentPage=Math.max(0,Math.min(recentPage,pages-1));
   const start=recentPage*pageSize, shown=recent.slice(start,start+pageSize);
   $('recent-prev').disabled=!data||recentPage===0;$('recent-next').disabled=!data||recentPage>=pages-1;$('recent-page').textContent=(pages?recentPage+1:0)+' / '+pages;
-  $('recent-caption').textContent=data?(recent.length?'显示 '+(start+1)+'–'+(start+shown.length)+' / '+recent.length+' 条近期记录':'当前筛选下暂无近期记录')+' · 最多 60 条':'等待请求快照';
+  $('recent-caption').textContent=data?(recent.length?'显示 '+(start+1)+'–'+(start+shown.length)+' / '+recent.length+' 条':'暂无近期记录'):'等待请求快照';
   if(!data){root.append(noData());return;}
   if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
   const tbody=makeTable(root,'最近最多 60 条请求快照', [['时间','',14],['凭证','',16],['模型','',21],['输入','num',8],['输出','num',8],['缓存 读 / 写','num',12],['总 tokens','num',12],['状态','',9]]);
@@ -300,12 +301,12 @@ function renderRecent(){
   });
 }
 function renderRequests(){const credentials=list(data?.credentials).filter(active);renderSummary(credentials);renderRecent();renderCredentials(credentials);$('request-count').textContent=data?fmt(credentials.reduce((n,s)=>n+(Number(s.requests)||0),0)):'—';}
+function restoreFocus(id){if(id&&$(id)&&document.activeElement?.id!==id)$(id).focus({preventScroll:true});}
 function render(){
   const focused=document.activeElement?.id;
-  renderQuotas();renderRequests();
-  $('updated').textContent=data?'快照 '+clock(data.generated_at)+' · 额度 '+clock(data.quota_updated_at):loading?'正在同步最新快照…':'尚未同步';
-  $('updated').title=data?'快照：'+when(data.generated_at)+'\n官方额度：'+when(data.quota_updated_at)+'\n模型价格：'+when(data.price_updated_at):'';
-  if(focused&&$(focused)&&document.activeElement?.id!==focused)$(focused).focus({preventScroll:true});
+  renderQuotas();renderRequests();updateSyncInfo();
+  quotaStamp=quotaContent(data);requestStamp=requestContent(data);
+  restoreFocus(focused);
 }
 function setTab(selected){
   tab=selected==='requests'?'requests':'quota';
@@ -319,9 +320,10 @@ $('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render
 $('recent-prev').onclick=()=>{recentPage--;renderRecent();};$('recent-next').onclick=()=>{recentPage++;renderRecent();};
 $('refresh').onclick=()=>load(true);
 window.addEventListener('storage',()=>load());
-window.addEventListener('focus',()=>{if(!loading)load();});
+window.addEventListener('focus',()=>{if(!loading&&Date.now()-lastSyncAt>=60000)load();});
 load();
-setInterval(()=>{if(!document.hidden&&!loading)load();},10000);
+setInterval(()=>{if(!document.hidden&&!loading)load();},60000);
+setInterval(()=>{if(!document.hidden&&data)updateCountdowns();},30000);
 })();
 </script>
 </body>

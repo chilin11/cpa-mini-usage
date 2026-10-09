@@ -9,11 +9,12 @@ const { test } = require('node:test');
 const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.textContent = ''; this.attributes = {}; this.dataset = {}; this.style = {setProperty(){}}; this.classList = {add(){}, remove(){}, toggle(){}}; }
+  constructor(tag) { this.tag = tag; this.children = []; this.textContent = ''; this.attributes = {}; this.dataset = {}; this.style = {setProperty(){}}; this.classes = new Set(); this.classList = {add:(c)=>this.classes.add(c), remove:(c)=>this.classes.delete(c), toggle:(c,on)=>{if(on??!this.classes.has(c))this.classes.add(c);else this.classes.delete(c);}}; }
   append(child) { this.children.push(child); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(name,value) { this.attributes[name] = value; }
   addEventListener() {}
+  focus() {}
 }
 function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({})})) {
   const elements = new Map();
@@ -23,12 +24,13 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     location:{protocol:'https:',host:'cpa.test',origin:'https://cpa.test'}, navigator:{userAgent:'test-agent'},
     document: {
       getElementById(id) { if (!elements.has(id)) elements.set(id, new Element('div')); return elements.get(id); },
+      querySelectorAll(selector) { return [...elements.values()].flatMap(descendants).filter(n=>selector==='[data-reset-at]' && n.dataset.resetAt); },
       createElement(tag) { return new Element(tag); },
     }, localStorage:storage, sessionStorage:{getItem(){return null;}}, fetch:fetcher,
     setInterval(){}, setTimeout(callback){callback();}, addEventListener(){},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, guessKey, load, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements};
 }
@@ -55,8 +57,8 @@ test('all token displays use compact units, retaining full values in tooltips', 
     recent:[{auth_id:'account', at:'2026-10-09T00:00:00Z', model:'gpt', total:1250000}],
   });
   const quotaNodes = descendants(elements.get('quota-cards'));
-  assert(quotaNodes.some(n => n.textContent === '1.8b tokens 剩余' && n.title === '1,800,000,000 tokens'));
-  assert(quotaNodes.some(n => n.textContent === '2.4b tokens' && n.title === '2,400,000,000 tokens'));
+  assert(quotaNodes.some(n => n.textContent === '1.8b tokens' && n.title === '1,800,000,000 tokens'));
+  assert(!quotaNodes.some(n => n.textContent === '2.4b tokens'));
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
   const cells = requestNodes.filter(n => n.tag === 'td');
@@ -79,7 +81,7 @@ test('providers stay in separate sections; absent manual reset stays hidden', ()
   const sections=elements.get('quota-cards').children;
   assert.deepEqual(sections.map(s=>s.dataset.provider),['claude','codex']);
   const resets=descendants(elements.get('quota-cards')).filter(n=>n.className==='manual-reset');
-  assert.deepEqual(resets.map(n=>n.textContent),['Manual reset 剩余 2 次','Manual reset 剩余 0 次']);
+  assert.deepEqual(resets.map(n=>n.children.map(c=>c.textContent)),[['Reset bank','2','次'],['Reset bank','0','次']]);
   api.renderSample({quotas},'claude');assert.equal(elements.get('quota-cards').children.length,1);
   assert.equal(elements.get('quota-cards').children[0].dataset.provider,'claude');
 });
@@ -131,11 +133,11 @@ test('official percentage precedes USD and readable compact tokens', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:100,estimated_total_cost:120,estimated_total_tokens:4000000}}]});
   const nodes=descendants(elements.get('quota-cards'));
   const stats=nodes.filter(n=>n.className==='windowstats');
-  assert.equal(stats[0].children[0].textContent,'估算剩余价值');
-  assert.equal(stats[0].children[1].className,'estimate-cost');
-  assert.equal(stats[0].children[1].textContent,'$90.00');
-  assert.equal(stats[0].children[2].textContent,'3m tokens 剩余');
-  assert.equal(stats[1].children[1].textContent,'$0.000');
+  assert.equal(stats[0].children[0].className,'estimate-cost');
+  assert.equal(stats[0].children[0].textContent,'$90.00');
+  assert.equal(stats[0].children[0].children[0].textContent,'USD 估算');
+  assert.equal(stats[0].children[1].textContent,'3m tokens');
+  assert.equal(stats[1].children[0].textContent,'$0.000');
   const window=nodes.find(n=>n.className==='window');
   assert.equal(window.children[1].className,'quota-value');
   assert.equal(window.children[3].className,'windowstats');
@@ -145,7 +147,7 @@ test('missing model price does not display a false USD amount', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}}]});
   const nodes=descendants(elements.get('quota-cards'));
   assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'—');
-  assert(nodes.some(n=>n.textContent==='3m tokens 剩余'));
+  assert(nodes.some(n=>n.textContent==='3m tokens'));
 });
 
 test('reset times show days/hours/minutes and never a negative countdown', () => {
@@ -159,4 +161,54 @@ test('reset countdown retains full date in tooltip', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,reset_at:at}}]});
   const reset=descendants(elements.get('quota-cards')).find(n=>n.className==='reset');
   assert.match(reset.textContent,/还有 2 小时/);assert.notEqual(reset.title,'待更新');
+});
+
+function sampleSnapshot(){return {generated_at:'2026-10-09T00:00:00Z',quotas:[{auth_id:'account',provider:'codex',name:'alice@example.com',fetched_at:'old',five_hour:{used_percent:25,reset_at:new Date(Date.now()+7200000).toISOString(),estimated_total_cost:120,estimated_total_tokens:4000000}}],credentials:[],recent:[]};}
+test('unchanged and timestamp-only snapshots preserve all content nodes',()=>{
+  const {api,elements}=dashboard();const sample=sampleSnapshot();api.renderSample(sample);
+  const quota=elements.get('quota-cards').children[0],requests=elements.get('recent-table').children[0];
+  api.acceptSnapshot(JSON.parse(JSON.stringify(sample)));
+  api.acceptSnapshot({...sample,generated_at:'new',quota_updated_at:'2026-10-09T01:00:00Z',quotas:sample.quotas.map(q=>({...q,fetched_at:'new'}))});
+  assert.equal(elements.get('quota-cards').children[0],quota);assert.equal(elements.get('recent-table').children[0],requests);
+});
+test('request-only changes preserve quota nodes; quota-only changes preserve requests',()=>{
+  const {api,elements}=dashboard();let sample=sampleSnapshot();api.renderSample(sample);
+  const quota=elements.get('quota-cards').children[0];
+  sample={...sample,recent:[{auth_id:'account',model:'gpt-test',total:1000}]};api.acceptSnapshot(sample);
+  assert.equal(elements.get('quota-cards').children[0],quota);
+  const requests=elements.get('recent-table').children[0];
+  api.acceptSnapshot({...sample,quotas:sample.quotas.map(q=>({...q,manual_reset_remaining:2}))});
+  assert.equal(elements.get('recent-table').children[0],requests);
+  assert.notEqual(elements.get('quota-cards').children[0],quota);
+});
+test('countdowns update in place without rebuilding cards',()=>{
+  const {api,elements}=dashboard();api.renderSample(sampleSnapshot());
+  const quota=elements.get('quota-cards').children[0],reset=descendants(quota).find(n=>n.className==='reset');
+  reset.dataset.resetAt=new Date(Date.now()+20*60000).toISOString();api.updateCountdowns();
+  assert.equal(elements.get('quota-cards').children[0],quota);assert.match(reset.textContent,/还有 20 分钟/);
+});
+test('quiet automatic refresh keeps visible controls and content stable',async()=>{
+  let release, notify, delayed=false;const sample=sampleSnapshot(),started=new Promise(resolve=>{notify=resolve;});
+  const {api,elements}=dashboard({managementKey:JSON.stringify('key')},async()=>({ok:true,json:async()=>{if(delayed)return new Promise(resolve=>{release=()=>resolve(sample);notify();});return sample;}}));
+  await api.load();const quota=elements.get('quota-cards').children[0];delayed=true;
+  const pending=api.load();await started;
+  assert.equal(elements.get('refresh').disabled,false);assert.equal(elements.get('refresh-label').textContent,'刷新额度');
+  release();await pending;assert.equal(elements.get('quota-cards').children[0],quota);
+});
+test('temporary automatic-refresh errors retain data; authentication errors clear it',async()=>{
+  let status=200;const sample=sampleSnapshot();
+  const {api,elements}=dashboard({managementKey:JSON.stringify('key')},async()=>({ok:status===200,status,json:async()=>sample}));
+  await api.load();const quota=elements.get('quota-cards').children[0];
+  status=503;await api.load();assert.equal(elements.get('quota-cards').children[0],quota);
+  status=401;await api.load();assert(!descendants(elements.get('quota-cards')).some(n=>n.textContent==='alice@example.com'));
+});
+test('refresh cadence is low and entry animations are absent',()=>{
+  assert.match(source,/setInterval\([\s\S]*?,60000\)/);assert.match(source,/setInterval\([\s\S]*?,30000\)/);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert(!/animation:|@keyframes|transition:/.test(css));
+  assert.match(css,/\.manual-reset strong\{font-size:18px/);
+});
+test('logged-out view has a single visible login section',async()=>{
+  const {api,elements}=dashboard();await api.load();
+  assert(elements.get('dashboard').classes.has('needs-login'));
+  assert.match(html,/\.needs-login \.tabs,\.needs-login \.toolbar,\.needs-login \[role=tabpanel\],\.needs-login \.foot\{display:none\}/);
 });

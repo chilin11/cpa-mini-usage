@@ -44,7 +44,7 @@ Data is stored under `data/cpa-mini-usage/` (create/mount as persistent in Docke
 - Estimated maximum tokens / dollars = **CPA-observed usage within the active window / provider reported utilized fraction**. This is an extrapolation, **not an official quota cap**. Values will be inaccurate if collection began mid-window, quota was spent outside this CPA, traffic mixes different token/model types, or the upstream uses non-token factors.
 - Prices are automatically refreshed from `https://models.dev/api.json` every 6 hours. Cache read token cost is separated from uncached input; reasoning tokens are **not** double-charged when already included in output tokens. Unknown model prices are shown as unknown (not $0).
 - Historical costs are revalued using the latest known prices, and represent **API-equivalent cost**, not an actual Claude Pro/Max or ChatGPT subscription charge.
-- Quota is automatically checked every 60 seconds, with at most four account reads in parallel. Snapshot display refreshes every 10 seconds; manual refresh polls completion every second. Upstream latency and rate limiting still apply. Only read-only GET requests to known quota endpoints are made.
+- Quota is automatically checked every 3 minutes, with at most four account reads in parallel. The visible dashboard syncs snapshots every minute and updates countdown text every 30 seconds. Unchanged content keeps its DOM nodes; quota and request sections update independently, without entry animations. Manual refresh polls completion every 2 seconds. Only read-only GET requests to known quota endpoints are made.
 - Supports Claude OAuth and Codex OAuth; API keys do not expose subscription quota windows.
 - If `usage.handle` is not dispatched by your CPA build, the quota still works but per-request stats cannot be collected. Upgrade CPA to a build with the usage callback fix.
 
@@ -71,6 +71,10 @@ Compact token counts, remaining quota, provider sections, actual account names w
 ### v0.1.3
 
 Quota cards show the official remaining percentage first, the estimated USD value second at a similar moderate size, and readable compact tokens beneath it. Reset time is a days/hours/minutes countdown, with the full timestamp in a tooltip. Codex manual resets now use the official `rate_limit_reset_credits.available_count` field, with a read-only fallback to `/backend-api/wham/rate-limit-reset-credits` (`available_count`). This only lists remaining reset credits; the `/consume` endpoint is not permitted or called. Unknown counts remain hidden.
+
+### v0.1.4
+
+Simplified, shorter cards remove duplicate totals, badges, and explanatory paragraphs. Remaining percentage and USD stay at 22px, tokens at 14px. Reset bank appears beside the account name with an 18px bold count; unavailable counts remain hidden and explicit zero remains visible. Less frequent background refresh is silent, preserves unchanged content and focus, and keeps the last snapshot on temporary network errors while still clearing private data on logout/authentication failure. Fixed numerical tests cover per-million-token prices, cache read/write handling, missing prices, and percentage-based remaining-value arithmetic.
 
 ## Optional CPA Plugin Store source
 

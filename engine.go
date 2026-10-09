@@ -18,7 +18,7 @@ import (
 
 const (
 	eventDays       = 35
-	quotaInterval   = time.Minute
+	quotaInterval   = 3 * time.Minute
 	pricingInterval = 6 * time.Hour
 )
 

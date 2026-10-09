@@ -6,7 +6,7 @@
       "name": "CPA Mini Usage",
       "description": "Lightweight two-tab Claude/Codex quota and per-credential usage dashboard with token and USD estimates.",
       "author": "CPA Mini Usage Contributors",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "repository": "https://github.com/chilin11/cpa-mini-usage",
       "homepage": "https://github.com/chilin11/cpa-mini-usage",
       "license": "MIT",

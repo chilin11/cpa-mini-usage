@@ -167,3 +167,71 @@ func TestRecentAccountIdentityAndResetOmission(t *testing.T) {
 		t.Fatal("explicit zero count must be preserved")
 	}
 }
+
+func TestEventCostArithmetic(t *testing.T) {
+	// models.dev prices are USD per million tokens; cached input is a subset of input.
+	for _, tc := range []struct {
+		name  string
+		price ModelPrice
+		event Event
+		want  float64
+	}{
+		{"ordinary input and output", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, Output: 100000}, 2.8},
+		{"cache read replaces ordinary input", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 200000, Output: 100000}, 2.45},
+		{"all cache read", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 1000000}, .25},
+		{"cache read clamped to input", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 2000000}, .25},
+		{"cache write separately charged", ModelPrice{Input: 5, Output: 25, CacheRead: floatPtr(.5), CacheWrite: floatPtr(6.25)}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 7.225},
+		{"absent cache prices fall back to input", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 3},
+		{"explicit free cache is retained", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(0)}, Event{Input: 1000000, CacheRead: 1000000}, 0},
+		{"total tokens are not charged twice", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, Output: 100000, Total: 9000000}, 2.8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			e.prices = map[string]ModelPrice{"openai/test": tc.price}
+			tc.event.Provider, tc.event.Model = "codex", "openai/test"
+			got, ok := e.eventCost(tc.event)
+			if !ok || math.Abs(got-tc.want) > 1e-9 {
+				t.Fatalf("cost=%v known=%v want=%v", got, ok, tc.want)
+			}
+		})
+	}
+	if _, ok := newEngine().eventCost(Event{Provider: "codex", Model: "unknown"}); ok {
+		t.Fatal("unknown price must not be treated as zero")
+	}
+}
+
+func TestWindowEstimateArithmetic(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	e := newEngine()
+	e.prices = map[string]ModelPrice{"openai/test": {Input: 2, Output: 8}}
+	e.events = []Event{
+		{At: now.Add(-time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 100000, Output: 20000, Total: 120000},
+		{At: now.Add(-time.Hour), AuthID: "other", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
+		{At: now.Add(-6 * time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
+		{At: now.Add(time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
+	}
+	for _, used := range []float64{0, 4.99, 5, 25, 50, 100, 101} {
+		win := e.windowSummary("a", now, &QuotaWindow{Used: used, ResetAt: now.Add(time.Hour).Format(time.RFC3339)}, 5*time.Hour)
+		if win.ObservedTokens != 120000 || win.ObservedCost == nil || math.Abs(*win.ObservedCost-.36) > 1e-9 {
+			t.Fatalf("observed=%+v", win)
+		}
+		if used < 5 || used > 100 {
+			if win.EstimatedTotalTokens != nil || win.EstimatedTotalCost != nil {
+				t.Fatalf("unsupported used=%v extrapolated", used)
+			}
+			continue
+		}
+		ratio := used / 100
+		if win.EstimatedTotalTokens == nil || math.Abs(*win.EstimatedTotalTokens-120000/ratio) > 1e-6 || win.EstimatedTotalCost == nil || math.Abs(*win.EstimatedTotalCost-.36/ratio) > 1e-9 {
+			t.Fatalf("used=%v estimate=%+v", used, win)
+		}
+		if used == 25 && math.Abs(*win.EstimatedTotalCost*(1-ratio)-1.08) > 1e-9 {
+			t.Fatal("remaining cost should be $1.08")
+		}
+	}
+	e.events[0].Model = "unknown"
+	win := e.windowSummary("a", now, &QuotaWindow{Used: 25, ResetAt: now.Add(time.Hour).Format(time.RFC3339)}, 5*time.Hour)
+	if !win.MissingPrice || win.ObservedCost != nil || win.EstimatedTotalCost != nil || win.EstimatedTotalTokens == nil {
+		t.Fatalf("missing price handling=%+v", win)
+	}
+}
