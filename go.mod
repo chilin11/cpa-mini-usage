@@ -1,3 +1,3 @@
-module github.com/your-name/cpa-mini-usage
+module github.com/chilin11/cpa-mini-usage
 
 go 1.23

@@ -156,7 +156,7 @@ func dispatch(method string, body []byte) []byte {
 			"schema_version": 2,
 			"metadata": map[string]string{
 				"name": "CPA Mini Usage", "version": "0.1.0", "author": "CPA Mini Usage Contributors",
-				"github_repository": "https://github.com/your-name/cpa-mini-usage",
+				"github_repository": "https://github.com/chilin11/cpa-mini-usage",
 				"description":       "Two-tab lightweight quota and usage dashboard",
 			},
 			"capabilities": map[string]bool{"usage_plugin": true, "management_api": true},

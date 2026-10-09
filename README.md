@@ -64,7 +64,7 @@ append the registry URL to the existing plugin store sources (do not replace you
 ```yaml
 plugins:
   store-sources:
-    - "https://raw.githubusercontent.com/YOUR_GITHUB_USER/cpa-mini-usage/main/registry.json"
+    - "https://raw.githubusercontent.com/chilin11/cpa-mini-usage/main/registry.json"
 ```
 
 The included `registry.json` and release workflow provide the exact platform ZIP asset

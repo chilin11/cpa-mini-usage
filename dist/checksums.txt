@@ -1,0 +1,1 @@
+acb48d55888034275ac3d808de4ab1ef5c53d77257b1bafd2fbae2c89bcf4a59  cpa-mini-usage_0.1.0_linux_amd64.zip
