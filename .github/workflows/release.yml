@@ -25,9 +25,11 @@ jobs:
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -o dist/release/cpa-mini-usage.so .
           rm -f dist/release/cpa-mini-usage.h
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then VERSION=0.1.0; fi
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then VERSION="$(python3 -c 'import json; print(json.load(open("registry.json"))["plugins"][0]["version"])')"; fi
           (cd dist/release && zip "cpa-mini-usage_${VERSION}_linux_amd64.zip" cpa-mini-usage.so)
           (cd dist/release && sha256sum "cpa-mini-usage_${VERSION}_linux_amd64.zip" > checksums.txt)
+      - name: Verify real CPA 8.0.22 registration
+        run: python3 testdata/cpa_registration.py dist/release/cpa-mini-usage.so
       - name: Save downloadable Linux AMD64 plugin
         uses: actions/upload-artifact@v4
         with:

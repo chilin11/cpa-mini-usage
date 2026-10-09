@@ -44,6 +44,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
+const pluginVersion = "0.1.1"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -155,9 +156,8 @@ func dispatch(method string, body []byte) []byte {
 		return okEnvelope(map[string]any{
 			"schema_version": 2,
 			"metadata": map[string]string{
-				"name": "CPA Mini Usage", "version": "0.1.0", "author": "CPA Mini Usage Contributors",
-				"github_repository": "https://github.com/chilin11/cpa-mini-usage",
-				"description":       "Two-tab lightweight quota and usage dashboard",
+				"Name": "CPA Mini Usage", "Version": pluginVersion, "Author": "CPA Mini Usage Contributors",
+				"GitHubRepository": "https://github.com/chilin11/cpa-mini-usage",
 			},
 			"capabilities": map[string]bool{"usage_plugin": true, "management_api": true},
 		})

@@ -56,6 +56,14 @@ Resource HTML is public by design; actual usage/quota data comes only from **man
 
 This first release is tested locally with a fake CPA host callback harness, not against a live CPA with your accounts. Authentication file formats and upstream quota schemas may change. If it shows `No quota data`, inspect CPA logs for host callback errors.
 
+### v0.1.1 registration fix (CPA 8.0.22)
+
+Version 0.1.0 used an incorrect `github_repository` registration field. CPA requires
+`GitHubRepository` and rejects the plugin when that metadata field is missing.
+Refresh the plugin store source, upgrade to v0.1.1, enable the plugin, then restart CPA.
+CI now tests registration, dashboard access, and management API authentication using
+the real CPA 8.0.22 Linux amd64 release before publishing a new version.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
