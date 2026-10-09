@@ -1,4 +1,4 @@
-name: Build CPA native plugin
+name: Build and publish CPA Mini Usage
 on:
   push:
     branches: [main]
@@ -11,26 +11,49 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Import full source archive
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          if test -f cpa-mini-usage-source.tar.xz; then
+            tar -xJf cpa-mini-usage-source.tar.xz
+            rm cpa-mini-usage-source.tar.xz
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m "Import complete plugin source" || true
+            git push origin HEAD:main
+          fi
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test ./...
-      - name: Build
+      - name: Unit tests
+        run: go test ./...
+      - name: Build Linux AMD64
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist/release
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -o dist/release/cpa-mini-usage.so .
           rm -f dist/release/cpa-mini-usage.h
-          (cd dist/release && zip cpa-mini-usage_0.1.0_linux_amd64.zip cpa-mini-usage.so)
-          (cd dist/release && sha256sum cpa-mini-usage_0.1.0_linux_amd64.zip > checksums.txt)
+          VERSION=0.1.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="$(echo "$GITHUB_REF_NAME" | sed 's/^v//')"; fi
+          (cd dist/release && zip "cpa-mini-usage_${VERSION}_linux_amd64.zip" cpa-mini-usage.so)
+          (cd dist/release && sha256sum "cpa-mini-usage_${VERSION}_linux_amd64.zip" > checksums.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: cpa-mini-usage-linux-amd64
           path: dist/release/*.zip
-      - name: Publish first release
+      - name: Publish initial release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view v0.1.0 >/dev/null 2>&1; then
-            gh release create v0.1.0 dist/release/*.zip dist/release/checksums.txt --target "$GITHUB_SHA"
+            gh release create v0.1.0 dist/release/*.zip dist/release/checksums.txt --target "$(git rev-parse HEAD)" --title 'CPA Mini Usage v0.1.0' --notes 'Initial Linux AMD64 CPA plugin.'
           fi
+      - name: Publish version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/release/*.zip dist/release/checksums.txt --generate-notes
