@@ -96,6 +96,18 @@ plugins:
         else:
             raise AssertionError("Data endpoint allowed unauthenticated access")
         print("PASS unauthenticated data endpoint: access denied")
+        req = urllib.request.Request("http://127.0.0.1:18317/v0/management/plugins/cpa-mini-usage/refresh", data=b"", headers={"Authorization": "Bearer " + key}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            assert response.status == 202
+            accepted = json.loads(response.read())
+        for _ in range(40):
+            state = json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
+            if not state.get("quota_refreshing") and state.get("quota_refresh_finished_at") and state["quota_refresh_finished_at"] != accepted.get("quota_refresh_finished_at"):
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError("Manual refresh did not finish in test host")
+        print("PASS manual refresh: HTTP 202 and observable completion")
 except Exception:
     if (root / "host.log").exists():
         print((root / "host.log").read_text(), file=sys.stderr)

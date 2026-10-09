@@ -70,7 +70,7 @@ func TestEstimateAndCredentialSeparation(t *testing.T) {
 func TestAuthDecode(t *testing.T) {
 	list := map[string]any{"files": []any{map[string]any{"auth_index": "idx1", "id": "A", "provider": "claude", "name": "alice@example.com.json"}}}
 	auths := parseAuthList(list)
-	if len(auths) != 1 || auths[0].ID != "A" || !strings.Contains(auths[0].Name, "***") {
+	if len(auths) != 1 || auths[0].ID != "A" || auths[0].Name != "alice@example.com" {
 		t.Fatalf("auths %+v", auths)
 	}
 	creds := findAuthJSON(map[string]any{"Content": "{\"access_token\":\"secret\"}"})
@@ -86,5 +86,84 @@ func TestNoCredentialLeakage(t *testing.T) {
 	b, _ := json.Marshal(e.snapshot())
 	if strings.Contains(string(b), "TOP_SECRET_CLIENT_KEY") {
 		t.Fatal("API key in snapshot")
+	}
+}
+
+func TestBillionTokenTotalsRemainExact(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	for i := 0; i < 2; i++ {
+		e.capture([]byte(`{"AuthID":"large","Provider":"codex","Model":"gpt","Detail":{"InputTokens":2000000000,"OutputTokens":500000000,"CachedTokens":1000000000,"TotalTokens":2500000000}}`))
+	}
+	out := e.snapshot()
+	if len(out.Credentials) != 1 {
+		t.Fatalf("credentials: %+v", out.Credentials)
+	}
+	s := out.Credentials[0]
+	if s.Input != 4000000000 || s.Output != 1000000000 || s.Cached != 2000000000 || s.Total != 5000000000 || s.Requests != 2 {
+		t.Fatalf("large token totals changed: %+v", s)
+	}
+	if len(s.Models) != 1 || s.Models[0].Tokens != s.Total {
+		t.Fatalf("model totals: %+v", s.Models)
+	}
+}
+
+func TestAccountNamesAndManualReset(t *testing.T) {
+	for _, name := range []string{"alice@example.com.json", "/auth/alice@example.com.JSON", " alice@example.com "} {
+		if accountDisplayName(name) != "alice@example.com" {
+			t.Fatalf("bad account name: %q", name)
+		}
+	}
+	auths := parseAuthList(map[string]any{"files": []any{map[string]any{"auth_index": "idx", "provider": "claude", "name": "wrong.json", "email": "actual@example.com"}}})
+	if len(auths) != 1 || auths[0].Name != "actual@example.com" {
+		t.Fatalf("email precedence: %+v", auths)
+	}
+	for _, tc := range []struct {
+		body string
+		want int64
+	}{{`{"manual_reset_remaining":2}`, 2}, {`{"reset_bank":{"remaining":0}}`, 0}, {`{"manual_resets":{"remaining_count":3}}`, 3}} {
+		got := parseManualResetRemaining([]byte(tc.body))
+		if got == nil || *got != tc.want {
+			t.Fatalf("manual reset: %s => %v", tc.body, got)
+		}
+	}
+	for _, body := range []string{`{}`, `{"reset_bank":{"total":3}}`, `{"manual_reset_remaining":null}`, `{"manual_reset_remaining":-1}`, `{"manual_reset_remaining":1.5}`, `{"manual_reset_remaining":"3"}`} {
+		if parseManualResetRemaining([]byte(body)) != nil {
+			t.Fatalf("must remain unknown: %s", body)
+		}
+	}
+}
+
+func TestRefreshCompletionState(t *testing.T) {
+	e := newEngine()
+	e.refreshQuota(true) // No native host in a unit test: fails quickly, but completes.
+	s := e.snapshot()
+	if s.QuotaRefreshing || s.QuotaRefreshFinishedAt == "" || s.QuotaError == "" {
+		t.Fatalf("refresh state: %+v", s)
+	}
+}
+
+func TestRecentAccountIdentityAndResetOmission(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.aliases["index"] = "account"
+	e.names["account"] = "alice@example.com"
+	e.quotas["account"] = AccountQuota{AuthID: "account", Provider: "claude"}
+	e.capture([]byte(`{"AuthIndex":"index","Provider":"claude","Model":"claude-model","Detail":{"TotalTokens":1000}}`))
+	s := e.snapshot()
+	if len(s.Recent) != 1 || s.Recent[0].AuthID != "account" || s.Recent[0].Model != "claude-model" || s.Credentials[0].Name != "alice@example.com" {
+		t.Fatalf("request account/model: %+v", s)
+	}
+	b, _ := json.Marshal(s.Quotas[0])
+	if strings.Contains(string(b), "manual_reset_remaining") {
+		t.Fatal("missing reset count should be omitted")
+	}
+	zero := int64(0)
+	q := e.quotas["account"]
+	q.ManualResetRemaining = &zero
+	e.quotas["account"] = q
+	b, _ = json.Marshal(e.snapshot().Quotas[0])
+	if !strings.Contains(string(b), `"manual_reset_remaining":0`) {
+		t.Fatal("explicit zero count must be preserved")
 	}
 }

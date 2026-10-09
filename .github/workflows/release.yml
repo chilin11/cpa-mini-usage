@@ -17,6 +17,8 @@ jobs:
           cache: false
       - name: Test
         run: go test ./...
+      - name: Test dashboard token formatting
+        run: node --test testdata/dashboard_test.cjs
       - name: Build Linux amd64
         shell: bash
         run: |

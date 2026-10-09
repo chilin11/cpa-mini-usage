@@ -2,14 +2,14 @@
 
 A lightweight native CPA v8 plugin (Linux amd64) with **exactly two tabs**:
 
-1. **Quotas:** Claude + Codex five-hour / seven-day utilization, resets, observed tokens/cost, and percentage-extrapolated full-window totals.
-2. **Credentials:** per-credential requests, input/output/cache tokens, model breakdown and estimated API-equivalent USD cost.
+1. **Quotas:** separate Claude / Codex sections showing five-hour / seven-day remaining percentages, resets, and estimated remaining tokens/cost.
+2. **Requests:** recent requests with explicit model names, per-credential/model usage, and estimated API-equivalent USD cost. Tokens use `k / m / b`; hover for full counts.
 
 No React, no Node runtime, no separate web service, no inference probes, no database process.
 
 ## Install
 
-Use the bundled Linux amd64 binary (`dist/cpa-mini-usage.so`) or build from source:
+Download the latest Linux amd64 ZIP from [GitHub Releases](https://github.com/chilin11/cpa-mini-usage/releases), extract `cpa-mini-usage.so`, or build from source. The legacy binaries under `dist/` are v0.1.0 and should not be used:
 
 ```sh
 CGO_ENABLED=1 go build -buildmode=c-shared -o cpa-mini-usage.so .
@@ -31,7 +31,7 @@ Restart CPA, then open **Mini Usage** in the plugin menu or:
 
 `http://YOUR_CPA_HOST:8317/v0/resource/plugins/cpa-mini-usage/dashboard`
 
-Use the same **management key** as the CPA management UI, if the plugin page cannot find it. The key is held only in page memory and is never sent anywhere other than same-origin CPA Management API.
+The dashboard automatically reuses the saved login from the **same-origin CPA management UI** (including its encoded `cli-proxy-auth` storage). Log in there with “Remember password” selected. The plugin has no address/key inputs, never persists a key, and sends credentials only to the same-origin CPA Management API. Cross-origin management pages and memory-only logins cannot be reused without a host credential bridge.
 
 ### Data and persistence
 
@@ -44,7 +44,7 @@ Data is stored under `data/cpa-mini-usage/` (create/mount as persistent in Docke
 - Estimated maximum tokens / dollars = **CPA-observed usage within the active window / provider reported utilized fraction**. This is an extrapolation, **not an official quota cap**. Values will be inaccurate if collection began mid-window, quota was spent outside this CPA, traffic mixes different token/model types, or the upstream uses non-token factors.
 - Prices are automatically refreshed from `https://models.dev/api.json` every 6 hours. Cache read token cost is separated from uncached input; reasoning tokens are **not** double-charged when already included in output tokens. Unknown model prices are shown as unknown (not $0).
 - Historical costs are revalued using the latest known prices, and represent **API-equivalent cost**, not an actual Claude Pro/Max or ChatGPT subscription charge.
-- Quota is polled no more frequently than every 5 minutes by default. The plugin performs **read-only GET** requests to the known upstream quota endpoints using CPA OAuth credentials; no inference calls are made.
+- Quota is automatically checked every 60 seconds, with at most four account reads in parallel. Snapshot display refreshes every 10 seconds; manual refresh polls completion every second. Upstream latency and rate limiting still apply. Only read-only GET requests to known quota endpoints are made.
 - Supports Claude OAuth and Codex OAuth; API keys do not expose subscription quota windows.
 - If `usage.handle` is not dispatched by your CPA build, the quota still works but per-request stats cannot be collected. Upgrade CPA to a build with the usage callback fix.
 
@@ -54,7 +54,7 @@ Resource HTML is public by design; actual usage/quota data comes only from **man
 
 ### Limitations
 
-This first release is tested locally with a fake CPA host callback harness, not against a live CPA with your accounts. Authentication file formats and upstream quota schemas may change. If it shows `No quota data`, inspect CPA logs for host callback errors.
+Registration and dashboard/API access are tested against the real CPA 8.0.22 Linux amd64 release in CI, but OAuth reads are not tested with your live accounts. Provider schemas may change. Actual account emails are shown only in authenticated data responses. Manual-reset remaining counts appear only when an explicit supported field is returned; missing counts are omitted, never inferred from timestamps or credits.
 
 ### v0.1.1 registration fix (CPA 8.0.22)
 
@@ -63,6 +63,10 @@ Version 0.1.0 used an incorrect `github_repository` registration field. CPA requ
 Refresh the plugin store source, upgrade to v0.1.1, enable the plugin, then restart CPA.
 CI now tests registration, dashboard access, and management API authentication using
 the real CPA 8.0.22 Linux amd64 release before publishing a new version.
+
+### v0.1.2
+
+Compact token counts, remaining quota, provider sections, actual account names without `.json`, model columns on recent requests, faster refresh feedback, and saved CPA login reuse. Manual-reset counts are hidden when unavailable.
 
 ## Optional CPA Plugin Store source
 

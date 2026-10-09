@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,7 +30,14 @@ func (e *Engine) refreshQuota(force bool) {
 		return
 	}
 	e.lastRefresh = time.Now()
+	e.quotaRefreshing = true
 	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.quotaRefreshing = false
+		e.quotaRefreshFinished = time.Now().UTC()
+		e.mu.Unlock()
+	}()
 	raw, err := hostRPC("host.auth.list", map[string]any{})
 	if err != nil {
 		e.quotaFailure("CPA credential callback is unavailable")
@@ -42,81 +51,108 @@ func (e *Engine) refreshQuota(force bool) {
 	e.mu.Lock()
 	e.quotaError = ""
 	e.mu.Unlock()
-	successful := 0
-	attempted := 0
+	jobs := make(chan AuthEntry, len(auths))
 	for _, entry := range auths {
-		select {
-		case <-e.done:
-			return
-		default:
-		}
-		if entry.Provider != "claude" && entry.Provider != "codex" {
-			continue
-		}
-		if attempted >= 40 {
-			break
-		}
-		attempted++
-		authData, err := hostRPC("host.auth.get", map[string]string{"auth_index": entry.Index})
-		if err != nil || authData == nil {
-			authData, err = hostRPC("host.auth.get", map[string]string{"AuthIndex": entry.Index})
-		}
-		if err != nil {
-			e.recordQuotaError(entry, "Credential could not be read")
-			continue
-		}
-		creds := findAuthJSON(authData)
-		token := findString(creds, 0, "access_token", "accessToken")
-		if token == "" {
-			e.recordQuotaError(entry, "OAuth access token unavailable")
-			continue
-		}
-		if len(token) > 10000 {
-			e.recordQuotaError(entry, "Invalid OAuth token")
-			continue
-		}
-		url := "https://api.anthropic.com/api/oauth/usage"
-		headers := http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "User-Agent": []string{"claude-code/2.1.0"}, "Anthropic-Beta": []string{"oauth-2025-04-20"}}
-		if entry.Provider == "codex" {
-			url = "https://chatgpt.com/backend-api/wham/usage"
-			headers.Set("User-Agent", "codex-cli/0.1")
-			id := findString(creds, 0, "chatgpt_account_id", "chatgptAccountId", "account_id")
-			if id == "" {
-				id = extractJWTAccountID(findString(creds, 0, "id_token", "idToken"))
+		if entry.Provider == "claude" || entry.Provider == "codex" {
+			if len(jobs) == 40 {
+				break
 			}
-			if id != "" {
-				headers.Set("Chatgpt-Account-Id", id)
+			jobs <- entry
+		}
+	}
+	attempted := len(jobs)
+	close(jobs)
+	results := make(chan bool, attempted)
+	var workers sync.WaitGroup
+	for i := 0; i < 4 && i < attempted; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for entry := range jobs {
+				select {
+				case <-e.done:
+					return
+				default:
+				}
+				results <- e.refreshAccountQuota(entry)
 			}
+		}()
+	}
+	workers.Wait()
+	close(results)
+	successful := 0
+	for ok := range results {
+		if ok {
+			successful++
 		}
-		body, err := safeProviderGET(url, headers)
-		if err != nil {
-			e.recordQuotaError(entry, "Quota endpoint unavailable")
-			continue
-		}
-		var five, week *QuotaWindow
-		if entry.Provider == "claude" {
-			five, week, err = parseClaudeQuota(body)
-		} else {
-			five, week, err = parseCodexQuota(body)
-		}
-		if err != nil {
-			e.recordQuotaError(entry, "Quota response was not recognized")
-			continue
-		}
-		e.mu.Lock()
-		e.quotaUpdated = time.Now().UTC()
-		e.names[entry.ID] = entry.Name
-		e.names[entry.Index] = entry.Name
-		e.aliases[entry.Index] = entry.ID
-		e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339)}
-		e.mu.Unlock()
-		successful++
 	}
 	if attempted == 0 {
 		e.quotaFailure("No Claude or Codex OAuth credentials were found")
 	} else if successful == 0 {
 		e.quotaFailure("All OAuth quota reads failed; check the individual account messages")
 	}
+}
+
+func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
+	e.mu.Lock()
+	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
+	e.aliases[entry.Index] = entry.ID
+	e.mu.Unlock()
+	authData, err := hostRPC("host.auth.get", map[string]string{"auth_index": entry.Index})
+	if err != nil || authData == nil {
+		authData, err = hostRPC("host.auth.get", map[string]string{"AuthIndex": entry.Index})
+	}
+	if err != nil {
+		e.recordQuotaError(entry, "Credential could not be read")
+		return false
+	}
+	creds := findAuthJSON(authData)
+	if email := findString(creds, 0, "email", "Email"); strings.Contains(email, "@") {
+		entry.Name = accountDisplayName(email)
+	}
+	token := findString(creds, 0, "access_token", "accessToken")
+	if token == "" {
+		e.recordQuotaError(entry, "OAuth access token unavailable")
+		return false
+	}
+	if len(token) > 10000 {
+		e.recordQuotaError(entry, "Invalid OAuth token")
+		return false
+	}
+	url := "https://api.anthropic.com/api/oauth/usage"
+	headers := http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "User-Agent": []string{"claude-code/2.1.0"}, "Anthropic-Beta": []string{"oauth-2025-04-20"}}
+	if entry.Provider == "codex" {
+		url = "https://chatgpt.com/backend-api/wham/usage"
+		headers.Set("User-Agent", "codex-cli/0.1")
+		id := findString(creds, 0, "chatgpt_account_id", "chatgptAccountId", "account_id")
+		if id == "" {
+			id = extractJWTAccountID(findString(creds, 0, "id_token", "idToken"))
+		}
+		if id != "" {
+			headers.Set("Chatgpt-Account-Id", id)
+		}
+	}
+	body, err := safeProviderGET(url, headers)
+	if err != nil {
+		e.recordQuotaError(entry, "Quota endpoint unavailable")
+		return false
+	}
+	var five, week *QuotaWindow
+	if entry.Provider == "claude" {
+		five, week, err = parseClaudeQuota(body)
+	} else {
+		five, week, err = parseCodexQuota(body)
+	}
+	if err != nil {
+		e.recordQuotaError(entry, "Quota response was not recognized")
+		return false
+	}
+	e.mu.Lock()
+	e.quotaUpdated = time.Now().UTC()
+	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339), ManualResetRemaining: parseManualResetRemaining(body)}
+	e.mu.Unlock()
+	return true
 }
 func (e *Engine) quotaFailure(message string) { e.mu.Lock(); e.quotaError = message; e.mu.Unlock() }
 func (e *Engine) recordQuotaError(a AuthEntry, message string) {
@@ -151,7 +187,10 @@ func parseAuthList(v any) []AuthEntry {
 			continue
 		}
 		provider := normalizeProvider(str(r, "provider", "Provider", "type", "Type", "auth_type", "AuthType"))
-		name := str(r, "name", "Name", "file_name", "fileName", "filename", "Filename", "email")
+		name := str(r, "email", "Email")
+		if name == "" {
+			name = str(r, "name", "Name", "file_name", "fileName", "filename", "Filename")
+		}
 		if provider == "" {
 			provider = normalizeProvider(name)
 		}
@@ -166,18 +205,18 @@ func parseAuthList(v any) []AuthEntry {
 		if name == "" {
 			name = shortID(id)
 		}
-		name = maskCredential(name)
+		name = accountDisplayName(name)
 		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider})
 	}
 	return entries
 }
-func maskCredential(s string) string {
-	at := strings.IndexByte(s, '@')
-	if at > 1 && at < len(s)-1 {
-		s = s[:1] + "***" + s[at:]
+func accountDisplayName(s string) string {
+	s = strings.TrimSpace(s)
+	if slash := strings.LastIndexAny(s, "/\\"); slash >= 0 {
+		s = s[slash+1:]
 	}
-	if len(s) > 100 {
-		s = s[:100]
+	if strings.HasSuffix(strings.ToLower(s), ".json") {
+		s = s[:len(s)-5]
 	}
 	return s
 }
@@ -381,4 +420,36 @@ func parseCodexWindow(v any) *QuotaWindow {
 		}
 	}
 	return &QuotaWindow{Used: util, ResetAt: reset, Seconds: seconds}
+}
+
+// Only explicit remaining-count fields qualify. No inference from credits,
+// reset timestamps, totals, or used counts; unsupported responses stay unknown.
+func parseManualResetRemaining(body []byte) *int64 {
+	var response map[string]any
+	if json.Unmarshal(body, &response) != nil {
+		return nil
+	}
+	count := func(value any) *int64 {
+		n, ok := value.(float64)
+		if !ok || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > 9007199254740991 || math.Trunc(n) != n {
+			return nil
+		}
+		v := int64(n)
+		return &v
+	}
+	for _, key := range []string{"manual_reset_remaining", "manual_resets_remaining", "remaining_manual_resets"} {
+		if value, present := response[key]; present {
+			return count(value)
+		}
+	}
+	for _, key := range []string{"manual_reset", "manual_resets", "reset_bank"} {
+		if bank, ok := response[key].(map[string]any); ok {
+			for _, field := range []string{"remaining", "remaining_count", "remaining_resets"} {
+				if value, present := bank[field]; present {
+					return count(value)
+				}
+			}
+		}
+	}
+	return nil
 }

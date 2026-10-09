@@ -2,161 +2,314 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CPA Mini Usage</title>
+<meta name="color-scheme" content="light dark">
+<title>用量与额度 · CPA Mini Usage</title>
 <style>
-:root{color-scheme:light dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;--bg:#f7f8fa;--panel:#fff;--ink:#181d25;--muted:#737c88;--line:#e8ebef;--accent:#4069dc;--track:#e9ecf0;--bad:#bb5a39}
-@media(prefers-color-scheme:dark){:root{--bg:#11151a;--panel:#1b2027;--ink:#edf1f6;--muted:#9da7b3;--line:#2d3540;--accent:#92aaf8;--track:#333d48;--bad:#e99579}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-main{max-width:1040px;margin:0 auto;padding:34px 22px 66px}
-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
-h1{font-size:24px;letter-spacing:-.8px;margin:0 0 6px;font-weight:710}p{margin:0} .muted{color:var(--muted)}small{font-size:12px}
-.statusbar{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted)}
-button,input,select{font:inherit}button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:9px 12px;cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button.primary{background:var(--accent);border-color:var(--accent);color:white}
-button:disabled{opacity:.55;cursor:wait}.dot{width:7px;height:7px;border-radius:100%;background:#43ac79;display:inline-block}.dot.off{background:var(--bad)}
-.tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);margin:30px 0 21px}.tabs button{background:transparent;border:0;border-radius:0;color:var(--muted);padding:12px 18px;margin-bottom:-1px;border-bottom:2px solid transparent}.tabs button[aria-selected=true]{color:var(--ink);font-weight:650;border-color:var(--accent)}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:9px 10px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
-.account{font-size:15px;font-weight:650;overflow-wrap:anywhere}.provider{border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-size:11px;color:var(--muted);text-transform:capitalize;font-weight:500}
-.accounttop{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
-.window{margin-top:14px}.windowhead{display:flex;justify-content:space-between;gap:10px;font-weight:580;align-items:baseline}.percent{font-size:19px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
-.track{height:7px;border-radius:10px;background:var(--track);overflow:hidden;margin:10px 0 11px}.fill{height:100%;background:var(--accent);border-radius:10px}
-.windowstats{display:grid;grid-template-columns:1fr 1fr;gap:9px;color:var(--muted);font-size:12px;line-height:1.6}
-.windowstats strong{display:block;color:var(--ink);font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
-.reset{color:var(--muted);font-size:11px;margin-top:8px}.hint{font-size:11px;color:var(--muted);margin-top:12px;line-height:1.7}
-.empty{background:var(--panel);border:1px dashed var(--line);border-radius:13px;padding:42px 24px;text-align:center;color:var(--muted)}
-.tablewrap{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th{text-align:left;font-weight:550;color:var(--muted);font-size:12px;padding:15px 17px;background:var(--panel)}td{padding:15px 17px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}tbody tr.clickable{cursor:pointer}tbody tr.clickable:hover{background:var(--bg)}td.num,th.num{text-align:right}.tabnum{font-variant-numeric:tabular-nums}.details{padding:14px 22px 18px;border-top:1px solid var(--line);background:var(--bg)}.details h3{font-size:12px;color:var(--muted);font-weight:550;margin:3px 0 13px}.modelrow{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);font-size:12px}.modelrow:first-of-type{border:0}.modelrow span{overflow-wrap:anywhere}
-.foot{font-size:12px;line-height:1.75;color:var(--muted);margin-top:24px}.gate{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:16px;border:1px solid var(--line);background:var(--panel);border-radius:12px;margin-top:25px}.gate input{width:250px;max-width:100%}
-.alert{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--bad);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin:14px 0}.hide{display:none!important}.ellipsis{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.results{font-size:12px;color:var(--muted)}
-@media(max-width:700px){main{padding:24px 14px}.grid{grid-template-columns:1fr}.panel{padding:16px}.tablewrap{overflow-x:auto}.toolbar{justify-content:flex-start}.tabs{margin-top:20px}h1{font-size:21px}.windowstats{gap:5px}}
+/* Keep the native blue / neutral system. 4px rhythm; official quota first, estimates second. */
+:root{color-scheme:light dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;--bg:#f5f7fb;--panel:#fff;--subtle:#f8f9fc;--ink:#202838;--muted:#667287;--line:#e4e9f1;--accent:#4069dc;--accent-soft:#edf2ff;--track:#e9edf5;--good:#25826b;--good-soft:#eaf6f1;--bad:#b44735;--bad-soft:#fff0eb;--warm:#aa6a38;--warm-soft:#fbf1e9;--radius:16px;--shadow:0 3px 14px #20283804}
+@media(prefers-color-scheme:dark){:root{--bg:#11161f;--panel:#1a2230;--subtle:#161d29;--ink:#ecf1fa;--muted:#a0aec2;--line:#2b3749;--accent:#94aeff;--accent-soft:#273754;--track:#303d51;--good:#80d3b8;--good-soft:#203c35;--bad:#ffa88f;--bad-soft:#422b2a;--warm:#e1b087;--warm-soft:#3b302b;--shadow:none}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}button,select{font:inherit}button,a,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer}button:disabled{cursor:wait;opacity:.55}a{color:var(--accent);text-underline-offset:4px}button:focus-visible,a:focus-visible,select:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid var(--accent);outline-offset:4px}button:active:not(:disabled){transform:translateY(1px)}h1,h2,h3,p{margin:0}h1{font-size:28px;letter-spacing:-.8px;font-weight:720;line-height:1.3}h2{font-size:17px;letter-spacing:-.3px;font-weight:650}h3{font-size:14px;font-weight:650}small{font-size:12px}.muted{color:var(--muted)}.hide,[hidden]{display:none!important}.tabnum{font-variant-numeric:tabular-nums}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;clip-path:inset(50%);white-space:nowrap;overflow:hidden}
+main{max-width:1280px;margin:0 auto;padding:36px 32px 32px}.masthead{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}.brandline{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.2px;margin-bottom:12px}.brandmark{display:flex;gap:3px;align-items:flex-end;background:var(--accent);width:24px;height:24px;border-radius:7px;padding:6px}.brandmark i{display:block;background:var(--panel);width:3px;border-radius:1px;height:6px}.brandmark i:nth-child(2){height:11px}.brandmark i:nth-child(3){height:8px}.version{font-size:10px;font-weight:500;color:var(--muted);border:1px solid var(--line);padding:1px 6px;border-radius:5px;letter-spacing:0}.subtitle{margin-top:8px;color:var(--muted);font-size:13px}.header-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px;padding-top:4px}.statusbar{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.dot{width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block;flex-shrink:0}.dot.off{background:var(--bad)}.dot.busy{background:var(--accent)}.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 12px;min-height:36px;font-size:12px;font-weight:550;box-shadow:var(--shadow);transition:border-color 120ms,background-color 120ms}.button:hover:not(:disabled){border-color:var(--accent);background:var(--accent-soft)}.button svg{width:14px;height:14px;flex-shrink:0}.session-note{font-size:11px;color:var(--muted)}
+.gate{margin-top:24px;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:24px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}.gate h2{font-size:14px;margin-bottom:4px}.gate p{color:var(--muted);font-size:12px;line-height:1.8;max-width:760px}.gate a{flex-shrink:0;font-size:12px}.alert{padding:12px 16px;border:1px solid var(--line);border-left:3px solid var(--bad);background:var(--panel);color:var(--bad);font-size:12px;border-radius:8px;margin-top:16px;overflow-wrap:anywhere}
+.tabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin-top:28px}.tabs button{display:flex;align-items:center;gap:8px;padding:14px 2px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--muted);font-weight:550;min-height:48px}.tabs button:hover{color:var(--accent)}.tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent)}.tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:21px;padding:1px 5px;border-radius:5px;font-size:10px;line-height:1.6;background:var(--track);color:var(--muted);font-variant-numeric:tabular-nums}.tabs button[aria-selected=true] .tab-count{background:var(--accent-soft);color:var(--accent)}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0 24px}.filter-control{display:flex;align-items:center;gap:10px;flex-shrink:0}.filter-control label{font-size:12px;color:var(--muted)}select{border:1px solid var(--line);border-radius:8px;padding:7px 30px 7px 10px;min-height:36px;background:var(--panel);color:var(--ink);font-size:12px;max-width:100%;cursor:pointer}.results{font-size:11px;color:var(--muted);text-align:right;line-height:1.8}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.section-head p{font-size:12px;color:var(--muted);margin-top:4px}.section-label{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:4px 8px;border-radius:6px;white-space:nowrap}.quota-overview{display:flex;gap:24px;margin-bottom:20px;color:var(--muted);font-size:12px;flex-wrap:wrap}.quota-overview strong{font-size:16px;color:var(--ink);font-weight:650;margin-right:5px;letter-spacing:-.3px}.quota-overview .warning{color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);animation:arrive 260ms cubic-bezier(.2,.8,.25,1.08) both;animation-delay:var(--enter-delay,0ms)}.accounttop{padding:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line)}.identity{display:flex;align-items:center;gap:10px;min-width:0}.account-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:15px;font-weight:650;flex-shrink:0}.account-icon.claude{background:var(--warm-soft);color:var(--warm)}.identity-text{min-width:0}.account{font-size:13px;font-weight:650;overflow-wrap:anywhere}.account-meta{font-size:10px;color:var(--muted);margin-top:2px}.provider{border:1px solid var(--line);border-radius:5px;padding:3px 7px;font-size:10px;color:var(--muted);font-weight:500;max-width:120px;overflow-wrap:anywhere}.windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.window{padding:20px;min-width:0}.window+.window{border-left:1px solid var(--line)}.windowhead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600}.windowhead .period{font-size:10px;font-weight:500;color:var(--muted)}.quota-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin-top:12px}.percent{font-size:38px;letter-spacing:-1.8px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}.percent-unit{font-size:18px;letter-spacing:-.5px;margin-left:2px}.remaining-label{font-size:11px;color:var(--muted)}.low .percent{color:var(--bad)}.track{height:5px;border-radius:5px;background:var(--track);margin:12px 0}.fill{height:100%;background:var(--accent);border-radius:5px;transition:width 240ms cubic-bezier(.2,.8,.2,1)}.low .fill{background:var(--bad)}.unknown .track{background:repeating-linear-gradient(135deg,var(--track),var(--track) 4px,var(--subtle) 4px,var(--subtle) 8px)}.unknown .percent{color:var(--muted)}.reset{min-height:32px;color:var(--muted);font-size:10px;line-height:1.6}.windowstats{background:var(--subtle);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px}.estimate-label{font-size:10px;color:var(--muted)}.estimate-value{font-size:18px;letter-spacing:-.4px;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin:3px 0}.estimate-value .unit{font-size:10px;letter-spacing:0;font-weight:450;color:var(--muted);margin-left:4px}.estimate-cost{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}.window-total{font-size:10px;color:var(--muted);line-height:1.8;margin-top:9px;overflow-wrap:anywhere}.hint{font-size:10px;color:var(--warm);margin-top:7px;line-height:1.7}.account-error{margin:12px 20px 0;padding:8px 10px;background:var(--bad-soft);color:var(--bad);border-radius:7px;font-size:11px;overflow-wrap:anywhere}.empty{grid-column:1/-1;padding:44px 24px;text-align:center;background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);color:var(--muted)}.empty-symbol{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:10px;color:var(--accent);margin:0 auto 12px;background:var(--subtle);font-size:18px}.empty strong{display:block;color:var(--ink);font-size:14px;font-weight:600}.empty p{font-size:12px;max-width:500px;margin:6px auto 0;line-height:1.8}.method-note{display:flex;gap:12px;margin-top:20px;padding:16px 20px;background:var(--accent-soft);border-radius:10px;font-size:11px;color:var(--muted);line-height:1.9}.note-icon{color:var(--accent);font-weight:650;font-size:14px}.method-note strong{color:var(--ink);font-weight:550}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:28px;padding:20px 0}.summary-item{padding:0 24px;min-width:0}.summary-item+.summary-item{border-left:1px solid var(--line)}.summary-label{font-size:11px;color:var(--muted);margin-bottom:5px}.summary-value{font-size:25px;line-height:1.3;font-weight:650;letter-spacing:-.7px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.summary-note{font-size:10px;color:var(--muted);margin-top:5px}.request-section+.request-section{margin-top:28px}.tablewrap{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:var(--panel);box-shadow:var(--shadow);scrollbar-color:var(--line) transparent}.tablewrap .empty{border:0;border-radius:12px}table{border-collapse:collapse;width:100%;table-layout:fixed;min-width:990px;font-size:12px}caption{text-align:left}th{font-size:10px;color:var(--muted);font-weight:550;text-align:left;padding:12px 14px;background:var(--subtle);white-space:nowrap}td{padding:14px;border-top:1px solid var(--line);vertical-align:middle;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}tbody tr:hover{background:var(--subtle)}td.num,th.num{text-align:right;white-space:nowrap}.timestamp{font-size:11px;white-space:nowrap}.cell-secondary{font-size:10px;color:var(--muted);display:block;margin-top:3px}.model{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;overflow-wrap:anywhere}.model+.model{margin-top:5px}.request-state{display:inline-flex;align-items:center;gap:5px;border-radius:5px;padding:3px 6px;font-size:10px;color:var(--good);background:var(--good-soft);white-space:nowrap}.request-state.failed{color:var(--bad);background:var(--bad-soft)}.cache-pair{font-size:11px}.cache-pair .slash{color:var(--muted);padding:0 3px}.table-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:11px;color:var(--muted)}.pagination{display:flex;align-items:center;gap:10px}.pagination .button{min-width:32px;min-height:32px;padding:4px 10px;font-size:15px}.pagination .button:disabled{cursor:default}.credential-button{border:0;padding:0;background:transparent;color:var(--ink);text-align:left;font:inherit;font-weight:550;display:flex;align-items:baseline;gap:7px;width:100%}.credential-button:hover{color:var(--accent)}.chevron{font-size:11px;color:var(--muted);flex-shrink:0}.credential-name{overflow-wrap:anywhere;min-width:0}.details-cell{padding:0 20px!important;background:var(--subtle)}.details{padding:16px 0}.details h3{font-size:11px;color:var(--muted);margin-bottom:8px}.modelrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;padding:8px 0;font-size:11px;border-top:1px solid var(--line)}.modelrow span{overflow-wrap:anywhere}.failure-count{color:var(--bad)}.foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:28px;padding-top:16px;border-top:1px solid var(--line)}
+@keyframes arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@media(min-width:1500px){main{padding-top:44px}}
+@media(max-width:1000px){main{padding:28px 24px}.window{padding:16px}.accounttop{padding:16px}.percent{font-size:34px}.summary-item{padding:0 16px}.grid{gap:12px}}
+@media(max-width:760px){main{padding:24px 16px}.grid{grid-template-columns:minmax(0,1fr)}.masthead{gap:16px}h1{font-size:24px}.subtitle{font-size:12px;max-width:235px}.session-note{display:none}.header-actions{gap:14px}.statusbar{font-size:10px}.tabs{margin-top:20px;gap:24px}.toolbar{align-items:flex-start;gap:12px;margin:16px 0 24px}.results{max-width:160px}.filter-control{gap:8px}.filter-control label{display:none}.section-head{gap:8px}.section-head p{font-size:11px}.section-label{font-size:10px}.quota-overview{gap:16px;font-size:11px}.window{padding:20px}.accounttop{padding:16px 20px}.percent{font-size:38px}.gate{padding:16px;display:block}.gate a{display:inline-block;margin-top:12px}.summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:16px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.summary-value{font-size:24px}.summary-note{min-height:15px}.method-note{padding:12px 16px}.table-foot{align-items:flex-start}.table-foot>span{max-width:210px}.foot{margin-top:24px}.brandline{font-size:11px}}
+@media(max-width:380px){.window{padding:16px 12px}.percent{font-size:34px}.brandline{gap:6px}.header-actions .button{padding:8px}.version{font-size:9px}.results{max-width:130px}.section-label{display:none}.table-foot{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}button:active:not(:disabled){transform:none}}
+.provider-section{grid-column:1/-1}.provider-section+.provider-section{margin-top:12px}.provider-section>.section-head{margin-bottom:12px}.account-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
 <main>
-<header>
-  <div><h1>CPA Mini Usage <span class="provider">v0.1</span></h1><p class="muted">Claude + Codex / &#39069;&#24230;&#19982;&#29992;&#37327;&#31616;&#25253;</p></div>
-  <div class="statusbar"><span><span class="dot off" id="dot"></span> <span id="status">Not connected</span></span><button id="refresh" type="button">&#21047;&#26032;&#39069;&#24230;</button></div>
+<header class="masthead">
+  <div>
+    <div class="brandline"><span class="brandmark" aria-hidden="true"><i></i><i></i><i></i></span><span>CPA Mini Usage</span><span class="version">v0.1.2</span></div>
+    <h1>用量与额度</h1>
+  </div>
+  <div class="header-actions">
+    <div class="statusbar" role="status"><span class="dot off" id="dot" aria-hidden="true"></span><span id="status">正在读取登录状态</span></div>
+    <button class="button" id="refresh" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .2 5M16 3v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="refresh-label">刷新额度</span></button>
+  </div>
 </header>
-<section id="gate" class="gate"><label for="key">CPA Management Key</label><input id="key" type="password" autocomplete="off" placeholder="Enter management key"><button id="connect" type="button" class="primary">Connect</button><small class="muted">Session memory only; never stored.</small></section>
-<div id="alert" class="alert hide" role="status"></div>
-<div class="tabs" role="tablist" aria-label="Dashboard tabs">
-  <button id="tab-quota" role="tab" aria-controls="page-quota" aria-selected="true">&#39069;&#24230; (5h / 7d)</button>
-  <button id="tab-requests" role="tab" aria-controls="page-requests" aria-selected="false">&#20973;&#35777;&#35831;&#27714;</button>
+<section id="gate" class="gate hide" aria-labelledby="gate-title"><div><h2 id="gate-title">需要 CPA 登录</h2><p>请在同源 CPA 管理页面登录并勾选“记住密码”。插件不支持复用跨域或未保存的登录。</p></div><a href="/management.html" target="_top">前往 CPA 登录 ↗</a></section>
+<div id="alert" class="alert hide" role="status" aria-live="polite"></div>
+<div class="tabs" role="tablist" aria-label="用量视图">
+  <button id="tab-quota" type="button" role="tab" aria-controls="page-quota" aria-selected="true" tabindex="0">剩余额度 <span class="tab-count" id="quota-count">—</span></button>
+  <button id="tab-requests" type="button" role="tab" aria-controls="page-requests" aria-selected="false" tabindex="-1">请求明细 <span class="tab-count" id="request-count">—</span></button>
 </div>
-<div class="toolbar"><select id="provider" aria-label="Provider filter"><option value="">All providers</option><option value="claude">Claude</option><option value="codex">Codex</option></select><span id="updated" class="results"></span></div>
-<section id="page-quota" role="tabpanel" aria-labelledby="tab-quota"><div id="quota-cards" class="grid"><div class="empty">Enter your management key to load quotas.</div></div></section>
-<section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" class="hide"><div id="credential-table" class="tablewrap"><div class="empty">No data yet.</div></div></section>
-<p class="foot" id="footer">Provider percentages are official OAuth quota utilization. Estimated full-window tokens and USD = CPA-observed usage divided by utilized fraction. These are estimates, not fixed caps or subscription charges. Data refreshes every 30 seconds; provider quota checks are cached for 5 minutes.</p>
+<div class="toolbar"><div class="filter-control"><label for="provider">服务商</label><select id="provider" aria-label="筛选服务商"><option value="">全部服务商</option><option value="claude">Claude</option><option value="codex">Codex</option></select></div><span id="updated" class="results" aria-live="polite">等待同步</span></div>
+<section id="page-quota" role="tabpanel" aria-labelledby="tab-quota" tabindex="0">
+  <div class="section-head"><h2>剩余额度</h2><span class="section-label">OAuth</span></div>
+  <div id="quota-overview" class="quota-overview"></div>
+  <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
+  <details class="method-note"><summary>估算说明</summary><p>剩余比例来自官方额度；token / USD 为观测用量外推，不是官方额度上限。历史不足或价格缺失时估算不可用。</p></details>
+</section>
+<section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" class="hide">
+  <div id="request-summary" class="summary" aria-label="近 7 天观测统计"></div>
+  <section class="request-section" aria-labelledby="recent-title">
+    <div class="section-head"><h2 id="recent-title">近期请求</h2><span class="section-label">最多 60 条</span></div>
+    <div id="recent-table" class="tablewrap" role="region" aria-label="近期请求表，窄屏可横向滚动" tabindex="0"></div>
+    <div class="table-foot"><span id="recent-caption">等待请求快照</span><nav class="pagination" aria-label="近期请求分页"><button class="button" type="button" id="recent-prev" aria-label="上一页" disabled>‹</button><span id="recent-page" class="tabnum">0 / 0</span><button class="button" type="button" id="recent-next" aria-label="下一页" disabled>›</button></nav></div>
+  </section>
+  <section class="request-section" aria-labelledby="credentials-title">
+    <div class="section-head"><h2 id="credentials-title">凭证用量 · 近 7 天</h2><span id="credential-count" class="section-label">— 个凭证</span></div>
+    <div id="credential-table" class="tablewrap" role="region" aria-label="凭证用量表，窄屏可横向滚动" tabindex="0"><div class="empty">等待同步</div></div>
+  </section>
+</section>
+<footer class="foot" id="footer"><span>额度自动检查 60 秒 · 快照同步 10 秒</span></footer>
 </main>
 <script>
 (() => {
 'use strict';
 let key = '', data = null, tab = 'quota', filter = '', expanded = '';
+let loading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
+const pageSize = 10;
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
 const fmt = n => n == null || !Number.isFinite(+n) ? '\u2014' : new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(n);
+const tokenUnits = [{scale:1,suffix:''},{scale:1e3,suffix:'k'},{scale:1e6,suffix:'m'},{scale:1e9,suffix:'b'}];
+function tokens(value){
+  if(value==null || !['number','string'].includes(typeof value) || (typeof value==='string' && !value.trim()))return '\u2014';
+  const n=Number(value);if(!Number.isFinite(n) || n<0)return '\u2014';
+  let unit=0;while(unit<tokenUnits.length-1 && n>=tokenUnits[unit+1].scale)unit++;
+  const precision=()=>unit===0?1:100;
+  let rounded=Math.round(n/tokenUnits[unit].scale*precision())/precision();
+  if(rounded>=1000 && unit<tokenUnits.length-1){unit++;rounded=Math.round(n/tokenUnits[unit].scale*precision())/precision();}
+  return new Intl.NumberFormat('en-US',{maximumFractionDigits:unit===0?0:2}).format(rounded)+tokenUnits[unit].suffix;
+}
 const money = n => n == null || !Number.isFinite(+n) ? '\u2014' : '$'+Number(n).toFixed(n<1?3:2);
-const when = s => { if(!s) return '\u2014'; const d = new Date(s);return Number.isFinite(d.getTime())?d.toLocaleString():s; };
+const when = s => {if(!s)return '待更新';const d=new Date(s);return Number.isFinite(d.getTime())?d.toLocaleString('zh-CN',{hour12:false}):'未知时间';};
+const clock = s => {if(!s)return '待更新';const d=new Date(s);return Number.isFinite(d.getTime())?d.toLocaleTimeString('zh-CN',{hour12:false}):'未知时间';};
 const el = (tag,cls,text) => {const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
 const append = (target,...nodes) => {nodes.forEach(n=>target.append(n));return target;};
-const empty = s => append(el('div','empty',s));
 const add = (t,tag,cls,text) => {const e=el(tag,cls,text);t.append(e);return e;};
+const addTokens = (target,tag,cls,value,tail=' tokens') => {const e=add(target,tag,cls,tokens(value)+tail);e.title=fmt(value)+' tokens';return e;};
+const list = value => Array.isArray(value)?value:[];
 const active = d => !filter || d.provider===filter;
+const providerName = p => ({claude:'Claude',codex:'Codex'}[p]||p||'未知服务商');
+const modelName = m => typeof m==='string' && m.trim()?m:'未知模型';
+const credentialName = s => s?.name||s?.auth_id||'未知凭证';
+function remainingPercent(win){
+  const value=win?.used_percent;
+  if(value==null || (typeof value==='string' && !value.trim()) || !['number','string'].includes(typeof value))return null;
+  const used=Number(value);return Number.isFinite(used)?100-Math.max(0,Math.min(100,used)):null;
+}
+function remainingEstimate(total,percent){
+  if(total==null || percent==null || !['number','string'].includes(typeof total) || (typeof total==='string' && !total.trim()))return null;
+  if(!Number.isFinite(Number(total)) || Number(total)<0 || !Number.isFinite(Number(percent)))return null;
+  return Number(total)*(Math.max(0,Math.min(100,Number(percent)))/100);
+}
+function empty(title,description){
+  const box=el('div','empty');const icon=add(box,'span','empty-symbol','—');icon.setAttribute('aria-hidden','true');
+  add(box,'strong','',title);if(description)add(box,'p','',description);return box;
+}
+function noData(){
+  if(loading)return empty('正在同步用量…','正在从当前 CPA 实例读取快照，请稍候。');
+  if(phase==='error')return empty('暂时无法读取数据','为避免误读，已清除旧快照。请检查连接后点击右上角重试。');
+  return empty('需要 CPA 登录','请在同源 CPA 管理页面登录并保存登录状态。');
+}
 function setAlert(msg){$('alert').textContent=msg||'';$('alert').classList.toggle('hide',!msg);}
+function readCPAStorage(storage,name){
+  try {
+    let raw=storage.getItem(name);if(!raw)return null;
+    const encoded=raw.startsWith('enc::v1::');
+    if(encoded){
+      const mask=new TextEncoder().encode('cli-proxy-api-webui::secure-storage|'+location.host+'|'+navigator.userAgent);
+      const bytes=Uint8Array.from(atob(raw.slice(9)),c=>c.charCodeAt(0));
+      raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes.map((byte,i)=>byte^mask[i%mask.length]));
+    }
+    try{return JSON.parse(raw);}catch{return encoded||raw.startsWith('enc::')?null:raw;}
+  }catch{return null;}
+}
 function guessKey(){
-  for(const name of ['managementKey','management_key','cpa_management_key','cpa-management-key','managementSecret']) {
-    try {const v=localStorage.getItem(name);if(v&&v.length>5)return v;}catch(e){}
+  if(!/^https?:$/.test(location.protocol))return '';
+  for(const kind of ['localStorage','sessionStorage']){
+    let storage;try{storage=window[kind];}catch{continue;}if(!storage)continue;
+    const auth=readCPAStorage(storage,'cli-proxy-auth');const state=auth?.state||auth;
+    const legacyBase=readCPAStorage(storage,'apiBase')||readCPAStorage(storage,'apiUrl');
+    const base=state?.apiBase||legacyBase;
+    if(base){try{if(typeof base!=='string'||new URL(base,location.origin).origin!==location.origin)continue;}catch{continue;}}
+    const candidate=state?.managementKey||readCPAStorage(storage,'managementKey');
+    if(typeof candidate==='string' && candidate.trim())return candidate.trim();
   }
   return '';
 }
 async function api(path,method='GET') {
-  if(!key) throw Error('Enter your management key');
-  const res=await fetch(endpoint+path,{method,headers:{'Authorization':'Bearer '+key},cache:'no-store',credentials:'same-origin'});
-  if(res.status===401 || res.status===403)throw Error('Invalid management key or remote management disabled');
-  if(!res.ok)throw Error('CPA HTTP '+res.status);
+  if(!key)throw Error('请返回 CPA 管理页面登录，插件会自动复用同源保存的登录状态。');
+  const res=await fetch(endpoint+path,{method,headers:{'Authorization':'Bearer '+key},cache:'no-store',credentials:'same-origin',redirect:'error'});
+  if(res.status===401 || res.status===403){const err=Error('CPA 登录已失效或远程管理未启用，请返回 CPA 管理页面重新登录。');err.auth=true;throw err;}
+  if(!res.ok)throw Error('CPA 返回 HTTP '+res.status+'，请稍后重试。');
   return res.json();
 }
-async function load(){
-  if(!key) return;
+function syncControls(){
+  $('refresh').disabled=loading;$('refresh-label').textContent=loading?'正在同步…':phase==='error'?'重试连接':'刷新额度';
+  $('dot').classList.toggle('off',!data&&!loading);$('dot').classList.toggle('busy',loading);
+  $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading));
+}
+function clearSnapshot(needsLogin,message){
+  data=null;expanded='';recentPage=0;phase=needsLogin?'waiting':'error';
+  $('status').textContent=needsLogin?'等待 CPA 登录':'连接失败';$('gate').classList.toggle('hide',!needsLogin);
+  setAlert(message);render();
+}
+async function load(force=false){
+  const serial=++loadSerial, saved=guessKey();
+  if(key!==saved){data=null;expanded='';recentPage=0;}
+  key=saved;setAlert('');
+  if(!key){loading=false;clearSnapshot(true,'');syncControls();return;}
+  loading=true;phase='loading';$('gate').classList.add('hide');$('status').textContent=force?'正在请求额度检查':'正在同步快照';syncControls();
+  if(!data)render();
   try {
-    data=await api('data');
-    $('dot').classList.remove('off');$('status').textContent='Connected';
-    $('gate').classList.add('hide');
-    const issues=[data.storage_error,data.price_error,data.quota_error].filter(Boolean);
-    setAlert(issues.join(' \u00b7 '));
-    const q=data.quota_updated_at ? when(data.quota_updated_at) : 'not yet';
-    $('updated').textContent='Quota '+q+'  \u00b7  Prices '+(data.price_updated_at ? when(data.price_updated_at):'loading');
-    render();
+    let finishedBefore=data?.quota_refresh_finished_at;
+    if(force){const accepted=await api('refresh','POST');finishedBefore=accepted.quota_refresh_finished_at??finishedBefore;if(serial!==loadSerial)return;}
+    const deadline=Date.now()+120000;
+    let snapshot, waiting=false;
+    do {
+      snapshot=await api('data');
+      if(serial!==loadSerial)return;
+      if(guessKey()!==saved){await load();return;}
+      if(!snapshot || typeof snapshot!=='object' || Array.isArray(snapshot))throw Error('CPA 快照格式异常。');
+      data=snapshot;phase='ready';render();
+      waiting=force&&(snapshot.quota_refreshing||!snapshot.quota_refresh_finished_at||snapshot.quota_refresh_finished_at===finishedBefore);
+      if(!waiting)break;
+      $('status').textContent='正在刷新额度';
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      if(serial!==loadSerial)return;
+    }while(Date.now()<deadline);
+    const issues=[data.storage_error,data.price_error,data.quota_error,waiting?'额度接口响应较慢，稍后自动同步。':''].filter(Boolean);
+    $('status').textContent=data.quota_refreshing?'额度刷新中':issues.length?'部分数据异常':'已连接';setAlert(issues.join(' · '));
   } catch(err) {
-    $('dot').classList.add('off');$('status').textContent='Disconnected';
-    $('gate').classList.remove('hide');setAlert(err.message);
+    if(serial!==loadSerial)return;
+    loading=false;clearSnapshot(Boolean(err.auth),err.message||'无法连接 CPA，请检查网络后重试。');
+  } finally {
+    if(serial===loadSerial){loading=false;syncControls();}
   }
 }
-function addWindow(parent,title,win){
-  const section=add(parent,'div','window');
-  const h=add(section,'div','windowhead');
-  add(h,'span','',title);
-  if(!win){add(h,'span','muted','No quota data');return;}
-  add(h,'span','percent',Number(win.used_percent||0).toFixed(1)+'%');
-  const track=add(section,'div','track');const fill=add(track,'div','fill');fill.style.width=Math.max(0,Math.min(100,win.used_percent||0))+'%';
-  const stats=add(section,'div','windowstats');
-  const actual=add(stats,'div','');add(actual,'span','','Observed');add(actual,'strong','',fmt(win.observed_tokens)+' tokens / '+money(win.observed_cost));
-  const predicted=add(stats,'div','');add(predicted,'span','','Estimated full window');add(predicted,'strong','',fmt(win.estimated_total_tokens)+' tokens / '+money(win.estimated_total_cost));
-  add(section,'div','reset','Reset: '+when(win.reset_at));
-  if(win.partial_history)add(section,'div','hint','Partial history: estimate may be low / inaccurate.');
-  if(win.missing_price)add(section,'div','hint','Model pricing missing: USD estimate unavailable.');
+function addWindow(parent,title,period,win){
+  const remaining=remainingPercent(win);
+  const section=add(parent,'section','window'+(remaining==null?' unknown':remaining<20?' low':''));
+  const h=add(section,'div','windowhead');add(h,'h3','',title);add(h,'span','period',period);
+  const value=add(section,'div','quota-value');const percent=add(value,'span','percent',remaining==null?'—':remaining.toFixed(1));
+  if(remaining!=null)add(percent,'span','percent-unit','%');add(value,'span','remaining-label',remaining==null?'额度未知':'剩余');
+  const track=add(section,'div','track');track.setAttribute('role','meter');track.setAttribute('aria-label',title+'官方剩余额度');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
+  if(remaining!=null)track.setAttribute('aria-valuenow',String(remaining));track.setAttribute('aria-valuetext',remaining==null?'未知':remaining.toFixed(1)+'% 剩余');
+  const fill=add(track,'div','fill');fill.style.width=(remaining??0)+'%';
+  add(section,'div','reset',remaining==null?'尚无官方比例，无法估算余量':win.reset_at?'重置于 '+when(win.reset_at):'重置时间待更新');
+  const stats=add(section,'div','windowstats');add(stats,'div','estimate-label','估算剩余 · 非官方上限');
+  const available=remainingEstimate(win?.estimated_total_tokens,remaining);
+  const count=addTokens(stats,'div','estimate-value',available,'');add(count,'span','unit','tokens');
+  const cost=win?.missing_price?null:remainingEstimate(win?.estimated_total_cost,remaining);
+  add(stats,'div','estimate-cost',money(cost)+' USD · 估算价值');
+  const total=add(section,'div','window-total');add(total,'span','','估算整窗口 ');addTokens(total,'span','',win?.estimated_total_tokens,' tokens');
+  add(total,'span','',' / '+money(win?.missing_price?null:win?.estimated_total_cost));
+  if(win?.partial_history)add(section,'p','hint','历史不完整 · 估算可能偏低或不准确');
+  if(win?.missing_price)add(section,'p','hint','缺少模型价格 · USD 估算不可用');
 }
 function renderQuotas(){
-  const root=$('quota-cards');root.replaceChildren();
-  if(!data){root.append(empty('Connect to CPA to see quotas.'));return;}
-  const quotas=(data.quotas||[]).filter(active);
-  if(!quotas.length){root.append(empty('No Claude / Codex OAuth quota yet. Check credential access or refresh.'));return;}
-  quotas.forEach(item=>{
-    const panel=el('article','panel');
-    const head=add(panel,'div','accounttop');
-    add(head,'span','account',item.name||item.auth_id||'Account');
-    add(head,'span','provider',item.provider||'Provider');
-    if(item.error)add(panel,'p','muted','Quota: '+item.error);
-    addWindow(panel,'5-hour',item.five_hour);
-    addWindow(panel,'7-day',item.seven_day);
-    root.append(panel);
+  const root=$('quota-cards'), overview=$('quota-overview');root.replaceChildren();overview.replaceChildren();
+  const quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
+  if(!data){root.append(noData());return;}
+  const windows=quotas.flatMap(q=>[q.five_hour,q.seven_day]);const known=windows.map(remainingPercent).filter(p=>p!=null);const low=known.filter(p=>p<20).length;
+  [[quotas.length,'个 OAuth 账户'],[known.length+'/'+windows.length,'个已知窗口'],[low,'个窗口余量低于 20%']].forEach(([value,label],i)=>{const item=add(overview,'span','');add(item,'strong',i===2&&low?'warning':'',typeof value==='number'?fmt(value):value);add(item,'span','',label);});
+  if(!quotas.length){root.append(empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新额度”重新检查。'));return;}
+  const providers=[...new Set(quotas.map(q=>q.provider))].sort((a,b)=>a.localeCompare(b));
+  providers.forEach(provider=>{
+    const accounts=quotas.filter(q=>q.provider===provider);
+    const section=add(root,'section','provider-section');section.dataset.provider=provider;
+    const heading=add(section,'div','section-head');add(heading,'h2','',providerName(provider));add(heading,'span','section-label',accounts.length+' 个账户');
+    const cards=add(section,'div','grid');
+    accounts.forEach((item,i)=>{
+      const panel=el('article','panel');panel.style.setProperty('--enter-delay',Math.min(i,4)*35+'ms');
+      const head=add(panel,'div','accounttop');const identity=add(head,'div','identity');
+      const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':''),item.provider==='claude'?'C':'⌘');icon.setAttribute('aria-hidden','true');
+      const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));add(head,'span','provider',providerName(item.provider));
+      if(item.error)add(panel,'p','account-error',item.error);
+      const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);
+      const footer=add(panel,'div','account-footer');add(footer,'span','','更新 '+clock(item.fetched_at));
+      if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0)add(footer,'span','manual-reset','Manual reset 剩余 '+fmt(item.manual_reset_remaining)+' 次');
+      cards.append(panel);
+    });
   });
 }
-function addCell(tr,what,align){return add(tr,'td',align||'',what)}
-function renderRequests(){
-  const root=$('credential-table');root.replaceChildren();
-  if(!data){root.append(empty('Connect to CPA to see requests.'));return;}
-  const list=(data.credentials||[]).filter(active);
-  if(!list.length){root.append(empty('No request events recorded in the last 7 days.'));return;}
-  const table=add(root,'table','');
-  const thead=add(table,'thead','');const headings=add(thead,'tr','');
-  [['Credential',''],['Requests','num'],['Input','num'],['Output','num'],['Cache read','num'],['Total tokens','num'],['USD estimate','num']].forEach(([s,c])=>add(headings,'th',c,s));
-  const tbody=add(table,'tbody','');
-  list.forEach(s=>{
-    const tr=add(tbody,'tr','clickable');tr.tabIndex=0;tr.setAttribute('role','button');tr.setAttribute('aria-expanded',expanded===s.auth_id?'true':'false');
-    const label=addCell(tr,s.name||s.auth_id);label.className='ellipsis';label.title=s.auth_id;
-    addCell(tr,fmt(s.requests)+' ('+fmt(s.failures)+' err)','num');
-    addCell(tr,fmt(s.input),'num');addCell(tr,fmt(s.output),'num');addCell(tr,fmt(s.cached),'num');addCell(tr,fmt(s.total),'num');addCell(tr,money(s.cost),'num');
-    const toggle=()=>{expanded=expanded===s.auth_id?'':s.auth_id;renderRequests();};tr.addEventListener('click',toggle);tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle();}});
+function addCell(tr,what,align){return add(tr,'td',align||'',what);}
+function makeTable(root,caption,columns){
+  const table=add(root,'table','');add(table,'caption','sr-only',caption);
+  const group=add(table,'colgroup','');columns.forEach(([, ,width])=>{const col=add(group,'col','');col.style.width=width+'%';});
+  const thead=add(table,'thead',''),head=add(thead,'tr','');columns.forEach(([label,cls])=>add(head,'th',cls,label).setAttribute('scope','col'));
+  return add(table,'tbody','');
+}
+function renderSummary(credentials){
+  const root=$('request-summary');root.replaceChildren();const sum=field=>credentials.reduce((n,s)=>n+(Number(s[field])||0),0);
+  const priceMissing=credentials.some(s=>s.missing_price||s.cost==null);
+  const stats=[['观测请求',data?fmt(sum('requests')):'—','近 7 天 · 当前筛选'],['实际用量',data?tokens(sum('total')):'—','tokens · 非剩余额度'],['请求失败',data?fmt(sum('failures')):'—','近 7 天 · 失败记录'],['用量估值',data?priceMissing?'—':money(sum('cost')):'—',priceMissing?'价格缺失，不展示部分合计':'USD · 非订阅费用']];
+  stats.forEach(([label,value,note],i)=>{const item=add(root,'div','summary-item');add(item,'div','summary-label',label);const metric=add(item,'div','summary-value',value);if(i===1&&data)metric.title=fmt(sum('total'))+' tokens';add(item,'div','summary-note',note);});
+}
+function renderCredentials(credentials){
+  const root=$('credential-table');root.replaceChildren();$('credential-count').textContent=(data?fmt(credentials.length):'—')+' 个凭证';
+  if(!data){root.append(noData());return;}
+  if(!credentials.length){root.append(empty('近 7 天暂无凭证请求','当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。'));return;}
+  const tbody=makeTable(root,'近 7 天凭证用量及模型', [['凭证','',19],['模型','',21],['请求','num',10],['输入','num',9],['输出','num',9],['缓存读取','num',10],['总 tokens','num',11],['估算 USD','num',11]]);
+  credentials.forEach((s,i)=>{
+    const tr=add(tbody,'tr','');const label=addCell(tr,'');const button=add(label,'button','credential-button');button.type='button';button.id='credential-toggle-'+i;button.setAttribute('aria-expanded',String(expanded===s.auth_id));button.setAttribute('aria-controls','credential-detail-'+i);
+    add(button,'span','chevron',expanded===s.auth_id?'⌄':'›').setAttribute('aria-hidden','true');add(button,'span','credential-name',credentialName(s));add(label,'span','cell-secondary',providerName(s.provider));
+    const models=list(s.models);const modelcell=addCell(tr,'');[...new Set(models.map(m=>modelName(m.model)))].forEach(model=>add(modelcell,'div','model',model));if(!models.length)add(modelcell,'span','model','未知模型');
+    const requests=addCell(tr,fmt(s.requests),'num');add(requests,'span','cell-secondary'+(s.failures?' failure-count':''),fmt(s.failures||0)+' 次失败');
+    ['input','output','cached','total'].forEach(field=>addTokens(tr,'td','num',s[field],''));const cost=addCell(tr,money(s.missing_price?null:s.cost),'num');if(s.missing_price||s.cost==null)add(cost,'span','cell-secondary','价格缺失');
+    button.onclick=()=>{expanded=expanded===s.auth_id?'':s.auth_id;renderRequests();$(button.id)?.focus({preventScroll:true});};
+    const detailtr=add(tbody,'tr','');detailtr.id='credential-detail-'+i;detailtr.hidden=expanded!==s.auth_id;
     if(expanded===s.auth_id){
-      const detailtr=add(tbody,'tr','');const d=add(detailtr,'td','');d.colSpan=7;
-      const detail=add(d,'div','details');add(detail,'h3','','Model breakdown');
-      (s.models||[]).forEach(m=>{const row=add(detail,'div','modelrow');add(row,'span','',m.model);add(row,'span','tabnum',fmt(m.requests)+' req \u00b7 '+fmt(m.tokens)+' tokens \u00b7 '+money(m.cost));});
-      const rec=(data.recent||[]).filter(x=>x.auth_id===s.auth_id).slice(0,12);
-      if(rec.length){add(detail,'h3','','Recent requests');rec.forEach(x=>{const row=add(detail,'div','modelrow');add(row,'span','',when(x.at)+' \u00b7 '+x.model);add(row,'span','tabnum',fmt(x.total)+' tokens'+(x.failed?' \u00b7 error':''));});}
+      const cell=add(detailtr,'td','details-cell');cell.colSpan=8;const detail=add(cell,'div','details');add(detail,'h3','','各模型观测用量 · 近 7 天');
+      if(!models.length)add(detail,'p','muted','暂无模型明细。');
+      models.forEach(m=>{const row=add(detail,'div','modelrow');add(row,'span','model',modelName(m.model));const stats=add(row,'span','tabnum',fmt(m.requests)+' 次请求 · '+tokens(m.tokens)+' tokens · '+money(m.cost));stats.title=fmt(m.tokens)+' tokens';});
     }
   });
 }
-function render(){renderQuotas();renderRequests();}
-function setTab(selected){tab=selected;$('tab-quota').setAttribute('aria-selected',String(tab==='quota'));$('tab-requests').setAttribute('aria-selected',String(tab==='requests'));$('page-quota').classList.toggle('hide',tab!=='quota');$('page-requests').classList.toggle('hide',tab!=='requests');}
-$('tab-quota').onclick=()=>setTab('quota');$('tab-requests').onclick=()=>setTab('requests');
-$('provider').onchange=e=>{filter=e.target.value;render();};
-$('connect').onclick=()=>{key=$('key').value.trim();$('key').value='';load();};
-$('key').onkeydown=e=>{if(e.key==='Enter')$('connect').click();};
-$('refresh').onclick=async()=>{if(!key){$('gate').classList.remove('hide');return;}const b=$('refresh');b.disabled=true;try {await api('refresh','POST');$('status').textContent='Refreshing quota...';setTimeout(load,2500);}catch(err){setAlert(err.message)}finally{setTimeout(()=>b.disabled=false,3500)}};
-key=guessKey();if(key)load();
-setInterval(()=>{if(!document.hidden)load();},30000);
+function recentRequests(){
+  const credentials=list(data?.credentials),quotas=list(data?.quotas);
+  return list(data?.recent).slice(0,60).filter(x=>active({provider:x.provider||credentials.find(s=>s.auth_id===x.auth_id)?.provider||quotas.find(s=>s.auth_id===x.auth_id)?.provider}));
+}
+function renderRecent(){
+  const root=$('recent-table');root.replaceChildren();const recent=recentRequests();const pages=Math.ceil(recent.length/pageSize);recentPage=Math.max(0,Math.min(recentPage,pages-1));
+  const start=recentPage*pageSize, shown=recent.slice(start,start+pageSize);
+  $('recent-prev').disabled=!data||recentPage===0;$('recent-next').disabled=!data||recentPage>=pages-1;$('recent-page').textContent=(pages?recentPage+1:0)+' / '+pages;
+  $('recent-caption').textContent=data?(recent.length?'显示 '+(start+1)+'–'+(start+shown.length)+' / '+recent.length+' 条近期记录':'当前筛选下暂无近期记录')+' · 最多 60 条':'等待请求快照';
+  if(!data){root.append(noData());return;}
+  if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
+  const tbody=makeTable(root,'最近最多 60 条请求快照', [['时间','',14],['凭证','',16],['模型','',21],['输入','num',8],['输出','num',8],['缓存 读 / 写','num',12],['总 tokens','num',12],['状态','',9]]);
+  shown.forEach(x=>{
+    const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString('zh-CN'):'未知日期');
+    const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
+    const label=addCell(tr,credentialName(credential));add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addCell(tr,modelName(x.model),'model');
+    ['input','output'].forEach(field=>addTokens(tr,'td','num',x[field],''));const cache=addCell(tr,'','num cache-pair');addTokens(cache,'span','',x.cache_read,'');add(cache,'span','slash','/');addTokens(cache,'span','',x.cache_write,'');
+    addTokens(tr,'td','num',x.total,'');const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
+  });
+}
+function renderRequests(){const credentials=list(data?.credentials).filter(active);renderSummary(credentials);renderRecent();renderCredentials(credentials);$('request-count').textContent=data?fmt(credentials.reduce((n,s)=>n+(Number(s.requests)||0),0)):'—';}
+function render(){
+  const focused=document.activeElement?.id;
+  renderQuotas();renderRequests();
+  $('updated').textContent=data?'快照 '+clock(data.generated_at)+' · 额度 '+clock(data.quota_updated_at):loading?'正在同步最新快照…':'尚未同步';
+  $('updated').title=data?'快照：'+when(data.generated_at)+'\n官方额度：'+when(data.quota_updated_at)+'\n模型价格：'+when(data.price_updated_at):'';
+  if(focused&&$(focused)&&document.activeElement?.id!==focused)$(focused).focus({preventScroll:true});
+}
+function setTab(selected){
+  tab=selected==='requests'?'requests':'quota';
+  ['quota','requests'].forEach(name=>{const selected=tab===name;$('tab-'+name).setAttribute('aria-selected',String(selected));$('tab-'+name).tabIndex=selected?0:-1;$('page-'+name).classList.toggle('hide',!selected);});
+}
+['quota','requests'].forEach(name=>{
+  $('tab-'+name).onclick=()=>setTab(name);
+  $('tab-'+name).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setTab(e.key==='Home'?'quota':e.key==='End'?'requests':tab==='quota'?'requests':'quota');$('tab-'+tab).focus();});
+});
+$('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render();};
+$('recent-prev').onclick=()=>{recentPage--;renderRecent();};$('recent-next').onclick=()=>{recentPage++;renderRecent();};
+$('refresh').onclick=()=>load(true);
+window.addEventListener('storage',()=>load());
+window.addEventListener('focus',()=>{if(!loading)load();});
+load();
+setInterval(()=>{if(!document.hidden&&!loading)load();},10000);
 })();
 </script>
 </body>

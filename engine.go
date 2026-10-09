@@ -18,7 +18,7 @@ import (
 
 const (
 	eventDays       = 35
-	quotaInterval   = 5 * time.Minute
+	quotaInterval   = time.Minute
 	pricingInterval = 6 * time.Hour
 )
 
@@ -49,13 +49,14 @@ type QuotaWindow struct {
 }
 
 type AccountQuota struct {
-	Provider  string       `json:"provider"`
-	AuthID    string       `json:"auth_id"`
-	Name      string       `json:"name"`
-	Five      *QuotaWindow `json:"five_hour,omitempty"`
-	Week      *QuotaWindow `json:"seven_day,omitempty"`
-	FetchedAt string       `json:"fetched_at"`
-	Error     string       `json:"error,omitempty"`
+	Provider             string       `json:"provider"`
+	AuthID               string       `json:"auth_id"`
+	Name                 string       `json:"name"`
+	Five                 *QuotaWindow `json:"five_hour,omitempty"`
+	Week                 *QuotaWindow `json:"seven_day,omitempty"`
+	FetchedAt            string       `json:"fetched_at"`
+	Error                string       `json:"error,omitempty"`
+	ManualResetRemaining *int64       `json:"manual_reset_remaining,omitempty"`
 }
 
 type WindowEstimate struct {
@@ -70,13 +71,14 @@ type WindowEstimate struct {
 }
 
 type QuotaView struct {
-	Provider  string          `json:"provider"`
-	AuthID    string          `json:"auth_id"`
-	Name      string          `json:"name"`
-	Five      *WindowEstimate `json:"five_hour,omitempty"`
-	Week      *WindowEstimate `json:"seven_day,omitempty"`
-	FetchedAt string          `json:"fetched_at,omitempty"`
-	Error     string          `json:"error,omitempty"`
+	Provider             string          `json:"provider"`
+	AuthID               string          `json:"auth_id"`
+	Name                 string          `json:"name"`
+	Five                 *WindowEstimate `json:"five_hour,omitempty"`
+	Week                 *WindowEstimate `json:"seven_day,omitempty"`
+	FetchedAt            string          `json:"fetched_at,omitempty"`
+	Error                string          `json:"error,omitempty"`
+	ManualResetRemaining *int64          `json:"manual_reset_remaining,omitempty"`
 }
 
 type ModelStat struct {
@@ -103,35 +105,39 @@ type CredentialView struct {
 }
 
 type Snapshot struct {
-	Quotas         []QuotaView      `json:"quotas"`
-	Credentials    []CredentialView `json:"credentials"`
-	Recent         []Event          `json:"recent"`
-	TotalRequests  int              `json:"total_requests"`
-	PriceUpdatedAt string           `json:"price_updated_at,omitempty"`
-	QuotaUpdatedAt string           `json:"quota_updated_at,omitempty"`
-	StorageError   string           `json:"storage_error,omitempty"`
-	PriceError     string           `json:"price_error,omitempty"`
-	QuotaError     string           `json:"quota_error,omitempty"`
-	GeneratedAt    string           `json:"generated_at"`
+	Quotas                 []QuotaView      `json:"quotas"`
+	Credentials            []CredentialView `json:"credentials"`
+	Recent                 []Event          `json:"recent"`
+	TotalRequests          int              `json:"total_requests"`
+	PriceUpdatedAt         string           `json:"price_updated_at,omitempty"`
+	QuotaUpdatedAt         string           `json:"quota_updated_at,omitempty"`
+	QuotaRefreshing        bool             `json:"quota_refreshing"`
+	QuotaRefreshFinishedAt string           `json:"quota_refresh_finished_at,omitempty"`
+	StorageError           string           `json:"storage_error,omitempty"`
+	PriceError             string           `json:"price_error,omitempty"`
+	QuotaError             string           `json:"quota_error,omitempty"`
+	GeneratedAt            string           `json:"generated_at"`
 }
 
 type Engine struct {
-	mu           sync.RWMutex
-	events       []Event
-	quotas       map[string]AccountQuota
-	names        map[string]string
-	aliases      map[string]string
-	prices       map[string]ModelPrice
-	quotaUpdated time.Time
-	priceUpdated time.Time
-	priceError   string
-	quotaError   string
-	storageError string
-	dir          string
-	done         chan struct{}
-	stopOnce     sync.Once
-	refreshMu    sync.Mutex
-	lastRefresh  time.Time
+	mu                   sync.RWMutex
+	events               []Event
+	quotas               map[string]AccountQuota
+	names                map[string]string
+	aliases              map[string]string
+	prices               map[string]ModelPrice
+	quotaUpdated         time.Time
+	quotaRefreshing      bool
+	quotaRefreshFinished time.Time
+	priceUpdated         time.Time
+	priceError           string
+	quotaError           string
+	storageError         string
+	dir                  string
+	done                 chan struct{}
+	stopOnce             sync.Once
+	refreshMu            sync.Mutex
+	lastRefresh          time.Time
 }
 
 func newEngine() *Engine {
@@ -145,7 +151,7 @@ func newEngine() *Engine {
 func (e *Engine) start() {
 	e.load()
 	go func() {
-		time.Sleep(2 * time.Second)
+		// Begin collecting immediately; there is no fixed startup delay.
 		go e.refreshPrices(false)
 		e.kickRefresh(false)
 		tq := time.NewTicker(quotaInterval)
@@ -452,6 +458,10 @@ func (e *Engine) snapshot() Snapshot {
 	defer e.mu.RUnlock()
 	now := time.Now().UTC()
 	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []Event{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
+	result.QuotaRefreshing = e.quotaRefreshing
+	if !e.quotaRefreshFinished.IsZero() {
+		result.QuotaRefreshFinishedAt = e.quotaRefreshFinished.Format(time.RFC3339Nano)
+	}
 	if e.priceUpdated.IsZero() {
 		result.PriceUpdatedAt = ""
 	}
@@ -459,7 +469,7 @@ func (e *Engine) snapshot() Snapshot {
 		result.QuotaUpdatedAt = ""
 	}
 	for _, q := range e.quotas {
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummary(q.AuthID, now, q.Five, 5*time.Hour), Week: e.windowSummary(q.AuthID, now, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error})
+		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummary(q.AuthID, now, q.Five, 5*time.Hour), Week: e.windowSummary(q.AuthID, now, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
 	}
 	sort.Slice(result.Quotas, func(i, j int) bool {
 		if result.Quotas[i].Provider != result.Quotas[j].Provider {
@@ -477,7 +487,9 @@ func (e *Engine) snapshot() Snapshot {
 		}
 		result.TotalRequests++
 		if len(result.Recent) < 60 {
-			result.Recent = append(result.Recent, ev)
+			recent := ev
+			recent.AuthID = e.canonicalAuth(ev.AuthID)
+			result.Recent = append(result.Recent, recent)
 		}
 		canonical := e.canonicalAuth(ev.AuthID)
 		s := stats[canonical]
