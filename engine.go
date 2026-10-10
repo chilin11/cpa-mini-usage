@@ -18,7 +18,7 @@ import (
 
 const (
 	eventDays       = 35
-	quotaInterval   = 3 * time.Minute
+	quotaInterval   = 15 * time.Minute
 	pricingInterval = 6 * time.Hour
 )
 
@@ -104,19 +104,26 @@ type CredentialView struct {
 	Models       []ModelStat `json:"models"`
 }
 
+type AccountRefreshState struct {
+	Refreshing bool   `json:"refreshing"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 type Snapshot struct {
-	Quotas                 []QuotaView      `json:"quotas"`
-	Credentials            []CredentialView `json:"credentials"`
-	Recent                 []Event          `json:"recent"`
-	TotalRequests          int              `json:"total_requests"`
-	PriceUpdatedAt         string           `json:"price_updated_at,omitempty"`
-	QuotaUpdatedAt         string           `json:"quota_updated_at,omitempty"`
-	QuotaRefreshing        bool             `json:"quota_refreshing"`
-	QuotaRefreshFinishedAt string           `json:"quota_refresh_finished_at,omitempty"`
-	StorageError           string           `json:"storage_error,omitempty"`
-	PriceError             string           `json:"price_error,omitempty"`
-	QuotaError             string           `json:"quota_error,omitempty"`
-	GeneratedAt            string           `json:"generated_at"`
+	Quotas                 []QuotaView                    `json:"quotas"`
+	Credentials            []CredentialView               `json:"credentials"`
+	Recent                 []Event                        `json:"recent"`
+	TotalRequests          int                            `json:"total_requests"`
+	PriceUpdatedAt         string                         `json:"price_updated_at,omitempty"`
+	QuotaUpdatedAt         string                         `json:"quota_updated_at,omitempty"`
+	QuotaRefreshing        bool                           `json:"quota_refreshing"`
+	QuotaRefreshFinishedAt string                         `json:"quota_refresh_finished_at,omitempty"`
+	AccountRefresh         map[string]AccountRefreshState `json:"account_refresh"`
+	StorageError           string                         `json:"storage_error,omitempty"`
+	PriceError             string                         `json:"price_error,omitempty"`
+	QuotaError             string                         `json:"quota_error,omitempty"`
+	GeneratedAt            string                         `json:"generated_at"`
 }
 
 type Engine struct {
@@ -129,6 +136,7 @@ type Engine struct {
 	quotaUpdated         time.Time
 	quotaRefreshing      bool
 	quotaRefreshFinished time.Time
+	accountRefresh       map[string]AccountRefreshState
 	priceUpdated         time.Time
 	priceError           string
 	quotaError           string
@@ -145,7 +153,7 @@ func newEngine() *Engine {
 	if dir == "" {
 		dir = filepath.Join("data", "cpa-mini-usage")
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, done: make(chan struct{})}
+	return &Engine{quotas: make(map[string]AccountQuota), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, done: make(chan struct{})}
 }
 
 func (e *Engine) start() {
@@ -461,6 +469,10 @@ func (e *Engine) snapshot() Snapshot {
 	result.QuotaRefreshing = e.quotaRefreshing
 	if !e.quotaRefreshFinished.IsZero() {
 		result.QuotaRefreshFinishedAt = e.quotaRefreshFinished.Format(time.RFC3339Nano)
+	}
+	result.AccountRefresh = make(map[string]AccountRefreshState, len(e.accountRefresh))
+	for id, state := range e.accountRefresh {
+		result.AccountRefresh[id] = state
 	}
 	if e.priceUpdated.IsZero() {
 		result.PriceUpdatedAt = ""

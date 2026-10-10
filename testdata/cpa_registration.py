@@ -37,6 +37,7 @@ try:
     (root / "plugins/linux/amd64").mkdir(parents=True)
     shutil.copy2(library, root / "plugins/linux/amd64/cpa-mini-usage.so")
     (root / "auth").mkdir()
+    (root / "auth/test-codex.json").write_text(json.dumps({"type": "codex", "email": "test-account@example.invalid"}))
     (root / "config.yaml").write_text(f"""config-version: 8
 server:
   host: 127.0.0.1
@@ -96,10 +97,19 @@ plugins:
         else:
             raise AssertionError("Data endpoint allowed unauthenticated access")
         print("PASS unauthenticated data endpoint: access denied")
-        req = urllib.request.Request("http://127.0.0.1:18317/v0/management/plugins/cpa-mini-usage/refresh", data=b"", headers={"Authorization": "Bearer " + key}, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as response:
-            assert response.status == 202
-            accepted = json.loads(response.read())
+        refresh_url = "http://127.0.0.1:18317/v0/management/plugins/cpa-mini-usage/refresh"
+        for _ in range(40):
+            req = urllib.request.Request(refresh_url, data=b"", headers={"Authorization": "Bearer " + key}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    assert response.status == 202
+                    accepted = json.loads(response.read())
+                break
+            except urllib.error.HTTPError as error:
+                assert error.code == 409, error.code
+                time.sleep(0.25)
+        else:
+            raise AssertionError("Full refresh stayed busy")
         for _ in range(40):
             state = json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
             if not state.get("quota_refreshing") and state.get("quota_refresh_finished_at") and state["quota_refresh_finished_at"] != accepted.get("quota_refresh_finished_at"):
@@ -108,6 +118,37 @@ plugins:
         else:
             raise AssertionError("Manual refresh did not finish in test host")
         print("PASS manual refresh: HTTP 202 and observable completion")
+        account_url = refresh_url + "-account"
+        for authenticated, payload, expected in [(False, {"auth_id": "test"}, (401, 403)), (True, {}, (400,)), (True, {"auth_id": "unknown"}, (404,))]:
+            headers = {"Content-Type": "application/json"}
+            if authenticated:
+                headers["Authorization"] = "Bearer " + key
+            req = urllib.request.Request(account_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+            try:
+                urllib.request.urlopen(req, timeout=5)
+            except urllib.error.HTTPError as error:
+                assert error.code in expected, (error.code, expected)
+            else:
+                raise AssertionError("Account refresh incorrectly accepted invalid/unauthenticated request")
+        print("PASS account route: authentication and JSON-body validation")
+        account = next(q for q in state["quotas"] if q["provider"] == "codex")
+        auth_id = account["auth_id"]
+        full_finished = state["quota_refresh_finished_at"]
+        req = urllib.request.Request(account_url, data=json.dumps({"auth_id": auth_id}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            assert response.status == 202
+            accepted = json.loads(response.read())
+        for _ in range(40):
+            state = json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
+            refresh = state.get("account_refresh", {}).get(auth_id, {})
+            if not refresh.get("refreshing") and refresh.get("finished_at") and refresh["finished_at"] != accepted.get("refresh_finished_at"):
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError("Single-account refresh did not finish")
+        assert refresh.get("error"), "Tokenless test account must report failure without making provider calls"
+        assert state["quota_refresh_finished_at"] == full_finished, "Single-account refresh changed full refresh state"
+        print("PASS single-account refresh: HTTP 202, observable failure completion, full scan untouched")
 except Exception:
     if (root / "host.log").exists():
         print((root / "host.log").read_text(), file=sys.stderr)

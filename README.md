@@ -44,7 +44,7 @@ Data is stored under `data/cpa-mini-usage/` (create/mount as persistent in Docke
 - Estimated maximum tokens / dollars = **CPA-observed usage within the active window / provider reported utilized fraction**. This is an extrapolation, **not an official quota cap**. Values will be inaccurate if collection began mid-window, quota was spent outside this CPA, traffic mixes different token/model types, or the upstream uses non-token factors.
 - Prices are automatically refreshed from `https://models.dev/api.json` every 6 hours. Cache read token cost is separated from uncached input; reasoning tokens are **not** double-charged when already included in output tokens. Unknown model prices are shown as unknown (not $0).
 - Historical costs are revalued using the latest known prices, and represent **API-equivalent cost**, not an actual Claude Pro/Max or ChatGPT subscription charge.
-- Quota is automatically checked every 3 minutes, with at most four account reads in parallel. The visible dashboard syncs snapshots every minute and updates countdown text every 30 seconds. Unchanged content keeps its DOM nodes; quota and request sections update independently, without entry animations. Manual refresh polls completion every 2 seconds. Only read-only GET requests to known quota endpoints are made.
+- All-account quota checks run every 15 minutes, with at most four account reads in parallel. Each quota card can refresh just its own credential; the top button refreshes all. Single-account reads do not advance the automatic full-scan schedule. Concurrent refresh requests return a busy response instead of silently dropping work. The visible dashboard syncs cached snapshots every minute and updates countdown text every 30 seconds; these reads do not query the providers. Manual refresh polls completion every 2 seconds. Only read-only GET requests to known quota endpoints are made.
 - Supports Claude OAuth and Codex OAuth; API keys do not expose subscription quota windows.
 - If `usage.handle` is not dispatched by your CPA build, the quota still works but per-request stats cannot be collected. Upgrade CPA to a build with the usage callback fix.
 
@@ -75,6 +75,10 @@ Quota cards show the official remaining percentage first, the estimated USD valu
 ### v0.1.4
 
 Simplified, shorter cards remove duplicate totals, badges, and explanatory paragraphs. Remaining percentage and USD stay at 22px, tokens at 14px. Reset bank appears beside the account name with an 18px bold count; unavailable counts remain hidden and explicit zero remains visible. Less frequent background refresh is silent, preserves unchanged content and focus, and keeps the last snapshot on temporary network errors while still clearing private data on logout/authentication failure. Fixed numerical tests cover per-million-token prices, cache read/write handling, missing prices, and percentage-based remaining-value arithmetic.
+
+### v0.1.5
+
+Per-account quota refresh buttons and less frequent 15-minute all-account checks. Only the changed account card updates; other cards keep their nodes. Refresh completion and failures are tracked independently for the selected credential. A Chinese/English selector defaults to the browser language and remembers only the language preference. Labels, tables, alerts, accessibility text, and countdowns switch together. Reset counts use “可重置” / “Resets remaining”, with no Reset bank or Manual reset UI labels.
 
 ## Optional CPA Plugin Store source
 

@@ -19,11 +19,85 @@ type AuthEntry struct {
 	Provider string
 }
 
+func (e *Engine) kickFullRefresh() (string, bool) {
+	if !e.refreshMu.TryLock() {
+		return "", false
+	}
+	e.mu.Lock()
+	previous := ""
+	if !e.quotaRefreshFinished.IsZero() {
+		previous = e.quotaRefreshFinished.Format(time.RFC3339Nano)
+	}
+	e.quotaRefreshing = true
+	e.mu.Unlock()
+	go func() { defer e.refreshMu.Unlock(); e.refreshQuotaLocked(true) }()
+	return previous, true
+}
+
+// Account refresh shares the provider-read lock, but never advances the full-scan clock.
+func (e *Engine) kickAccountRefresh(authID string) (int, string, string) {
+	return e.beginAccountRefresh(authID, hostRPC, e.refreshAccountQuota)
+}
+
+func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, error), read func(AuthEntry) bool) (int, string, string) {
+	if strings.TrimSpace(authID) == "" || len(authID) > 1024 {
+		return 400, "", "invalid_auth_id"
+	}
+	e.mu.RLock()
+	_, known := e.quotas[authID]
+	e.mu.RUnlock()
+	if !known {
+		return 404, "", "account_not_found"
+	}
+	if !e.refreshMu.TryLock() {
+		return 409, "", "refresh_busy"
+	}
+	e.mu.Lock()
+	previous := e.accountRefresh[authID].FinishedAt
+	e.accountRefresh[authID] = AccountRefreshState{Refreshing: true, FinishedAt: previous}
+	e.mu.Unlock()
+	go func() {
+		message := ""
+		defer func() {
+			e.mu.Lock()
+			e.accountRefresh[authID] = AccountRefreshState{FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Error: message}
+			e.mu.Unlock()
+			e.refreshMu.Unlock()
+		}()
+		raw, err := rpc("host.auth.list", map[string]any{})
+		if err != nil {
+			message = "CPA credential callback is unavailable"
+			return
+		}
+		for _, entry := range parseAuthList(raw) {
+			if entry.ID != authID || (entry.Provider != "claude" && entry.Provider != "codex") {
+				continue
+			}
+			if !read(entry) {
+				e.mu.RLock()
+				message = e.quotas[authID].Error
+				e.mu.RUnlock()
+				if message == "" {
+					message = "Quota endpoint unavailable"
+				}
+			}
+			return
+		}
+		message = "account_not_found"
+	}()
+	return 202, previous, ""
+}
+
 func (e *Engine) refreshQuota(force bool) {
 	if !e.refreshMu.TryLock() {
 		return
 	}
 	defer e.refreshMu.Unlock()
+	e.refreshQuotaLocked(force)
+}
+
+// Caller holds refreshMu for the whole batch, including all provider reads.
+func (e *Engine) refreshQuotaLocked(force bool) {
 	e.mu.Lock()
 	if !force && time.Since(e.lastRefresh) < quotaInterval {
 		e.mu.Unlock()
@@ -154,7 +228,11 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.mu.Lock()
 	e.quotaUpdated = time.Now().UTC()
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339), ManualResetRemaining: resetRemaining}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: time.Now().UTC().Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining}
+	if state, ok := e.accountRefresh[entry.ID]; ok {
+		state.Error = ""
+		e.accountRefresh[entry.ID] = state
+	}
 	e.mu.Unlock()
 	return true
 }
@@ -167,6 +245,10 @@ func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	prior.Provider = a.Provider
 	prior.Name = a.Name
 	prior.Error = message
+	if state, ok := e.accountRefresh[a.ID]; ok && !state.Refreshing {
+		state.Error = message
+		e.accountRefresh[a.ID] = state
+	}
 	e.quotas[a.ID] = prior
 	e.names[a.ID] = a.Name
 }
