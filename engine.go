@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +36,13 @@ type Event struct {
 	Failed     bool      `json:"failed"`
 	LatencyMS  *float64  `json:"latency_ms,omitempty"`
 	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
+}
+
+// RecentEvent adds snapshot-only valuation without changing stored usage records.
+type RecentEvent struct {
+	Event
+	Cost         *float64 `json:"cost,omitempty"`
+	MissingPrice bool     `json:"missing_price"`
 }
 
 type PriceTier struct {
@@ -77,6 +85,7 @@ type WindowEstimate struct {
 	ObservedCost         *float64 `json:"observed_cost,omitempty"`
 	EstimatedTotalTokens *float64 `json:"estimated_total_tokens,omitempty"`
 	EstimatedTotalCost   *float64 `json:"estimated_total_cost,omitempty"`
+	EstimatedBasis       string   `json:"estimated_basis,omitempty"`
 	MissingPrice         bool     `json:"missing_price"`
 	PartialHistory       bool     `json:"partial_history"`
 }
@@ -127,7 +136,7 @@ type AccountRefreshState struct {
 type Snapshot struct {
 	Quotas                 []QuotaView                    `json:"quotas"`
 	Credentials            []CredentialView               `json:"credentials"`
-	Recent                 []Event                        `json:"recent"`
+	Recent                 []RecentEvent                  `json:"recent"`
 	TotalRequests          int                            `json:"total_requests"`
 	PriceUpdatedAt         string                         `json:"price_updated_at,omitempty"`
 	QuotaUpdatedAt         string                         `json:"quota_updated_at,omitempty"`
@@ -428,7 +437,9 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 		baseInput = ev.Input - cached - write
 	}
 	cost := float64(baseInput)*p.Input/1e6 + float64(ev.Output)*p.Output/1e6
-	readPrice, writePrice := p.Input, p.Input
+	// Manager Plus defaults missing fine-grained cache reads to 10% of input.
+	// An explicitly configured zero remains free; cache writes default to input.
+	readPrice, writePrice := p.Input*0.1, p.Input
 	if p.CacheRead != nil {
 		readPrice = *p.CacheRead
 	}
@@ -455,54 +466,111 @@ func normalizeModel(m string) string {
 	return m
 }
 
+func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+func roundForecastCost(v float64) float64 {
+	if scaled := v * 100; finite(scaled) {
+		return math.Round(scaled) / 100
+	}
+	return v
+}
+
+type windowUsage struct {
+	tokens       int64
+	cost         float64
+	count        int
+	missingPrice bool
+	first, last  time.Time
+}
+
+func (e *Engine) usageBetween(authID string, start, end, now time.Time) windowUsage {
+	var usage windowUsage
+	for _, ev := range e.events {
+		if e.canonicalAuth(ev.AuthID) != authID || ev.At.Before(start) || !ev.At.Before(end) || ev.At.After(now) {
+			continue
+		}
+		usage.count++
+		usage.tokens += ev.Total
+		if usage.first.IsZero() || ev.At.Before(usage.first) {
+			usage.first = ev.At
+		}
+		if ev.At.After(usage.last) {
+			usage.last = ev.At
+		}
+		if cost, ok := e.eventCost(ev); ok {
+			usage.cost += cost
+		} else {
+			usage.missingPrice = true
+		}
+	}
+	return usage
+}
+
+// Direct callers assume a quota observed now; snapshots supply the real fetch time.
 func (e *Engine) windowSummary(authID string, now time.Time, win *QuotaWindow, duration time.Duration) *WindowEstimate {
+	return e.windowSummaryObserved(authID, now, now, win, duration)
+}
+
+func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time, win *QuotaWindow, duration time.Duration) *WindowEstimate {
 	if win == nil {
 		return nil
 	}
 	out := &WindowEstimate{UsedPercent: win.Used, ResetAt: win.ResetAt}
+	if !finite(out.UsedPercent) {
+		out.UsedPercent = 0 // Keep the snapshot JSON encodable for invalid quota data.
+	}
 	reset, err := time.Parse(time.RFC3339Nano, win.ResetAt)
 	if err != nil {
 		return out
 	}
 	if win.Seconds > 0 {
+		if win.Seconds > math.MaxInt64/int64(time.Second) {
+			return out
+		}
 		duration = time.Duration(win.Seconds) * time.Second
 	}
 	if duration <= 0 {
 		return out
 	}
-	since := reset.Add(-duration)
-	if since.After(now) || reset.Before(now.Add(-5*time.Minute)) {
+	start := reset.Add(-duration)
+	if start.After(now) || reset.Before(now.Add(-5*time.Minute)) {
 		return out
 	}
-	observedFirst := time.Time{}
-	totalCost := 0.0
-	for _, x := range e.events {
-		if e.canonicalAuth(x.AuthID) != authID || x.At.Before(since) || x.At.After(now) {
-			continue
-		}
-		if observedFirst.IsZero() || x.At.Before(observedFirst) {
-			observedFirst = x.At
-		}
-		out.ObservedTokens += x.Total
-		if c, ok := e.eventCost(x); ok {
-			totalCost += c
-		} else {
-			out.MissingPrice = true
+	current := e.usageBetween(e.canonicalAuth(authID), start, reset, now)
+	out.ObservedTokens, out.MissingPrice = current.tokens, current.missingPrice
+	if current.count > 0 {
+		out.PartialHistory = current.first.After(start.Add(10 * time.Minute))
+		if !current.missingPrice && finite(current.cost) {
+			out.ObservedCost = floatPtr(current.cost)
 		}
 	}
-	if !observedFirst.IsZero() {
-		// We cannot verify if usage before the first captured request was observed.
-		out.PartialHistory = observedFirst.After(since.Add(10 * time.Minute))
-		if !out.MissingPrice {
-			out.ObservedCost = floatPtr(totalCost)
-		}
-		ratio := win.Used / 100
-		if ratio > 0 && ratio <= 1 && out.ObservedTokens > 0 {
-			out.EstimatedTotalTokens = floatPtr(float64(out.ObservedTokens) / ratio)
-			if !out.MissingPrice {
-				out.EstimatedTotalCost = floatPtr(totalCost / ratio)
+	// Grace may retain actuals, never a forecast for a completed cycle. A quota
+	// lagging ANY current request cannot safely forecast either basis.
+	if !now.Before(reset) || (!observation.IsZero() && (observation.Before(start) || observation.After(now) || current.last.After(observation))) {
+		return out
+	}
+	if !observation.IsZero() && current.count > 0 && finite(win.Used) && win.Used > 0 && win.Used <= 100 {
+		multiplier := 100 / win.Used
+		tokens := math.Max(float64(current.tokens), math.Round(float64(current.tokens)*multiplier))
+		cost := math.Max(current.cost, roundForecastCost(current.cost*multiplier))
+		if finite(multiplier) && finite(tokens) && (current.missingPrice || finite(cost)) {
+			out.EstimatedTotalTokens, out.EstimatedBasis = floatPtr(tokens), "quota"
+			if !current.missingPrice {
+				out.EstimatedTotalCost = floatPtr(cost)
 			}
+			return out
 		}
+	}
+	previous := e.usageBetween(e.canonicalAuth(authID), start.Add(-duration), start, now)
+	// Only recorded adjacent history is evidence. Reject the entire fallback
+	// if any known component is already below current actual usage.
+	if previous.count == 0 || previous.tokens < current.tokens || (!previous.missingPrice && !current.missingPrice && previous.cost+1e-9 < current.cost) {
+		return out
+	}
+	out.EstimatedTotalTokens, out.EstimatedBasis = floatPtr(float64(previous.tokens)), "previous"
+	out.MissingPrice = out.MissingPrice || previous.missingPrice
+	if !out.MissingPrice && finite(previous.cost) {
+		out.EstimatedTotalCost = floatPtr(previous.cost)
 	}
 	return out
 }
@@ -511,7 +579,7 @@ func (e *Engine) snapshot() Snapshot {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	now := time.Now().UTC()
-	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []Event{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
+	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []RecentEvent{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
 	result.QuotaRefreshing = e.quotaRefreshing
 	result.Persistence = e.persistence
 	if !e.quotaRefreshFinished.IsZero() {
@@ -528,11 +596,8 @@ func (e *Engine) snapshot() Snapshot {
 		result.QuotaUpdatedAt = ""
 	}
 	for _, q := range e.quotas {
-		observedThrough := now
-		if fetched, err := time.Parse(time.RFC3339Nano, q.FetchedAt); err == nil && fetched.Before(now) {
-			observedThrough = fetched
-		}
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummary(q.AuthID, observedThrough, q.Five, 5*time.Hour), Week: e.windowSummary(q.AuthID, observedThrough, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
+		observation, _ := time.Parse(time.RFC3339Nano, q.FetchedAt)
+		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummaryObserved(q.AuthID, now, observation, q.Five, 5*time.Hour), Week: e.windowSummaryObserved(q.AuthID, now, observation, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
 	}
 	sort.Slice(result.Quotas, func(i, j int) bool {
 		if result.Quotas[i].Provider != result.Quotas[j].Provider {
@@ -549,9 +614,13 @@ func (e *Engine) snapshot() Snapshot {
 			continue
 		}
 		result.TotalRequests++
+		cost, ok := e.eventCost(ev)
 		if len(result.Recent) < 60 {
-			recent := ev
+			recent := RecentEvent{Event: ev, MissingPrice: !ok}
 			recent.AuthID = e.canonicalAuth(ev.AuthID)
+			if ok {
+				recent.Cost = floatPtr(cost)
+			}
 			result.Recent = append(result.Recent, recent)
 		}
 		canonical := e.canonicalAuth(ev.AuthID)
@@ -585,7 +654,6 @@ func (e *Engine) snapshot() Snapshot {
 		}
 		ms.Requests++
 		ms.Tokens += ev.Total
-		cost, ok := e.eventCost(ev)
 		if !ok {
 			s.MissingPrice = true
 			ms.Cost = nil

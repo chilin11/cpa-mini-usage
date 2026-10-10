@@ -157,7 +157,8 @@ plugins:
         assert totals["total_input"] == 900 and totals["uncached_input"] == 900 and totals["cache_write"] == 0
         timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
-        assert timing["output"] / ((timing["latency_ms"] - timing["ttft_ms"]) / 1000) == 50
+        assert timing["output"] / (timing["latency_ms"] / 1000) == 40
+        assert timing["missing_price"] is True and "cost" not in timing
         settings_url = refresh_url.rsplit("/", 1)[0] + "/settings"
         for authenticated, payload, expected in [(False, {"persistence_enabled": False}, (401, 403)), (True, {}, (400,))]:
             headers = {"Content-Type": "application/json"}
@@ -193,6 +194,7 @@ plugins:
         assert totals["total_input"] == 900 and totals["uncached_input"] == 900
         timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
+        assert timing["missing_price"] is True and "cost" not in timing
         assert (root / "data/events.jsonl").read_bytes() == saved_events
         print("PASS persistent storage: authenticated settings, quota/timing restore after host restart, disabled writes preserve history")
 except Exception:

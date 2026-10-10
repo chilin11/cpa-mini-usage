@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
+	"os"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -33,6 +37,10 @@ func TestProviderTokenAccountingContract(t *testing.T) {
 			cost, known := e.eventCost(ev)
 			if !known || math.Abs(cost-tc.cost) > 1e-12 {
 				t.Fatalf("cost %.12f want %.12f", cost, tc.cost)
+			}
+			state := e.snapshot()
+			if state.Recent[0].Cost == nil || state.Recent[0].MissingPrice || math.Abs(*state.Recent[0].Cost-tc.cost) > 1e-12 || state.Credentials[0].Cost == nil || math.Abs(*state.Credentials[0].Cost-*state.Recent[0].Cost) > 1e-12 {
+				t.Fatalf("request and aggregate valuation disagree: %+v", state)
 			}
 		})
 	}
@@ -68,7 +76,7 @@ func TestContextPricingUsesDeclaredThreshold(t *testing.T) {
 	}
 }
 
-func TestQuotaEstimateStopsAtQuotaObservation(t *testing.T) {
+func TestQuotaEstimateIncludesActualsButRejectsLaggingObservation(t *testing.T) {
 	e := newEngine()
 	now := time.Now().UTC()
 	fetched := now.Add(-2 * time.Minute)
@@ -77,8 +85,8 @@ func TestQuotaEstimateStopsAtQuotaObservation(t *testing.T) {
 	e.events = []Event{{AuthID: "a", Provider: "codex", Model: "test", At: fetched.Add(-time.Minute), Input: 100000, Output: 20000, Total: 120000}, {AuthID: "a", Provider: "codex", Model: "test", At: fetched.Add(time.Minute), Input: 1000000, Output: 100000, Total: 1100000}}
 	state := e.snapshot()
 	win := state.Quotas[0].Five
-	if win.ObservedTokens != 120000 || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 480000 || win.EstimatedTotalCost == nil || math.Abs(*win.EstimatedTotalCost-1.44) > 1e-12 {
-		t.Fatalf("stale ratio included later usage %+v", win)
+	if win.ObservedTokens != 1220000 || win.ObservedCost == nil || math.Abs(*win.ObservedCost-3.16) > 1e-12 || win.EstimatedTotalTokens != nil || win.EstimatedTotalCost != nil || win.EstimatedBasis != "" {
+		t.Fatalf("stale quota must show full actuals without a forecast %+v", win)
 	}
 	if state.Credentials[0].Total != 1220000 {
 		t.Fatal("request totals should still include new requests")
@@ -99,8 +107,8 @@ func TestLowUsageClaudeWindowEstimate(t *testing.T) {
 	if win.EstimatedTotalTokens == nil || win.EstimatedTotalCost == nil {
 		t.Fatalf("3%% must be supported: %+v", win)
 	}
-	if math.Abs(*win.EstimatedTotalTokens*.97-550/.03*.97) > 1e-8 || math.Abs(*win.EstimatedTotalCost*.97-.001185/.03*.97) > 1e-9 {
-		t.Fatal("remaining arithmetic changed")
+	if *win.EstimatedTotalTokens != 18333 || math.Abs(*win.EstimatedTotalCost-.04) > 1e-9 {
+		t.Fatal("rounded estimated total arithmetic changed")
 	}
 	e.events[0].Model = "missing"
 	win = e.windowSummary("a", now, &QuotaWindow{Used: 3, ResetAt: now.Add(4 * time.Hour).Format(time.RFC3339)}, 5*time.Hour)
@@ -135,6 +143,125 @@ func TestInputBreakdownAndSummary(t *testing.T) {
 		credential := e.snapshot().Credentials[0]
 		if credential.TotalInput != 2*tc.total || credential.UncachedInput != 2*tc.uncached || credential.CacheWrite != 2*event.CacheWrite || credential.Input != 2*event.Input || credential.Output != 2*event.Output {
 			t.Fatalf("summary %+v", credential)
+		}
+	}
+}
+
+func TestRecentRequestCostKnownUnknownZeroAndFailed(t *testing.T) {
+	e := newEngine()
+	now := time.Now().UTC()
+	e.prices["openai/test"] = ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.2), CacheWrite: floatPtr(3)}
+	e.prices["openai/free"] = ModelPrice{Input: 2, CacheRead: floatPtr(0), CacheWrite: floatPtr(0)}
+	e.events = []Event{
+		{At: now, AuthID: "a", Provider: "codex", Model: "test", Input: 1000, CacheRead: 600, CacheWrite: 100, Output: 100, Total: 1100},
+		{At: now, AuthID: "a", Provider: "codex", Model: "test", Input: 1000, Output: 100, Total: 1100, Failed: true},
+		{At: now, AuthID: "zero", Provider: "codex", Model: "free", Input: 1000, CacheRead: 900, CacheWrite: 100, Total: 1000},
+		{At: now, AuthID: "missing", Provider: "codex", Model: "unknown", Input: 1000, Total: 1000},
+	}
+	s := e.snapshot()
+	wants := map[string]float64{"test": .00182, "failed": .0028, "free": 0}
+	sum := 0.0
+	for _, ev := range s.Recent {
+		key := ev.Model
+		if ev.Failed {
+			key = "failed"
+		}
+		want, known := wants[key]
+		if !known {
+			if ev.Cost != nil || !ev.MissingPrice {
+				t.Fatalf("missing request price %+v", ev)
+			}
+		} else if ev.Cost == nil || ev.MissingPrice || math.Abs(*ev.Cost-want) > 1e-12 {
+			t.Fatalf("request cost %+v want %v", ev, want)
+		}
+		if ev.AuthID == "a" {
+			sum += *ev.Cost
+		}
+		b, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(b, &obj); err != nil {
+			t.Fatal(err)
+		}
+		if obj["model"] != ev.Model || obj["input"] != float64(ev.Input) || obj["event"] != nil || obj["missing_price"] != !known {
+			t.Fatalf("raw-compatible flattened JSON %s", b)
+		}
+		if known && obj["cost"] != want || !known && obj["cost"] != nil {
+			t.Fatalf("zero/unknown cost JSON %s", b)
+		}
+	}
+	for _, credential := range s.Credentials {
+		switch credential.AuthID {
+		case "a":
+			if credential.Cost == nil || *credential.Cost != sum || credential.Failures != 1 || len(credential.Models) != 1 || *credential.Models[0].Cost != sum {
+				t.Fatalf("aggregate agreement %+v sum=%v", credential, sum)
+			}
+		case "zero":
+			if credential.Cost == nil || *credential.Cost != 0 || credential.MissingPrice {
+				t.Fatal("known zero credential cost lost")
+			}
+		case "missing":
+			if credential.Cost != nil || !credential.MissingPrice {
+				t.Fatal("unknown credential cost invented")
+			}
+		}
+	}
+}
+
+func TestSnapshotCostRevaluationDoesNotMutatePersistedEvents(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.aliases["index"] = "a"
+	e.prices["anthropic/test"] = ModelPrice{Input: 5, Output: 25, CacheRead: floatPtr(.5), CacheWrite: floatPtr(6.25)}
+	e.capture([]byte(`{"AuthID":"index","Provider":"claude","Model":"test","Failed":true,"Latency":250000000,"TTFT":100000000,"Detail":{"InputTokens":100,"OutputTokens":20,"ReasoningTokens":999,"CacheReadTokens":300,"CacheCreationTokens":50,"TotalTokens":470}}`))
+	before := append([]Event(nil), e.events...)
+	path := e.dir + "/events.jsonl"
+	rawBefore, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := e.snapshot()
+	if first.Recent[0].AuthID != "a" || first.Recent[0].Cost == nil || math.Abs(*first.Recent[0].Cost-.0014625) > 1e-12 {
+		t.Fatalf("initial request valuation %+v", first.Recent[0])
+	}
+	e.prices["anthropic/test"] = ModelPrice{Input: 10, Output: 50, CacheRead: floatPtr(1), CacheWrite: floatPtr(12.5)}
+	second := e.snapshot()
+	if second.Recent[0].Cost == nil || math.Abs(*second.Recent[0].Cost-2**first.Recent[0].Cost) > 1e-12 || second.Credentials[0].Cost == nil || *second.Credentials[0].Cost != *second.Recent[0].Cost {
+		t.Fatalf("updated prices must revalue both views %+v", second)
+	}
+	rawAfter, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(rawBefore, rawAfter) || !reflect.DeepEqual(before, e.events) {
+		t.Fatalf("snapshot mutated persisted raw event: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(rawAfter), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := stored["cost"]; exists {
+		t.Fatal("derived cost persisted")
+	}
+	if _, exists := stored["missing_price"]; exists {
+		t.Fatal("derived price classification persisted")
+	}
+	if stored["auth_id"] != "index" || stored["input"] != float64(100) || stored["cache_read"] != float64(300) || stored["cache_write"] != float64(50) || stored["output"] != float64(20) || stored["total"] != float64(470) || stored["failed"] != true {
+		t.Fatalf("provider-native stored fields changed %s", rawAfter)
+	}
+}
+
+func TestMissingCacheReadPriceManagerPlusDefault(t *testing.T) {
+	for _, provider := range []string{"codex", "claude"} {
+		e := newEngine()
+		e.prices[priceProvider(provider)+"/test"] = ModelPrice{Input: 2, CacheWrite: floatPtr(0)}
+		ev := Event{Provider: provider, Model: "test", Input: 1000, CacheRead: 500, CacheWrite: 100}
+		want := .0009 // 400 ordinary input + 500 read at 10%, write explicitly free.
+		if provider == "claude" {
+			want = .0021 // Independent read/write buckets do not reduce native input.
+		}
+		cost, ok := e.eventCost(ev)
+		if !ok || math.Abs(cost-want) > 1e-12 {
+			t.Fatalf("provider=%s cost=%v known=%v", provider, cost, ok)
 		}
 	}
 }

@@ -49,7 +49,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(options.fakeClock)fakeNow+=ms;callback();}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events};
 }
@@ -76,13 +76,13 @@ test('all token displays use compact units, retaining full values in tooltips', 
     recent:[{auth_id:'account', at:'2026-10-09T00:00:00Z', model:'gpt', total:1250000}],
   });
   const quotaNodes = descendants(elements.get('quota-cards'));
-  assert(quotaNodes.some(n => n.textContent === '1.8b token' && n.title.startsWith('1,800,000,000 token\n')));
-  assert(!quotaNodes.some(n => n.textContent === '2.4b token'));
+  assert(quotaNodes.some(n => n.textContent === '2.4b token' && n.title.startsWith('2,400,000,000 token\n')));
+  assert(!quotaNodes.some(n => n.textContent === '1.8b token'));
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
   const cells = requestNodes.filter(n => n.tag === 'td');
-  assert.deepEqual(cells.slice(2,9).map(n => n.textContent), ['1,234', '1.25m', '1.25m', '2.4b', '', '2.4b', '$3.50']);
-  assert.equal(cells[7].title, '2,401,250,000 token');
+  assert.deepEqual(cells.slice(2,8).map(n => n.textContent), ['1,234', '1.25m', '2.4b', '', '2.4b', '$3.50']);
+  assert.equal(cells[6].title, '2,401,250,000 token');
   assert(requestNodes.some(n => n.textContent === '1,234 次请求 · 2.4b token · $3.50' && n.title === '2,401,250,000 token'));
   assert(descendants(elements.get('recent-table')).some(n => n.textContent === 'gpt'));
 });
@@ -90,8 +90,8 @@ test('all token displays use compact units, retaining full values in tooltips', 
 test('remaining percentage clamps safely and unknown data stays unknown', () => {
   const {api}=dashboard();
   for(const [used,want] of [[0,100],[25,75],[100,0],[110,0],[-5,100],[null,null],[undefined,null],['',null],[Infinity,null]])assert.equal(api.remainingPercent({used_percent:used}),want);
-  assert.equal(api.remainingEstimate(4000000,75),3000000);
-  assert.equal(api.remainingEstimate(null,75),null);
+  assert.equal(api.validEstimate(4000000),4000000);
+  for(const value of [null,undefined,Infinity,NaN,-1,'4000000','',true])assert.equal(api.validEstimate(value),null);
 });
 test('providers stay in separate sections; absent manual reset stays hidden', () => {
   const {api,elements}=dashboard();
@@ -152,11 +152,11 @@ test('official percentage precedes USD and readable compact tokens', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:100,observed_cost:120,observed_tokens:4000000,estimated_total_cost:120,estimated_total_tokens:4000000}}]});
   const nodes=descendants(elements.get('quota-cards'));
   const stats=nodes.filter(n=>n.className==='windowstats');
-  assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),['已用（观测）','预估剩余']);
+  assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),['已用（观测）','预估总额']);
   assert.deepEqual(stats[0].children[1].children.map(n=>n.className),['observed-cost','estimate-cost']);
-  assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$90.00']);
-  assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m token','3m token']);
-  assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$120.00','$0.000']);
+  assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$120.00']);
+  assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m token','4m token']);
+  assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$120.00','$120.00']);
   const window=nodes.find(n=>n.className==='window');
   assert.equal(window.children[1].className,'quota-value');
   assert.equal(window.children[3].className,'windowstats');
@@ -166,7 +166,7 @@ test('missing model price does not display a false USD amount', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}}]});
   const nodes=descendants(elements.get('quota-cards'));
   assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'—');
-  assert(nodes.some(n=>n.textContent==='3m token'));
+  assert(nodes.some(n=>n.textContent==='4m token'));
 });
 
 test('reset times show days/hours/minutes and never a negative countdown', () => {
@@ -356,25 +356,25 @@ test('successful later refresh clears a prior local account error without replac
   assert.equal(accountError(panel(d.elements,'account')).textContent,'');assert.equal(panel(d.elements,'other'),other);
 });
 
-test('TPS excludes first-token wait, rejects absent/invalid timing, and never guesses',()=>{
-  const {api}=dashboard(),event={output:100,latency_ms:2500,ttft_ms:500};assert.equal(api.requestTPS(event),50);
+test('request-average TPS follows Manager Plus total latency, never TTFT or input tokens',()=>{
+  const {api}=dashboard(),event={output:100,latency_ms:2500,ttft_ms:500};assert.equal(api.requestTPS(event),40);assert.equal(api.requestTPS({output:20,latency_ms:1500}),20/1.5);
   for(const value of [null,undefined,NaN,Infinity,-1,'500','',true]){
-    assert.equal(api.requestTPS({...event,ttft_ms:value}),null);assert.equal(api.requestTPS({...event,latency_ms:value}),null);
+    assert.equal(api.requestTPS({...event,ttft_ms:value}),40);assert.equal(api.requestTPS({...event,latency_ms:value}),null);
     assert.equal(api.firstTokenTime(value),'—');
   }
-  for(const patch of [{latency_ms:500},{latency_ms:0},{latency_ms:499},{ttft_ms:0,latency_ms:0},{output:0},{output:-1},{output:NaN},{output:Infinity},{output:'100'},{output:null},{failed:true}, {ttft_ms:undefined}, {latency_ms:undefined}])assert.equal(api.requestTPS({...event,...patch}),null,JSON.stringify(patch));
-  assert.equal(api.requestTPS({...event,ttft_ms:0}),40);assert.equal(api.firstTokenTime(0),'0.00 s');assert.equal(api.firstTokenTime(450),'0.45 s');assert.equal(api.firstTokenTime(1250),'1.25 s');
+  for(const patch of [{latency_ms:0},{output:0},{output:-1},{output:NaN},{output:Infinity},{output:'100'},{output:null},{failed:true},{latency_ms:undefined}])assert.equal(api.requestTPS({...event,...patch}),null,JSON.stringify(patch));
+  for(const ttft_ms of [0,500,2500,5000])assert.equal(api.requestTPS({...event,ttft_ms}),40);assert.equal(api.requestTPS({...event,stream:false}),40);assert.equal(api.requestTPS({...event,output:1}),.4);assert.equal(api.requestTPS({...event,latency_ms:500}),200);assert.equal(api.firstTokenTime(0),'0.00 s');assert.equal(api.firstTokenTime(450),'0.45 s');assert.equal(api.firstTokenTime(1250),'1.25 s');
 });
 
 for(const language of ['zh','en']){
-  test(`${language}: recent timing column shows first-token and total seconds with unchanged TPS`,()=>{
+  test(`${language}: timing column shows independent first-token and total seconds with request-average TPS`,()=>{
     const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:100,ttft_ms:500,latency_ms:2500,model:'gpt-test'},{output:100,ttft_ms:1250,latency_ms:3250},{output:100},{output:100,ttft_ms:500,latency_ms:2500,failed:true}]});
     const nodes=descendants(d.elements.get('recent-table')),timing=nodes.filter(n=>n.className==='num request-timing'),tps=nodes.filter(n=>n.className==='num tps');
     assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Time':'时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Requested at':'请求时间')));assert(!nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'First token':'首字时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent==='TPS'));
-    assert.deepEqual(timing.map(n=>descendants(n).filter(c=>c.className==='timing-value').map(c=>c.textContent)),[['0.50 s','2.50 s'],['1.25 s','3.25 s'],['—','—'],['0.50 s','2.50 s']]);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
+    assert.deepEqual(timing.map(n=>descendants(n).filter(c=>c.className==='timing-value').map(c=>c.textContent)),[['0.50 s','2.50 s'],['1.25 s','3.25 s'],['—','—'],['0.50 s','2.50 s']]);assert.deepEqual(tps.map(n=>n.textContent),['40','30.77','—','—']);
     assert.deepEqual(descendants(timing[0]).filter(n=>n.className==='timing-label').map(n=>n.textContent),language==='en'?['First token','Total']:['首字','总时间']);
-    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2\.50 s/);assert.match(tps[0].title,/0\.50 s/);assert.match(timing[0].title.split('\n')[0],/0\.50 s$/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/−/);
-    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table'));assert.match(translated.find(n=>n.className==='num tps').title,language==='en'?/首字时间/:/first-token seconds/);assert.deepEqual(translated.filter(n=>n.className==='timing-label').slice(0,2).map(n=>n.textContent),language==='en'?['首字','总时间']:['First token','Total']);
+    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2\.50 s/);assert.match(timing[0].title.split('\n')[0],/0\.50 s$/);assert.match(tps[0].title,/100 token/);assert(!tps[0].title.includes('−'));assert.match(tps[0].title,language==='en'?/request average/:/请求平均速度/);
+    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table'));assert.match(translated.find(n=>n.className==='num tps').title,language==='en'?/请求平均速度/:/request average/);assert.deepEqual(translated.filter(n=>n.className==='timing-label').slice(0,2).map(n=>n.textContent),language==='en'?['首字','总时间']:['First token','Total']);
   });
 
   test(`${language}: first-token and total timing remain independently visible with partial or invalid measurements`,()=>{
@@ -494,50 +494,50 @@ test('quiet automatic request snapshots retain header labels and card identity',
   let release,delayed=false;const sample=twoAccounts(),d=dashboard(login(),async()=>reply(delayed?await new Promise(resolve=>release=()=>resolve(sample)):sample));await d.api.load();d.api.setTab('requests');const card=panel(d.elements,'account');delayed=true;const pending=d.api.load();assert.equal(d.elements.get('refresh-label').textContent,'刷新请求');assert.equal(d.elements.get('status').textContent,'请求已同步');release();await pending;assert.equal(d.elements.get('refresh-label').textContent,'刷新请求');assert.equal(d.elements.get('status').textContent,'请求已同步');assert.equal(panel(d.elements,'account'),card);
 });
 
-test('quota token tooltip exposes observed counts and remaining arithmetic in both languages',()=>{
+test('quota token tooltip exposes observed counts and total arithmetic in both languages',()=>{
   for(const language of ['zh','en']){
     const d=dashboard({},undefined,{language}),sample=sampleSnapshot();sample.quotas[0].five_hour.observed_tokens=1000000;sample.quotas[0].five_hour.observed_cost=30;
     d.api.renderSample(sample);const metric=descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-value');
-    assert.match(metric.title,/1,000,000/);assert.match(metric.title,/25%/);assert.match(metric.title,/75%/);
+    assert.match(metric.title,/1,000,000/);assert.match(metric.title,/25%/);assert(!/75%|remaining|剩余/.test(metric.title));
   }
 });
 
-for(const language of ['zh','en'])test(`${language}: separate total/uncached input from cache and output-only TPS`,()=>{
+for(const language of ['zh','en'])test(`${language}: total input includes cache once without uncached column; TPS uses output only`,()=>{
   const d=dashboard({},undefined,{language});
   const claude={auth_id:'a',provider:'claude',model:'opus',input:2,cache_read:60590,cache_write:10960,output:100,total:71652,ttft_ms:500,latency_ms:2500};
   const codex={...claude,auth_id:'b',provider:'codex',input:1000,cache_read:600,cache_write:100,total:1100};
   d.api.renderSample({recent:[claude,codex],credentials:[{auth_id:'a',provider:'claude',input:2,total_input:71552,uncached_input:2,cached:60590,cache_write:10960,output:100,total:71652,requests:1,cost:1}]});
   const nodes=descendants(d.elements.get('recent-table')),rows=nodes.filter(n=>n.tag==='tr'&&n.children[0]?.tag==='td');
-  assert.deepEqual(rows[0].children.slice(3,6).map(n=>n.textContent),['71.55k','2','100']);
-  assert.equal(rows[0].children[3].title,'71,552 '+(language==='en'?'tokens':'token'));
-  assert.deepEqual(rows[1].children.slice(3,6).map(n=>n.textContent),['1k','300','100']);
-  assert.equal(d.api.requestTPS(claude),50);assert.equal(d.api.requestTPS({...codex,input:1e9,cache_read:1e9,total:2e9}),50);
-  for(const label of language==='en'?['Total input','Uncached input']:['总输入','非缓存输入'])assert(nodes.some(n=>n.tag==='th'&&n.textContent===label));
-  const summaryRow=descendants(d.elements.get('credential-table')).find(n=>n.tag==='tr'&&n.children[0]?.tag==='td');
-  assert.deepEqual(summaryRow.children.slice(3,6).map(n=>n.textContent),['71.55k','2','100']);
+  assert.deepEqual(rows[0].children.slice(3,5).map(n=>n.textContent),['71.55k','100']);
+  assert.match(rows[0].children[3].title,/71,552/);assert.match(rows[0].children[3].title,language==='en'?/includes ordinary input/:/包含普通输入/);
+  assert.deepEqual(rows[1].children.slice(3,5).map(n=>n.textContent),['1k','100']);assert.match(rows[1].children[3].title,language==='en'?/do not add/:/不能重复相加/);
+  assert.equal(d.api.requestTPS(claude),40);assert.equal(d.api.requestTPS({...codex,input:1e9,cache_read:1e9,total:2e9}),40);
+  assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Total input':'总输入')));assert(!nodes.some(n=>n.tag==='th'&&/非缓存|Uncached/.test(n.textContent)));
+  const summaryNodes=descendants(d.elements.get('credential-table')),summaryRow=summaryNodes.find(n=>n.tag==='tr'&&n.children[0]?.tag==='td');
+  assert.deepEqual(summaryRow.children.slice(3,5).map(n=>n.textContent),['71.55k','100']);assert(!summaryNodes.some(n=>n.tag==='th'&&/非缓存|Uncached/.test(n.textContent)));summaryNodes.find(n=>n.id==='credential-toggle-0').onclick();assert.equal(descendants(d.elements.get('credential-table')).find(n=>n.className==='details-cell').colSpan,8);
 });
-test('3-percent used quota displays estimated remaining tokens and cost',()=>{
+test('3-percent used quota displays estimated total tokens and cost, not remaining',()=>{
   const d=dashboard();d.api.renderSample({quotas:[{auth_id:'a',provider:'claude',five_hour:{used_percent:3,estimated_total_tokens:4000000,estimated_total_cost:12,observed_tokens:120000,observed_cost:.36}}]});
   const nodes=descendants(d.elements.get('quota-cards'));
-  assert(nodes.some(n=>n.className==='estimate-value'&&n.textContent==='3.88m token'));
-  assert(nodes.some(n=>n.className==='estimate-cost'&&n.textContent==='$11.64'));
+  assert(nodes.some(n=>n.className==='estimate-value'&&n.textContent==='4m token'));
+  assert(nodes.some(n=>n.className==='estimate-cost'&&n.textContent==='$12.00'));
 });
 
 for(const language of ['zh','en']){
-  test(`${language}: quota used money and tokens share rows with remaining estimates for each window`,()=>{
+  test(`${language}: quota used money and tokens share rows with total estimates for each window`,()=>{
     const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{auth_id:'a',provider:'claude',five_hour:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:50,observed_cost:90,observed_tokens:3000000,estimated_total_cost:180,estimated_total_tokens:6000000}}]});
     const stats=descendants(d.elements.get('quota-cards')).filter(n=>n.className==='windowstats'),suffix=language==='en'?'tokens':'token';
-    assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),language==='en'?['Used (observed)','Est. remaining']:['已用（观测）','预估剩余']);
-    assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$90.00']);assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$90.00','$90.00']);
-    assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m '+suffix,'3m '+suffix]);assert.deepEqual(stats[1].children[2].children.map(n=>n.textContent),['3m '+suffix,'3m '+suffix]);
+    assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),language==='en'?['Used (observed)','Est. total']:['已用（观测）','预估总额']);
+    assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$120.00']);assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$90.00','$180.00']);
+    assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m '+suffix,'4m '+suffix]);assert.deepEqual(stats[1].children[2].children.map(n=>n.textContent),['3m '+suffix,'6m '+suffix]);
     assert.match(stats[0].children[2].children[0].title,/1,000,000/);assert.match(stats[0].children[2].children[0].title,language==='en'?/this CPA instance/:/本机/);assert.match(stats[0].children[1].children[0].title,language==='en'?/not an official bill/:/不是官方账单/);
-    d.api.setLanguage(language==='en'?'zh':'en');assert.deepEqual(descendants(d.elements.get('quota-cards')).filter(n=>n.className==='usage-label').slice(0,2).map(n=>n.textContent),language==='en'?['已用（观测）','预估剩余']:['Used (observed)','Est. remaining']);
+    d.api.setLanguage(language==='en'?'zh':'en');assert.deepEqual(descendants(d.elements.get('quota-cards')).filter(n=>n.className==='usage-label').slice(0,2).map(n=>n.textContent),language==='en'?['已用（观测）','预估总额']:['Used (observed)','Est. total']);
   });
   test(`${language}: quota used values preserve zero and unknown, and missing prices hide both dollar values only`,()=>{
-    const d=dashboard({},undefined,{language}),suffix=language==='en'?'tokens':'token';d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_cost:0,observed_tokens:0},seven_day:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}},{provider:'claude'}]});
+    const d=dashboard({},undefined,{language}),suffix=language==='en'?'tokens':'token';d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_cost:0,observed_tokens:0},seven_day:{used_percent:25,observed_tokens:1000000,estimated_total_tokens:4000000,missing_price:true}},{provider:'claude'}]});
     const stats=descendants(d.elements.get('quota-cards')).filter(n=>n.className==='windowstats');
     assert(stats.some(s=>s.children[1].children[0].textContent==='$0.000'&&s.children[2].children[0].textContent==='0 '+suffix&&s.children[1].children[1].textContent==='—'));
-    const missing=stats.find(s=>s.children[2].children[0].textContent==='1m '+suffix);assert.deepEqual(missing.children[1].children.map(n=>n.textContent),['—','—']);assert.equal(missing.children[2].children[1].textContent,'3m '+suffix);assert(missing.children[1].children.every(n=>n.title===(language==='en'?'Model price missing; amount unavailable':'缺少模型单价，金额暂不可用')));
+    const missing=stats.find(s=>s.children[2].children[0].textContent==='1m '+suffix);assert.deepEqual(missing.children[1].children.map(n=>n.textContent),['—','—']);assert.equal(missing.children[2].children[1].textContent,'4m '+suffix);assert(missing.children[1].children.every(n=>n.title===(language==='en'?'Model price missing; amount unavailable':'缺少模型单价，金额暂不可用')));
     assert(stats.some(s=>s.children[1].children.every(n=>n.textContent==='—')&&s.children[2].children.every(n=>n.textContent==='— '+suffix)));
   });
 }
@@ -555,4 +555,26 @@ test('refresh and language controls live below tabs, outside CPA top-right overl
 });
 test('sign-in gate keeps toolbar language selection while hiding private-data controls',()=>{
   const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert(!/\.needs-login \.toolbar\s*[,\{]/.test(css));assert.match(css,/\.needs-login \.filter-control/);assert.match(css,/\.needs-login #refresh/);
+});
+
+for(const language of ['zh','en']){
+  test(`${language}: every request has cost including zero, small, failed and unknown prices`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{cost:1.25},{cost:.001185},{cost:0},{cost:.004925,failed:true},{cost:9,missing_price:true},{},{cost:-1},{cost:Infinity},{cost:'1.2'}]});
+    const nodes=descendants(d.elements.get('recent-table')),costs=nodes.filter(n=>n.className==='num usd-value request-cost');
+    assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Cost':'金额')));assert.deepEqual(costs.map(n=>n.textContent),['$1.25','$0.001185','$0.000','$0.004925','—','—','—','—','—']);assert.match(costs[1].title,/0\.001185 USD/);assert.match(costs[1].title,language==='en'?/not a subscription charge/:/不是订阅扣款/);assert.equal(costs[4].title,language==='en'?'Model price missing; amount unavailable':'缺少模型单价，金额暂不可用');
+    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num usd-value request-cost');assert.match(translated.title,language==='en'?/不是订阅扣款/:/not a subscription charge/);
+  });
+  test(`${language}: previous-cycle forecasts explain their actual basis without quota arithmetic`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_tokens:100,observed_cost:.01,estimated_total_tokens:6400,estimated_total_cost:.06,estimated_basis:'previous'}}]});
+    const nodes=descendants(d.elements.get('quota-cards')),metric=nodes.find(n=>n.className==='estimate-value'),cost=nodes.find(n=>n.className==='estimate-cost');assert.equal(metric.textContent,'6.4k '+(language==='en'?'tokens':'token'));assert.match(metric.title,language==='en'?/previous cycle/:/上一周期/);assert.equal(cost.title,metric.title.split('\n').slice(1).join('\n'));assert(!/×|÷/.test(cost.title));
+  });
+}
+test('total input handles provider cache contracts and aggregate total without deriving uncached input',()=>{
+  const {api}=dashboard();assert.equal(api.totalInput({provider:'claude',input:2,cache_read:60590,cache_write:10960}),71552);assert.equal(api.totalInput({provider:'codex',input:1000,cache_read:600,cache_write:100}),1000);assert.equal(api.totalInput({total_input:71552,uncached_input:999}),71552);assert.equal(api.totalInput({provider:'codex',input:1000,cache_read:2000}),1000);assert.equal(api.totalInput({provider:'claude',input:2,cache_read:-1}),null);assert.equal(api.totalInput({}),null);assert.equal(api.totalInput({total_input:0}),0);assert(!html.includes('非缓存输入'));assert(!source.includes('remainingEstimate'));
+});
+for(const language of ['zh','en'])test(`${language}: missing previous price does not hide current known observed cost`,()=>{
+  const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_tokens:5000,observed_cost:.005,estimated_total_tokens:50000,estimated_basis:'previous',missing_price:true}}]});const nodes=descendants(d.elements.get('quota-cards')),actual=nodes.find(n=>n.className==='observed-cost'),estimate=nodes.find(n=>n.className==='estimate-cost');assert.equal(actual.textContent,'$0.005');assert.match(actual.title,language==='en'?/not an official bill/:/不是官方账单/);assert.equal(estimate.textContent,'—');
+});
+for(const language of ['zh','en'])test(`${language}: missing TTFT does not hide measurable request-average TPS`,()=>{
+  const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:20,latency_ms:1500},{output:20,latency_ms:1500,ttft_ms:100},{output:20,latency_ms:1500,ttft_ms:2000},{output:1,latency_ms:2500,stream:false}]});const nodes=descendants(d.elements.get('recent-table'));assert.deepEqual(nodes.filter(n=>n.className==='num tps').map(n=>n.textContent),['13.33','13.33','13.33','0.4']);assert(nodes.some(n=>n.className==='timing-value'&&n.textContent==='—'));
 });

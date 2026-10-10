@@ -46,7 +46,7 @@ func TestEstimateAndCredentialSeparation(t *testing.T) {
 	e.prices = map[string]ModelPrice{"openai/gpt-5.5": {Input: 2, Output: 8}}
 	now := time.Now().UTC()
 	reset := now.Add(2 * time.Hour).Format(time.RFC3339)
-	e.quotas["A"] = AccountQuota{AuthID: "A", Provider: "codex", Name: "Account A", Five: &QuotaWindow{Used: 25, ResetAt: reset}}
+	e.quotas["A"] = AccountQuota{AuthID: "A", Provider: "codex", Name: "Account A", FetchedAt: now.Format(time.RFC3339Nano), Five: &QuotaWindow{Used: 25, ResetAt: reset}}
 	body, _ := json.Marshal(map[string]any{"AuthID": "A", "Provider": "codex", "Model": "gpt-5.5", "RequestedAt": now.Add(-time.Minute).Format(time.RFC3339), "Detail": map[string]any{"InputTokens": 100000, "OutputTokens": 20000, "TotalTokens": 120000}})
 	e.capture(body)
 	other, _ := json.Marshal(map[string]any{"AuthID": "B", "Provider": "claude", "Model": "nonexisting", "Detail": map[string]any{"InputTokens": 1, "OutputTokens": 1, "TotalTokens": 2}})
@@ -181,7 +181,7 @@ func TestEventCostArithmetic(t *testing.T) {
 		{"all cache read", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 1000000}, .25},
 		{"cache read clamped to input", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 2000000}, .25},
 		{"cache write replaces ordinary input", ModelPrice{Input: 5, Output: 25, CacheRead: floatPtr(.5), CacheWrite: floatPtr(6.25)}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 6.725},
-		{"absent cache prices fall back to input", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 2.8},
+		{"absent cache read uses ten percent; write uses input", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 2.44},
 		{"explicit free cache is retained", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(0)}, Event{Input: 1000000, CacheRead: 1000000}, 0},
 		{"total tokens are not charged twice", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, Output: 100000, Total: 9000000}, 2.8},
 	} {
@@ -207,7 +207,8 @@ func TestWindowEstimateArithmetic(t *testing.T) {
 	e.events = []Event{
 		{At: now.Add(-time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 100000, Output: 20000, Total: 120000},
 		{At: now.Add(-time.Hour), AuthID: "other", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
-		{At: now.Add(-6 * time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
+		// Outside both adjacent windows: arithmetic tests must not trigger fallback.
+		{At: now.Add(-10 * time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
 		{At: now.Add(time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
 	}
 	for _, used := range []float64{-1, 0, 0.1, 1, 3, 4.99, 5, 25, 50, 100, 101} {
@@ -221,12 +222,11 @@ func TestWindowEstimateArithmetic(t *testing.T) {
 			}
 			continue
 		}
-		ratio := used / 100
-		if win.EstimatedTotalTokens == nil || math.Abs(*win.EstimatedTotalTokens-120000/ratio) > 1e-6 || win.EstimatedTotalCost == nil || math.Abs(*win.EstimatedTotalCost-.36/ratio) > 1e-9 {
+		multiplier := 100 / used
+		wantTokens := math.Max(120000, math.Round(120000*multiplier))
+		wantCost := math.Max(.36, math.Round(.36*multiplier*100)/100)
+		if win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != wantTokens || win.EstimatedTotalCost == nil || math.Abs(*win.EstimatedTotalCost-wantCost) > 1e-9 || win.EstimatedBasis != "quota" {
 			t.Fatalf("used=%v estimate=%+v", used, win)
-		}
-		if used == 25 && math.Abs(*win.EstimatedTotalCost*(1-ratio)-1.08) > 1e-9 {
-			t.Fatal("remaining cost should be $1.08")
 		}
 	}
 	e.events[0].Model = "unknown"

@@ -102,9 +102,9 @@ const translations={
   '无效的账户标识。':'Invalid account ID.','未找到账户。':'Account not found.','已有额度刷新正在进行，请稍后重试。':'A quota refresh is already running. Please retry later.',
   '未知服务商':'Unknown provider','未知模型':'Unknown model','未知凭证':'Unknown credential','5 小时':'5 hours','7 天':'7 days','额度未知':'Quota unknown','剩余':'remaining','未知':'Unknown',
   '{window}官方剩余额度':'Official remaining quota: {window}','{percent}% 剩余':'{percent}% remaining','美元估算':'USD estimate','token':'tokens','缺少模型单价，金额暂不可用':'Model price missing; amount unavailable',
-  '观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%':'Observed: {observed} tokens\nRemaining estimate: observed tokens / {used}% × {remaining}%',
-  '观测成本：{cost}\n按已用比例换算剩余金额':'Observed cost: {cost}\nRemaining amount estimated from the used quota fraction',
-  '已用（观测）':'Used (observed)','预估剩余':'Est. remaining',
+  '观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%':'Observed: {observed} tokens\nEstimated total: observed tokens × 100 / {used}%',
+  '观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%':'Observed cost: {cost}\nEstimated total: observed cost × 100 / {used}%',
+  '已用（观测）':'Used (observed)','预估总额':'Est. total','参考上一周期的实际用量；不是按当前已用比例外推。':'Based on actual usage in the previous cycle, not the current quota fraction.','预估依据暂不可用，请刷新额度。':'Forecast basis unavailable; refresh quota.',
   '本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。':'Usage observed by this CPA instance in this quota window; excludes requests before installation or from other clients.',
   '本机观测的 API 等价成本，不是官方账单或订阅扣款。':'API-equivalent cost observed by this CPA instance, not an official bill or subscription charge.',
   '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
@@ -112,7 +112,8 @@ const translations={
   '近 7 天请求':'Requests · Last 7 days','失败':'Failed','{n} 个凭证':'{n} credentials','近 7 天暂无凭证请求':'No credential requests in the last 7 days',
   '当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。':'No requests observed for this filter. New requests appear after the next snapshot sync.',
   '近 7 天凭证用量及模型':'Credential usage and models over the last 7 days','凭证':'Credential','模型':'Model','请求':'Requests','输入':'Input','输出':'Output','缓存读取':'Cache read','总 token':'Total tokens','估算美元':'Estimated USD',
-  '总输入':'Total input','非缓存输入':'Uncached input',
+  '总输入':'Total input','金额':'Cost','按当前模型单价计算的 API 等价金额，不是订阅扣款。':'API-equivalent cost at current model prices, not a subscription charge.',
+  '总输入包含普通输入、缓存读取和缓存写入。':'Total input includes ordinary input, cache reads and cache writes.','总输入已包含缓存，缓存读写不能重复相加。':'Total input already includes cache; do not add cache reads/writes again.',
   '{n} 次失败':'{n} failures','价格缺失':'Price missing','各模型观测用量 · 近 7 天':'Observed model usage · Last 7 days','暂无模型明细。':'No model details yet.','{n} 次请求 · {tokens} token · {cost}':'{n} requests · {tokens} tokens · {cost}',
   '显示 {start}–{end} / {n} 条':'Showing {start}–{end} / {n}','暂无近期记录':'No recent records','等待请求快照':'Waiting for request snapshot','暂无近期请求':'No recent requests',
   '当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。':'The snapshot contains at most the latest 60 requests. No matches for this filter does not mean there is no request history.',
@@ -120,7 +121,7 @@ const translations={
   '额度接口不可用。':'Quota endpoint unavailable.','额度响应过大。':'Quota response too large.','额度响应格式异常。':'Invalid quota response.','缺少额度窗口。':'Quota windows missing.',
   '额度端点不允许访问。':'Quota endpoint not permitted.','额度接口返回 HTTP {code}。':'Quota endpoint returned HTTP {code}.','没有支持的模型。':'No supported models.',
   '首字时间：{ttft} s\n总耗时：{latency} s':'First token: {ttft} s\nTotal latency: {latency} s',
-  'TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s':'TPS = output tokens / (total latency seconds − first-token seconds)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst token: {ttft} s',
+  'TPS = 输出 token ÷ 总耗时秒（请求平均速度）\n输出：{output} token\n总耗时：{latency} s\n首字时间独立展示，不从总耗时扣除；不是纯解码速度。':'TPS = output tokens / total latency seconds (request average)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst-token time is shown separately, not subtracted; this is not pure decode speed.',
   '首字时间':'First token','请求时间':'Requested at','首字':'First token','总时间':'Total','token/s':'tokens/s','耗时数据不可用':'Timing data unavailable',
   '保存数据':'Save data','开启':'Enabled','未保存':'Memory only','保存中…':'Saving…','无法保存设置，请稍后重试。':'Cannot save settings. Please retry later.',
   '数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。':'Data is saved in an independent folder and retained across plugin updates. Disabling stops future request, quota and price saves; it never deletes saved history. Enabling saves current in-memory data.',
@@ -186,24 +187,24 @@ const active = d => !filter || d.provider===filter;
 const providerName = p => ({claude:'Claude',codex:'Codex'}[p]||p||t('未知服务商'));
 const modelName = m => typeof m==='string' && m.trim()?m:t('未知模型');
 const credentialName = s => s?.name||s?.auth_id||t('未知凭证');
-function inputParts(record,provider=record.provider){
+function totalInput(record,provider=record.provider){
   const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
-  if(valid(record.total_input)&&valid(record.uncached_input))return {total:record.total_input,uncached:record.uncached_input};
-  if(!valid(record.input))return {total:null,uncached:null};
+  if(valid(record.total_input))return record.total_input;
+  if(!valid(record.input))return null;
+  if(provider!=='claude')return record.input;
   const read=record.cache_read??record.cached??0,write=record.cache_write??0;
-  if(!valid(read)||!valid(write))return {total:null,uncached:null};
-  if(provider==='claude')return {total:record.input+read+write,uncached:record.input};
-  return {total:record.input,uncached:Math.max(0,record.input-Math.min(read,record.input)-Math.min(write,Math.max(0,record.input-read)))};
+  return valid(read)&&valid(write)?record.input+read+write:null;
 }
+function addInputCell(row,record,provider=record.provider){const cell=addTokens(row,'td','num',totalInput(record,provider),'');cell.title+='\n'+t(provider==='claude'?'总输入包含普通输入、缓存读取和缓存写入。':'总输入已包含缓存，缓存读写不能重复相加。');return cell;}
 function addCacheCell(row,read,write){const cell=addCell(row,'','num cache-pair');addTokens(cell,'span','',read,'');add(cell,'span','slash','/');addTokens(cell,'span','',write,'');return cell;}
 // Timing fields are already milliseconds; never infer TTFT from total latency.
 const validMilliseconds=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
 const decimal=value=>new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(value);
 function firstTokenTime(value){return validMilliseconds(value)?(value/1000).toFixed(2)+' s':'—';}
 function requestTPS(event){
-  const {latency_ms:latency,ttft_ms:ttft,output}=event;
-  if(event.failed||!validMilliseconds(latency)||!validMilliseconds(ttft)||latency<=ttft||typeof output!=='number'||!Number.isFinite(output)||output<=0)return null;
-  const rate=output/((latency-ttft)/1000);return Number.isFinite(rate)?rate:null;
+  const {latency_ms:latency,output}=event;
+  if(event.failed||!validMilliseconds(latency)||latency<=0||typeof output!=='number'||!Number.isFinite(output)||output<=0)return null;
+  const rate=output/(latency/1000);return Number.isFinite(rate)?rate:null;
 }
 function addRequestTiming(row,event){
   const timing=addCell(row,'','num request-timing'),rate=requestTPS(event),tps=addCell(row,rate==null?'—':decimal(rate),'num tps');
@@ -211,18 +212,15 @@ function addRequestTiming(row,event){
   const values={ttft:validMilliseconds(event.ttft_ms)?(event.ttft_ms/1000).toFixed(2):'—',latency:validMilliseconds(event.latency_ms)?(event.latency_ms/1000).toFixed(2):'—',output:typeof event.output==='number'&&Number.isFinite(event.output)?String(event.output):'—'};
   timing.title=t('首字时间：{ttft} s\n总耗时：{latency} s',values);
   if(rate!=null)add(tps,'span','timing-unit',' '+t('token/s'));
-  tps.title=(rate==null?t('耗时数据不可用')+'\n':'')+t('TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s',values);
+  tps.title=(rate==null?t('耗时数据不可用')+'\n':'')+t('TPS = 输出 token ÷ 总耗时秒（请求平均速度）\n输出：{output} token\n总耗时：{latency} s\n首字时间独立展示，不从总耗时扣除；不是纯解码速度。',values);
 }
 function remainingPercent(win){
   const value=win?.used_percent;
   if(value==null || (typeof value==='string' && !value.trim()) || !['number','string'].includes(typeof value))return null;
   const used=Number(value);return Number.isFinite(used)?100-Math.max(0,Math.min(100,used)):null;
 }
-function remainingEstimate(total,percent){
-  if(total==null || percent==null || !['number','string'].includes(typeof total) || (typeof total==='string' && !total.trim()))return null;
-  if(!Number.isFinite(Number(total)) || Number(total)<0 || !Number.isFinite(Number(percent)))return null;
-  return Number(total)*(Math.max(0,Math.min(100,Number(percent)))/100);
-}
+function validEstimate(value){return typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null;}
+function requestMoney(value){const cost=validEstimate(value);return cost==null?'—':'$'+new Intl.NumberFormat('en-US',{minimumFractionDigits:cost<1?3:2,maximumFractionDigits:cost<1?6:2,useGrouping:false}).format(cost);}
 function updateCountdowns(){
   document.querySelectorAll('[data-reset-at]').forEach(node=>{const value=resetCountdown(node.dataset.resetAt);if(node.textContent!==value)node.textContent=value;});
 }
@@ -434,17 +432,18 @@ function addWindow(parent,title,period,win){
   const track=add(section,'div','track');track.setAttribute('role','meter');track.setAttribute('aria-label',t('{window}官方剩余额度',{window:t(title)}));track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
   if(remaining!=null)track.setAttribute('aria-valuenow',String(remaining));track.setAttribute('aria-valuetext',remaining==null?t('未知'):t('{percent}% 剩余',{percent:remaining.toFixed(1)}));
   const fill=add(track,'div','fill');fill.style.width=(remaining??0)+'%';
-  const cost=win?.missing_price?null:remainingEstimate(win?.estimated_total_cost,remaining);
+  const cost=win?.missing_price?null:validEstimate(win?.estimated_total_cost);
   const stats=add(section,'div','windowstats'),labels=add(stats,'div','usage-row'),amounts=add(stats,'div','usage-row'),tokenRow=add(stats,'div','usage-row');
-  const usedLabel=add(labels,'span','usage-label','已用（观测）');usedLabel.title=t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');add(labels,'span','usage-label','预估剩余');
-  const observedAmount=add(amounts,'div','observed-cost',money(win?.missing_price?null:win?.observed_cost)),amount=add(amounts,'div','estimate-cost',money(cost));
-  const available=remainingEstimate(win?.estimated_total_tokens,remaining);
+  const usedLabel=add(labels,'span','usage-label','已用（观测）');usedLabel.title=t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');add(labels,'span','usage-label','预估总额');
+  const observedAmount=add(amounts,'div','observed-cost',money(validEstimate(win?.observed_cost))),amount=add(amounts,'div','estimate-cost',money(cost));
+  const available=validEstimate(win?.estimated_total_tokens);
   const observedTokens=addTokens(tokenRow,'div','observed-value',win?.observed_tokens),tokenValue=addTokens(tokenRow,'div','estimate-value',available);
   observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。');
-  tokenValue.title+='\n'+t('观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%',{observed:fmt(win?.observed_tokens),used:win?.used_percent??'—',remaining:remaining??'—'});
-  amount.title=t('观测成本：{cost}\n按已用比例换算剩余金额',{cost:money(win?.observed_cost)});
+  const basis=win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
+  tokenValue.title+='\n'+(basis||t('观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%',{observed:fmt(win?.observed_tokens),used:win?.used_percent??'—'}));
+  amount.title=basis||t('观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%',{cost:money(win?.observed_cost),used:win?.used_percent??'—'});
   const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
-  if(win?.missing_price){observedAmount.title=t('缺少模型单价，金额暂不可用');amount.title=t('缺少模型单价，金额暂不可用');}
+  if(validEstimate(win?.observed_cost)==null&&win?.missing_price)observedAmount.title=t('缺少模型单价，金额暂不可用');if(win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
 }
 function renderQuotas(){
   const root=$('quota-cards'),quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
@@ -496,18 +495,18 @@ function renderCredentials(credentials){
   const root=$('credential-table');root.replaceChildren();$('credential-count').textContent=t('{n} 个凭证',{n:data?fmt(credentials.length):'—'});
   if(!data){root.append(noData());return;}
   if(!credentials.length){root.append(empty('近 7 天暂无凭证请求','当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。'));return;}
-  const tbody=makeTable(root,'近 7 天凭证用量及模型', [['凭证','',17],['模型','',18],['请求','num',8],['总输入','num',10],['非缓存输入','num',10],['输出','num',8],['缓存 读 / 写','num',11],['总 token','num',9],['估算美元','num',9]]);
+  const tbody=makeTable(root,'近 7 天凭证用量及模型', [['凭证','',18],['模型','',19],['请求','num',8],['总输入','num',12],['输出','num',9],['缓存 读 / 写','num',13],['总 token','num',11],['估算美元','num',10]]);
   credentials.forEach((s,i)=>{
     const tr=add(tbody,'tr','');const label=addCell(tr,'');const button=add(label,'button','credential-button');button.type='button';button.id='credential-toggle-'+i;button.setAttribute('aria-expanded',String(expanded===s.auth_id));button.setAttribute('aria-controls','credential-detail-'+i);
     button.setAttribute('aria-label',t('查看 {name} 的模型用量',{name:credentialName(s)}));
     add(button,'span','chevron',expanded===s.auth_id?'⌄':'›').setAttribute('aria-hidden','true');add(button,'span','credential-name',credentialName(s));add(label,'span','cell-secondary',providerName(s.provider));
     const models=list(s.models);const modelcell=addCell(tr,'');[...new Set(models.map(m=>modelName(m.model)))].forEach(model=>add(modelcell,'div','model',model));if(!models.length)add(modelcell,'span','model',t('未知模型'));
     const requests=addCell(tr,fmt(s.requests),'num');add(requests,'span','cell-secondary'+(s.failures?' failure-count':''),t('{n} 次失败',{n:fmt(s.failures||0)}));
-    const inputs=inputParts(s);addTokens(tr,'td','num',inputs.total,'');addTokens(tr,'td','num',inputs.uncached,'');addTokens(tr,'td','num',s.output,'');addCacheCell(tr,s.cached,s.cache_write??0);addTokens(tr,'td','num',s.total,'');const cost=addCell(tr,money(s.missing_price?null:s.cost),'num usd-value');if(s.missing_price||s.cost==null)add(cost,'span','cell-secondary','价格缺失');
+    addInputCell(tr,s);addTokens(tr,'td','num',s.output,'');addCacheCell(tr,s.cached,s.cache_write??0);addTokens(tr,'td','num',s.total,'');const cost=addCell(tr,money(s.missing_price?null:s.cost),'num usd-value');if(s.missing_price||s.cost==null)add(cost,'span','cell-secondary','价格缺失');
     button.onclick=()=>{expanded=expanded===s.auth_id?'':s.auth_id;renderRequests();$(button.id)?.focus({preventScroll:true});};
     const detailtr=add(tbody,'tr','');detailtr.id='credential-detail-'+i;detailtr.hidden=expanded!==s.auth_id;
     if(expanded===s.auth_id){
-      const cell=add(detailtr,'td','details-cell');cell.colSpan=9;const detail=add(cell,'div','details');add(detail,'h3','','各模型观测用量 · 近 7 天');
+      const cell=add(detailtr,'td','details-cell');cell.colSpan=8;const detail=add(cell,'div','details');add(detail,'h3','','各模型观测用量 · 近 7 天');
       if(!models.length)add(detail,'p','muted','暂无模型明细。');
       models.forEach(m=>{const row=add(detail,'div','modelrow');add(row,'span','model',modelName(m.model));const stats=add(row,'span','tabnum',t('{n} 次请求 · {tokens} token · {cost}',{n:fmt(m.requests),tokens:tokens(m.tokens),cost:money(m.cost)}));stats.title=fmt(m.tokens)+' '+t('token');});
     }
@@ -524,13 +523,14 @@ function renderRecent(){
   $('recent-caption').textContent=data?(recent.length?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:recent.length}):t('暂无近期记录')):t('等待请求快照');
   if(!data){root.append(noData());return;}
   if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
-  const tbody=makeTable(root,'最近最多 60 条请求快照', [['请求时间','',11],['凭证','',13],['模型','',14],['总输入','num',7],['非缓存输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['时间','num',10],['TPS','num',8],['状态','',6]]);
+  const tbody=makeTable(root,'最近最多 60 条请求快照', [['请求时间','',11],['凭证','',13],['模型','',14],['总输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['金额','num',9],['时间','num',10],['TPS','num',8],['状态','',6]]);
   shown.forEach(x=>{
     const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString(locale()):'未知日期');
     const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
     const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addCell(tr,modelName(x.model),'model');
-    const inputs=inputParts(x,x.provider||credential.provider);addTokens(tr,'td','num',inputs.total,'');addTokens(tr,'td','num',inputs.uncached,'');addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
-    addTokens(tr,'td','num',x.total,'');addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
+    addInputCell(tr,x,x.provider||credential.provider);addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
+    addTokens(tr,'td','num',x.total,'');const costValue=x.missing_price?null:validEstimate(x.cost),costCell=addCell(tr,requestMoney(costValue),'num usd-value request-cost');costCell.title=costValue==null?t('缺少模型单价，金额暂不可用'):'$'+String(costValue)+' USD\n'+t('按当前模型单价计算的 API 等价金额，不是订阅扣款。');
+    addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
   });
 }
 function renderRequests(){const credentials=list(data?.credentials).filter(active);renderSummary(credentials);renderRecent();renderCredentials(credentials);$('request-count').textContent=data?fmt(credentials.reduce((n,s)=>n+(Number(s.requests)||0),0)):'—';}
