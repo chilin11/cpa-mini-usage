@@ -100,6 +100,10 @@ Quota windows display observed used USD/tokens alongside estimated totals on ali
 
 The v0.1.6 replacement build moves refresh, language, and connection controls to the left-side toolbar below the tabs so CPA's top-right floating control does not cover the refresh button. Request refresh remains GET-only. Since the version number is unchanged, existing v0.1.6 installations may need a manual reinstall or `.so` replacement followed by a CPA restart; keep the data directory.
 
+### v0.1.7
+
+Publish the verified v0.1.6 replacement fixes under a new version so the CPA plugin store can offer an upgrade from installed v0.1.6. Includes Manager Plus estimated totals, per-request USD cost, request-average output TPS, removal of the uncached-input column, and left-side refresh controls that avoid the CPA floating control. Plugin metadata, dashboard badge, registry and release assets all use 0.1.7. Upgrade the plugin and restart CPA; keep the existing data directory and Docker persistent mount. No new accounting or storage changes in this version.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
