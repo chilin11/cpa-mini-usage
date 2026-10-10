@@ -17,6 +17,9 @@ main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-item
 .toolbar{flex-wrap:wrap}.toolbar-options{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.persistence-control{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);min-width:0}.persistence-label{display:flex;align-items:center;gap:5px;white-space:nowrap}.persistence-label input{margin:0;accent-color:var(--accent);cursor:pointer}.persistence-label input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.persistence-error{color:var(--bad);overflow-wrap:anywhere}.tablewrap{max-width:100%;min-width:0}#page-requests{min-width:0}#recent-table table{min-width:1120px}#recent-table th,#recent-table td{padding-left:10px;padding-right:10px}.timing-unit{font-size:10px;color:var(--muted);font-weight:400}
 main.request-view{max-width:1480px}.request-view #page-requests th,.request-view #page-requests td{padding:7px 8px}.request-view .summary{padding:11px 0;margin-bottom:16px}.request-view .request-section+.request-section{margin-top:16px}.request-view .table-foot,.request-view .pagination{flex-wrap:wrap}.page-size-control{display:flex;align-items:center;gap:5px}.page-size-control select{min-height:28px;padding:3px 6px}
 #recent-table table{min-width:1220px}#credential-table table{min-width:1120px}
+.request-timing .timing-line{display:block;font-size:11px;line-height:1.5}.request-timing .timing-label{font-size:10px;color:var(--muted);margin-right:5px}
+.usage-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.usage-label{font-size:10px;color:var(--muted);margin-bottom:4px;overflow-wrap:anywhere}.observed-cost{font-size:22px;font-weight:600;letter-spacing:-.4px;line-height:1.3;font-variant-numeric:tabular-nums}.usage-row .estimate-cost{display:block;overflow-wrap:anywhere}.observed-cost{overflow-wrap:anywhere}.observed-value{font-size:14px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+@media(max-width:480px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}}
 .needs-login .tabs,.needs-login .toolbar,.needs-login [role=tabpanel],.needs-login .foot{display:none}
 </style>
 </head>
@@ -98,6 +101,9 @@ const translations={
   '{window}官方剩余额度':'Official remaining quota: {window}','{percent}% 剩余':'{percent}% remaining','美元估算':'USD estimate','token':'tokens','缺少模型单价，金额暂不可用':'Model price missing; amount unavailable',
   '观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%':'Observed: {observed} tokens\nRemaining estimate: observed tokens / {used}% × {remaining}%',
   '观测成本：{cost}\n按已用比例换算剩余金额':'Observed cost: {cost}\nRemaining amount estimated from the used quota fraction',
+  '已用（观测）':'Used (observed)','预估剩余':'Est. remaining',
+  '本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。':'Usage observed by this CPA instance in this quota window; excludes requests before installation or from other clients.',
+  '本机观测的 API 等价成本，不是官方账单或订阅扣款。':'API-equivalent cost observed by this CPA instance, not an official bill or subscription charge.',
   '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
   '{n} 个账户':'{n} accounts','可重置':'Resets remaining','次':'','刷新 {name} 的额度':'Refresh quota for {name}',
   '近 7 天请求':'Requests · Last 7 days','失败':'Failed','{n} 个凭证':'{n} credentials','近 7 天暂无凭证请求':'No credential requests in the last 7 days',
@@ -112,7 +118,7 @@ const translations={
   '额度端点不允许访问。':'Quota endpoint not permitted.','额度接口返回 HTTP {code}。':'Quota endpoint returned HTTP {code}.','没有支持的模型。':'No supported models.',
   '首字时间：{ttft} s\n总耗时：{latency} s':'First token: {ttft} s\nTotal latency: {latency} s',
   'TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s':'TPS = output tokens / (total latency seconds − first-token seconds)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst token: {ttft} s',
-  '首字时间':'First token','token/s':'tokens/s','耗时数据不可用':'Timing data unavailable',
+  '首字时间':'First token','请求时间':'Requested at','首字':'First token','总时间':'Total','token/s':'tokens/s','耗时数据不可用':'Timing data unavailable',
   '保存数据':'Save data','开启':'Enabled','未保存':'Memory only','保存中…':'Saving…','无法保存设置，请稍后重试。':'Cannot save settings. Please retry later.',
   '数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。':'Data is saved in an independent folder and retained across plugin updates. Disabling stops future request, quota and price saves; it never deletes saved history. Enabling saves current in-memory data.',
   '数据目录：':'Data directory:',
@@ -197,9 +203,10 @@ function requestTPS(event){
   const rate=output/((latency-ttft)/1000);return Number.isFinite(rate)?rate:null;
 }
 function addRequestTiming(row,event){
-  const ttft=addCell(row,firstTokenTime(event.ttft_ms),'num first-token'),rate=requestTPS(event),tps=addCell(row,rate==null?'—':decimal(rate),'num tps');
+  const timing=addCell(row,'','num request-timing'),rate=requestTPS(event),tps=addCell(row,rate==null?'—':decimal(rate),'num tps');
+  for(const [label,value] of [['首字',event.ttft_ms],['总时间',event.latency_ms]]){const line=add(timing,'span','timing-line');add(line,'span','timing-label',t(label));add(line,'span','timing-value',firstTokenTime(value));}
   const values={ttft:validMilliseconds(event.ttft_ms)?(event.ttft_ms/1000).toFixed(2):'—',latency:validMilliseconds(event.latency_ms)?(event.latency_ms/1000).toFixed(2):'—',output:typeof event.output==='number'&&Number.isFinite(event.output)?String(event.output):'—'};
-  ttft.title=t('首字时间：{ttft} s\n总耗时：{latency} s',values);
+  timing.title=t('首字时间：{ttft} s\n总耗时：{latency} s',values);
   if(rate!=null)add(tps,'span','timing-unit',' '+t('token/s'));
   tps.title=(rate==null?t('耗时数据不可用')+'\n':'')+t('TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s',values);
 }
@@ -425,14 +432,16 @@ function addWindow(parent,title,period,win){
   if(remaining!=null)track.setAttribute('aria-valuenow',String(remaining));track.setAttribute('aria-valuetext',remaining==null?t('未知'):t('{percent}% 剩余',{percent:remaining.toFixed(1)}));
   const fill=add(track,'div','fill');fill.style.width=(remaining??0)+'%';
   const cost=win?.missing_price?null:remainingEstimate(win?.estimated_total_cost,remaining);
-  const stats=add(section,'div','windowstats');
-  const amount=add(stats,'div','estimate-cost',money(cost));add(amount,'span','unit','美元估算');
+  const stats=add(section,'div','windowstats'),labels=add(stats,'div','usage-row'),amounts=add(stats,'div','usage-row'),tokenRow=add(stats,'div','usage-row');
+  const usedLabel=add(labels,'span','usage-label','已用（观测）');usedLabel.title=t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');add(labels,'span','usage-label','预估剩余');
+  const observedAmount=add(amounts,'div','observed-cost',money(win?.missing_price?null:win?.observed_cost)),amount=add(amounts,'div','estimate-cost',money(cost));
   const available=remainingEstimate(win?.estimated_total_tokens,remaining);
-  const tokenValue=addTokens(stats,'div','estimate-value',available);
+  const observedTokens=addTokens(tokenRow,'div','observed-value',win?.observed_tokens),tokenValue=addTokens(tokenRow,'div','estimate-value',available);
+  observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。');
   tokenValue.title+='\n'+t('观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%',{observed:fmt(win?.observed_tokens),used:win?.used_percent??'—',remaining:remaining??'—'});
   amount.title=t('观测成本：{cost}\n按已用比例换算剩余金额',{cost:money(win?.observed_cost)});
   const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
-  if(win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
+  if(win?.missing_price){observedAmount.title=t('缺少模型单价，金额暂不可用');amount.title=t('缺少模型单价，金额暂不可用');}
 }
 function renderQuotas(){
   const root=$('quota-cards'),quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
@@ -512,7 +521,7 @@ function renderRecent(){
   $('recent-caption').textContent=data?(recent.length?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:recent.length}):t('暂无近期记录')):t('等待请求快照');
   if(!data){root.append(noData());return;}
   if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
-  const tbody=makeTable(root,'最近最多 60 条请求快照', [['时间','',11],['凭证','',13],['模型','',14],['总输入','num',7],['非缓存输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['首字时间','num',8],['TPS','num',8],['状态','',6]]);
+  const tbody=makeTable(root,'最近最多 60 条请求快照', [['请求时间','',11],['凭证','',13],['模型','',14],['总输入','num',7],['非缓存输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['时间','num',10],['TPS','num',8],['状态','',6]]);
   shown.forEach(x=>{
     const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString(locale()):'未知日期');
     const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};

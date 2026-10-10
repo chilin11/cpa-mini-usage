@@ -149,14 +149,14 @@ test('recent request unknown model and provider filtering are explicit', () => {
 
 test('official percentage precedes USD and readable compact tokens', () => {
   const {api,elements}=dashboard();
-  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:100,estimated_total_cost:120,estimated_total_tokens:4000000}}]});
+  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:100,observed_cost:120,observed_tokens:4000000,estimated_total_cost:120,estimated_total_tokens:4000000}}]});
   const nodes=descendants(elements.get('quota-cards'));
   const stats=nodes.filter(n=>n.className==='windowstats');
-  assert.equal(stats[0].children[0].className,'estimate-cost');
-  assert.equal(stats[0].children[0].textContent,'$90.00');
-  assert.equal(stats[0].children[0].children[0].textContent,'美元估算');
-  assert.equal(stats[0].children[1].textContent,'3m token');
-  assert.equal(stats[1].children[0].textContent,'$0.000');
+  assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),['已用（观测）','预估剩余']);
+  assert.deepEqual(stats[0].children[1].children.map(n=>n.className),['observed-cost','estimate-cost']);
+  assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$90.00']);
+  assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m token','3m token']);
+  assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$120.00','$0.000']);
   const window=nodes.find(n=>n.className==='window');
   assert.equal(window.children[1].className,'quota-value');
   assert.equal(window.children[3].className,'windowstats');
@@ -367,13 +367,21 @@ test('TPS excludes first-token wait, rejects absent/invalid timing, and never gu
 });
 
 for(const language of ['zh','en']){
-  test(`${language}: recent TTFT/TPS columns show units and full formula timing tooltips`,()=>{
+  test(`${language}: recent timing column shows first-token and total seconds with unchanged TPS`,()=>{
     const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:100,ttft_ms:500,latency_ms:2500,model:'gpt-test'},{output:100,ttft_ms:1250,latency_ms:3250},{output:100},{output:100,ttft_ms:500,latency_ms:2500,failed:true}]});
-    const nodes=descendants(d.elements.get('recent-table')),ttft=nodes.filter(n=>n.className==='num first-token'),tps=nodes.filter(n=>n.className==='num tps');
-    assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'First token':'首字时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent==='TPS'));
-    assert.deepEqual(ttft.map(n=>n.textContent),['0.50 s','1.25 s','—','0.50 s']);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
-    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2\.50 s/);assert.match(tps[0].title,/0\.50 s/);assert.match(ttft[0].title.split('\n')[0],/0\.50 s$/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/−/);
-    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num tps');assert.match(translated.title,language==='en'?/首字时间/:/first-token seconds/);
+    const nodes=descendants(d.elements.get('recent-table')),timing=nodes.filter(n=>n.className==='num request-timing'),tps=nodes.filter(n=>n.className==='num tps');
+    assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Time':'时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Requested at':'请求时间')));assert(!nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'First token':'首字时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent==='TPS'));
+    assert.deepEqual(timing.map(n=>descendants(n).filter(c=>c.className==='timing-value').map(c=>c.textContent)),[['0.50 s','2.50 s'],['1.25 s','3.25 s'],['—','—'],['0.50 s','2.50 s']]);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
+    assert.deepEqual(descendants(timing[0]).filter(n=>n.className==='timing-label').map(n=>n.textContent),language==='en'?['First token','Total']:['首字','总时间']);
+    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2\.50 s/);assert.match(tps[0].title,/0\.50 s/);assert.match(timing[0].title.split('\n')[0],/0\.50 s$/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/−/);
+    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table'));assert.match(translated.find(n=>n.className==='num tps').title,language==='en'?/首字时间/:/first-token seconds/);assert.deepEqual(translated.filter(n=>n.className==='timing-label').slice(0,2).map(n=>n.textContent),language==='en'?['首字','总时间']:['First token','Total']);
+  });
+
+  test(`${language}: first-token and total timing remain independently visible with partial or invalid measurements`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{latency_ms:2500},{ttft_ms:500},{ttft_ms:0,latency_ms:0},{ttft_ms:-1,latency_ms:Infinity},{ttft_ms:'500',latency_ms:null}]});
+    const nodes=descendants(d.elements.get('recent-table')),timing=nodes.filter(n=>n.className==='num request-timing');
+    assert.deepEqual(timing.map(n=>descendants(n).filter(c=>c.className==='timing-value').map(c=>c.textContent)),[['—','2.50 s'],['0.50 s','—'],['0.00 s','0.00 s'],['—','—'],['—','—']]);assert(nodes.filter(n=>n.className==='num tps').every(n=>n.textContent==='—'));
+    const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.request-timing \.timing-line\{display:block/);
   });
 
   test(`${language}: persistence toggle posts authenticated settings, shows busy, uses returned state, and preserves cards`,async()=>{
@@ -513,4 +521,26 @@ test('3-percent used quota displays estimated remaining tokens and cost',()=>{
   const nodes=descendants(d.elements.get('quota-cards'));
   assert(nodes.some(n=>n.className==='estimate-value'&&n.textContent==='3.88m token'));
   assert(nodes.some(n=>n.className==='estimate-cost'&&n.textContent==='$11.64'));
+});
+
+for(const language of ['zh','en']){
+  test(`${language}: quota used money and tokens share rows with remaining estimates for each window`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{auth_id:'a',provider:'claude',five_hour:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000},seven_day:{used_percent:50,observed_cost:90,observed_tokens:3000000,estimated_total_cost:180,estimated_total_tokens:6000000}}]});
+    const stats=descendants(d.elements.get('quota-cards')).filter(n=>n.className==='windowstats'),suffix=language==='en'?'tokens':'token';
+    assert.deepEqual(stats[0].children[0].children.map(n=>n.textContent),language==='en'?['Used (observed)','Est. remaining']:['已用（观测）','预估剩余']);
+    assert.deepEqual(stats[0].children[1].children.map(n=>n.textContent),['$30.00','$90.00']);assert.deepEqual(stats[1].children[1].children.map(n=>n.textContent),['$90.00','$90.00']);
+    assert.deepEqual(stats[0].children[2].children.map(n=>n.textContent),['1m '+suffix,'3m '+suffix]);assert.deepEqual(stats[1].children[2].children.map(n=>n.textContent),['3m '+suffix,'3m '+suffix]);
+    assert.match(stats[0].children[2].children[0].title,/1,000,000/);assert.match(stats[0].children[2].children[0].title,language==='en'?/this CPA instance/:/本机/);assert.match(stats[0].children[1].children[0].title,language==='en'?/not an official bill/:/不是官方账单/);
+    d.api.setLanguage(language==='en'?'zh':'en');assert.deepEqual(descendants(d.elements.get('quota-cards')).filter(n=>n.className==='usage-label').slice(0,2).map(n=>n.textContent),language==='en'?['已用（观测）','预估剩余']:['Used (observed)','Est. remaining']);
+  });
+  test(`${language}: quota used values preserve zero and unknown, and missing prices hide both dollar values only`,()=>{
+    const d=dashboard({},undefined,{language}),suffix=language==='en'?'tokens':'token';d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_cost:0,observed_tokens:0},seven_day:{used_percent:25,observed_cost:30,observed_tokens:1000000,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}},{provider:'claude'}]});
+    const stats=descendants(d.elements.get('quota-cards')).filter(n=>n.className==='windowstats');
+    assert(stats.some(s=>s.children[1].children[0].textContent==='$0.000'&&s.children[2].children[0].textContent==='0 '+suffix&&s.children[1].children[1].textContent==='—'));
+    const missing=stats.find(s=>s.children[2].children[0].textContent==='1m '+suffix);assert.deepEqual(missing.children[1].children.map(n=>n.textContent),['—','—']);assert.equal(missing.children[2].children[1].textContent,'3m '+suffix);assert(missing.children[1].children.every(n=>n.title===(language==='en'?'Model price missing; amount unavailable':'缺少模型单价，金额暂不可用')));
+    assert(stats.some(s=>s.children[1].children.every(n=>n.textContent==='—')&&s.children[2].children.every(n=>n.textContent==='— '+suffix)));
+  });
+}
+test('quota used and estimate rows retain readable sizing and stack windows on narrow screens',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:22px/);assert.match(css,/\.observed-value\{font-size:14px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
 });

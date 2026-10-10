@@ -2,7 +2,7 @@
 
 A lightweight native CPA v8 plugin (Linux amd64) with **exactly two tabs**:
 
-1. **Quotas:** separate Claude / Codex sections showing five-hour / seven-day remaining percentages, resets, and estimated remaining tokens/cost.
+1. **Quotas:** separate Claude / Codex sections showing five-hour / seven-day remaining percentages and resets. Each window displays **Used (observed)** and **Estimated remaining** side by side, with API-equivalent USD amounts on one row and tokens on the next. Used values include only requests observed by this CPA instance within that window, not official bills or activity from other clients.
 2. **Requests:** recent requests with explicit model names, per-credential/model usage, and estimated API-equivalent USD cost. Tokens use `k / m / b`; hover for full counts.
 
 No React, no Node runtime, no separate web service, no inference probes, no database process.
@@ -41,7 +41,7 @@ For Docker, bind-mount this directory or use a named volume, for example set `CP
 
 ### Request timing
 
-The recent request table displays first-token time in seconds (`0.50 s`) and **TPS = output tokens / ((total latency − first-token time) in seconds)**. CPA 8.0.22 supplies `Latency` and streaming `TTFT` as nanosecond `time.Duration` values; the plugin converts them to milliseconds internally. TPS is not calculated from total request time or total input+output tokens. Requests without measured first-token time (including old records/non-streaming requests), failed requests, and nonpositive generation intervals show an unknown TPS rather than an invented number.
+The recent request table has a **Time** column with separate **First token** and **Total** lines in seconds (for example, `0.50 s` and `2.50 s`), alongside **TPS = output tokens / ((total latency − first-token time) in seconds)**. Missing timing measurements show `—` independently; total latency remains visible even when first-token time is unavailable. CPA 8.0.22 supplies `Latency` and streaming `TTFT` as nanosecond `time.Duration` values; the plugin converts them to milliseconds internally. TPS is not calculated from total request time or total input+output tokens. Requests without measured first-token time (including old records/non-streaming requests), failed requests, and nonpositive generation intervals show an unknown TPS rather than an invented number.
 
 ### Limits of estimates
 
@@ -93,6 +93,8 @@ The requests tab has its own GET-only Refresh requests button, never queries OAu
 ### v0.1.6
 
 Remove the artificial 5%-used threshold: any positive utilized fraction with observed requests can produce a remaining-value estimate. Zero utilization/no observed requests remain unknown, and missing prices do not invent dollars. Recent and credential tables now explicitly separate total input, uncached input, output, and cache read/write. Claude total input includes its independent cache classes; Codex total input already includes cache and is not added twice. TPS remains output-only divided by generation time after subtracting first-token time. Provider-native stored fields and historical pricing semantics are unchanged.
+
+Quota windows now display observed used USD/tokens alongside estimated remaining values on aligned rows, with measured usage and API-equivalent cost clearly distinguished from official balances/bills. Narrow screens stack the five-hour and seven-day windows without separating used/remaining pairs. The recent request Time column displays both first-token and total latency in seconds; missing measurements remain independently unknown. Chinese/English labels switch together, and the original timestamp column is labeled Requested at.
 
 ## Optional CPA Plugin Store source
 
