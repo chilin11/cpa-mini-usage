@@ -35,7 +35,13 @@ The dashboard automatically reuses the saved login from the **same-origin CPA ma
 
 ### Data and persistence
 
-Data is stored under `data/cpa-mini-usage/` (create/mount as persistent in Docker). If the directory is not writable, the UI will show a storage warning and in-memory data may be lost on restart. Collection starts at installation time; prior request history is **not backfilled**.
+**Save data** is enabled by default. Requests (including measured first-token time and total latency), quota snapshots, account identities, price cache, and the server-side setting are stored separately from the plugin under `data/cpa-mini-usage/`. Set `CPA_MINI_USAGE_DATA_DIR` to use another persistent directory; hover over the dashboard storage control to see its path. Replacing/upgrading the `.so` does not replace these files. Disabling persistence stops further usage/quota/price writes but never deletes existing saved history; enabling flushes current in-memory data. Recent request storage retains up to 35 days / 200,000 records. If the directory is not writable, the UI reports a storage error. Collection starts at installation time; prior request history is **not backfilled**.
+
+For Docker, bind-mount this directory or use a named volume, for example set `CPA_MINI_USAGE_DATA_DIR=/data/cpa-mini-usage` and mount `./mini-usage-data:/data/cpa-mini-usage`. A browser toggle cannot preserve files from a container that is deleted without a persistent mount.
+
+### Request timing
+
+The recent request table shows first-token time and **TPS = output tokens / ((total latency − first-token time) in seconds)**. CPA 8.0.22 supplies `Latency` and streaming `TTFT` as nanosecond `time.Duration` values; the plugin converts them to milliseconds. TPS is not calculated from total request time or total input+output tokens. Requests without measured first-token time (including old records/non-streaming requests), failed requests, and nonpositive generation intervals show an unknown TPS rather than an invented number.
 
 ### Limits of estimates
 
@@ -79,6 +85,8 @@ Simplified, shorter cards remove duplicate totals, badges, and explanatory parag
 ### v0.1.5
 
 Per-account quota refresh buttons and less frequent 15-minute all-account checks. Only the changed account card updates; other cards keep their nodes. Refresh completion and failures are tracked independently for the selected credential. A Chinese/English selector defaults to the browser language and remembers only the language preference. Labels, tables, alerts, accessibility text, and countdowns switch together. Reset counts use “可重置” / “Resets remaining”, with no Reset bank or Manual reset UI labels.
+
+Recent requests additionally show first-token time and generation-phase TPS. A server-side Save data switch persists request history/timings, quota snapshots, pricing, and its own preference in an independent directory that survives plugin replacement. Both languages use token/tokens rather than “词元”.
 
 ## Optional CPA Plugin Store source
 

@@ -59,6 +59,9 @@ plugins:
       priority: 10
 """)
     environment = os.environ.copy()
+    (root / "data").mkdir()
+    timing_event = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "auth_id": "timing-only", "provider": "codex", "model": "test", "input": 900, "output": 100, "total": 1000, "ttft_ms": 500, "latency_ms": 2500}
+    (root / "data/events.jsonl").write_text(json.dumps(timing_event) + "\n")
     environment["CPA_MINI_USAGE_DATA_DIR"] = str(root / "data")
     # Do not expose the runner's GitHub token to the test host.
     environment.pop("GITHUB_TOKEN", None)
@@ -149,6 +152,45 @@ plugins:
         assert refresh.get("error"), "Tokenless test account must report failure without making provider calls"
         assert state["quota_refresh_finished_at"] == full_finished, "Single-account refresh changed full refresh state"
         print("PASS single-account refresh: HTTP 202, observable failure completion, full scan untouched")
+        assert state["persistence"]["enabled"] is True
+        timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
+        assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
+        assert timing["output"] / ((timing["latency_ms"] - timing["ttft_ms"]) / 1000) == 50
+        settings_url = refresh_url.rsplit("/", 1)[0] + "/settings"
+        for authenticated, payload, expected in [(False, {"persistence_enabled": False}, (401, 403)), (True, {}, (400,))]:
+            headers = {"Content-Type": "application/json"}
+            if authenticated:
+                headers["Authorization"] = "Bearer " + key
+            req = urllib.request.Request(settings_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+            try:
+                urllib.request.urlopen(req, timeout=5)
+            except urllib.error.HTTPError as error:
+                assert error.code in expected, (error.code, expected)
+            else:
+                raise AssertionError("Settings incorrectly accepted invalid/unauthenticated request")
+        for enabled in (True, False):
+            req = urllib.request.Request(settings_url, data=json.dumps({"persistence_enabled": enabled}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as response:
+                settings = json.loads(response.read())["persistence"]
+                assert response.status == 200 and settings["enabled"] is enabled
+        saved_events = (root / "data/events.jsonl").read_bytes()
+        process.terminate()
+        process.wait(timeout=10)
+        process = subprocess.Popen([str(executable), "-config", str(root / "config.yaml"), "-local-model"], cwd=root, env=environment, stdout=log, stderr=subprocess.STDOUT)
+        for _ in range(60):
+            try:
+                state = json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
+                break
+            except (urllib.error.URLError, TimeoutError):
+                time.sleep(1)
+        else:
+            raise AssertionError("Restarted CPA did not become ready")
+        assert state["persistence"]["enabled"] is False
+        assert any(q["auth_id"] == auth_id for q in state["quotas"])
+        timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
+        assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
+        assert (root / "data/events.jsonl").read_bytes() == saved_events
+        print("PASS persistent storage: authenticated settings, quota/timing restore after host restart, disabled writes preserve history")
 except Exception:
     if (root / "host.log").exists():
         print((root / "host.log").read_text(), file=sys.stderr)

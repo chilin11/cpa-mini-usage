@@ -49,7 +49,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(options.fakeClock)fakeNow+=ms;callback();}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, remainingEstimate, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events};
 }
@@ -76,14 +76,14 @@ test('all token displays use compact units, retaining full values in tooltips', 
     recent:[{auth_id:'account', at:'2026-10-09T00:00:00Z', model:'gpt', total:1250000}],
   });
   const quotaNodes = descendants(elements.get('quota-cards'));
-  assert(quotaNodes.some(n => n.textContent === '1.8b 词元' && n.title === '1,800,000,000 词元'));
-  assert(!quotaNodes.some(n => n.textContent === '2.4b 词元'));
+  assert(quotaNodes.some(n => n.textContent === '1.8b token' && n.title === '1,800,000,000 token'));
+  assert(!quotaNodes.some(n => n.textContent === '2.4b token'));
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
   const cells = requestNodes.filter(n => n.tag === 'td');
   assert.deepEqual(cells.slice(2,8).map(n => n.textContent), ['1,234', '1.25m', '2.4b', '1.23k', '2.4b', '$3.50']);
-  assert.equal(cells[6].title, '2,401,250,000 词元');
-  assert(requestNodes.some(n => n.textContent === '1,234 次请求 · 2.4b 词元 · $3.50' && n.title === '2,401,250,000 词元'));
+  assert.equal(cells[6].title, '2,401,250,000 token');
+  assert(requestNodes.some(n => n.textContent === '1,234 次请求 · 2.4b token · $3.50' && n.title === '2,401,250,000 token'));
   assert(descendants(elements.get('recent-table')).some(n => n.textContent === 'gpt'));
 });
 
@@ -116,7 +116,7 @@ test('reuse CPA encoded login without inputs, persistence or query credentials',
   assert.equal(requests[0].url,'/v0/management/plugins/cpa-mini-usage/data');
   assert.equal(requests[0].options.headers.Authorization,'Bearer test-only-key');
   assert.equal(requests[0].options.redirect,'error');
-  assert(!/<input\b/.test(html));assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
+  assert.equal((html.match(/<input\b/g)||[]).length,1);assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
 });
 test('cross-origin or corrupt CPA credentials are not reused', () => {
   assert.equal(dashboard({'cli-proxy-auth':encoded({state:{apiBase:'https://other.test',managementKey:'wrong-key'}})}).api.guessKey(),'');
@@ -155,7 +155,7 @@ test('official percentage precedes USD and readable compact tokens', () => {
   assert.equal(stats[0].children[0].className,'estimate-cost');
   assert.equal(stats[0].children[0].textContent,'$90.00');
   assert.equal(stats[0].children[0].children[0].textContent,'美元估算');
-  assert.equal(stats[0].children[1].textContent,'3m 词元');
+  assert.equal(stats[0].children[1].textContent,'3m token');
   assert.equal(stats[1].children[0].textContent,'$0.000');
   const window=nodes.find(n=>n.className==='window');
   assert.equal(window.children[1].className,'quota-value');
@@ -166,7 +166,7 @@ test('missing model price does not display a false USD amount', () => {
   api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}}]});
   const nodes=descendants(elements.get('quota-cards'));
   assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'—');
-  assert(nodes.some(n=>n.textContent==='3m 词元'));
+  assert(nodes.some(n=>n.textContent==='3m token'));
 });
 
 test('reset times show days/hours/minutes and never a negative countdown', () => {
@@ -258,7 +258,7 @@ for(const language of ['zh','en']){
     assert.equal(elements.get('provider').getAttribute('aria-label'),language==='en'?'Filter by provider':'筛选服务商');
     assert.match(elements.get('footer').textContent,/15/);assert.equal(document.title,language==='en'?'Usage & quota · CPA Mini Usage':'用量与额度 · CPA Mini Usage');
     assert.equal(api.resetCountdown(new Date(Date.now()+20*60000).toISOString()),language==='en'?'Resets in 20m':'还有 20 分钟重置');
-    const nodes=[...elements.values()].flatMap(descendants);assert(nodes.some(n=>n.textContent===(language==='en'?'Total tokens':'总词元')));assert(nodes.some(n=>n.textContent==='gpt-test'));
+    const nodes=[...elements.values()].flatMap(descendants);assert(nodes.some(n=>n.textContent===(language==='en'?'Total tokens':'总 token')));assert(nodes.some(n=>n.textContent==='gpt-test'));
     if(language==='en'){for(const node of nodes){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);assert(!/[\u3400-\u9fff]/.test(node.title||''),node.title);for(const [attr,value] of Object.entries(node.attributes))if(['aria-label','aria-valuetext'].includes(attr))assert(!/[\u3400-\u9fff]/.test(value),value);}}
     api.setLanguage(language==='en'?'zh':'en');assert.equal(elements.get('alert').textContent,language==='en'?'账户额度刷新超时，请稍后重试。':'Account quota refresh timed out. Please retry later.');assert.equal(elements.get('status').textContent,language==='en'?'部分数据异常':'Some data unavailable');
   });
@@ -354,4 +354,83 @@ test('successful later refresh clears a prior local account error without replac
   await d.api.load();const other=panel(d.elements,'other');await d.api.refreshAccount('account');assert.match(accountError(panel(d.elements,'account')).textContent,/正在进行/);
   d.api.acceptSnapshot({...sample,quotas:sample.quotas.map(q=>q.auth_id==='account'?{...q,fetched_at:'successful-later'}:q),account_refresh:{account:{refreshing:false,finished_at:'completed'}}});
   assert.equal(accountError(panel(d.elements,'account')).textContent,'');assert.equal(panel(d.elements,'other'),other);
+});
+
+test('TPS excludes first-token wait, rejects absent/invalid timing, and never guesses',()=>{
+  const {api}=dashboard(),event={output:100,latency_ms:2500,ttft_ms:500};assert.equal(api.requestTPS(event),50);
+  for(const value of [null,undefined,NaN,Infinity,-1,'500','',true]){
+    assert.equal(api.requestTPS({...event,ttft_ms:value}),null);assert.equal(api.requestTPS({...event,latency_ms:value}),null);
+    assert.equal(api.firstTokenTime(value),'—');
+  }
+  for(const patch of [{latency_ms:500},{latency_ms:0},{latency_ms:499},{ttft_ms:0,latency_ms:0},{output:0},{output:-1},{output:NaN},{output:Infinity},{output:'100'},{output:null},{failed:true}, {ttft_ms:undefined}, {latency_ms:undefined}])assert.equal(api.requestTPS({...event,...patch}),null,JSON.stringify(patch));
+  assert.equal(api.requestTPS({...event,ttft_ms:0}),40);assert.equal(api.firstTokenTime(0),'0 ms');assert.equal(api.firstTokenTime(450),'450 ms');assert.equal(api.firstTokenTime(1250),'1.25 s');
+});
+
+for(const language of ['zh','en']){
+  test(`${language}: recent TTFT/TPS columns show units and full formula timing tooltips`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:100,ttft_ms:500,latency_ms:2500,model:'gpt-test'},{output:100,ttft_ms:1250,latency_ms:3250},{output:100},{output:100,ttft_ms:500,latency_ms:2500,failed:true}]});
+    const nodes=descendants(d.elements.get('recent-table')),ttft=nodes.filter(n=>n.className==='num first-token'),tps=nodes.filter(n=>n.className==='num tps');
+    assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'First token':'首字时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent==='TPS'));
+    assert.deepEqual(ttft.map(n=>n.textContent),['500 ms','1.25 s','—','500 ms']);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
+    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2500 ms/);assert.match(tps[0].title,/500 ms/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/1000/);assert.match(tps[0].title,/−/);
+    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num tps');assert.match(translated.title,language==='en'?/首字时间/:/first-token time/);
+  });
+
+  test(`${language}: persistence toggle posts authenticated settings, shows busy, uses returned state, and preserves cards`,async()=>{
+    const sample={...twoAccounts(),persistence:{enabled:true,directory:'/data/cpa/usage'}},requests=[];let release;
+    const d=dashboard(login(),async(url,options)=>{requests.push({url,options});return url.endsWith('settings')?new Promise(resolve=>release=payload=>resolve(reply({persistence:payload}))):reply(sample);},{language});
+    await d.api.load();const input=d.elements.get('persistence-enabled'),first=panel(d.elements,'account'),other=panel(d.elements,'other'),table=d.elements.get('recent-table').children[0];
+    assert.equal(input.checked,true);assert.equal(input.disabled,false);assert.equal(input.getAttribute('aria-label'),language==='en'?'Save data':'保存数据');assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'Enabled':'开启');
+    assert.match(input.title,/\/data\/cpa\/usage/);assert.match(input.title,language==='en'?/never deletes saved history/:/不会删除已保存的历史/);assert.match(input.title,language==='en'?/independent folder/:/独立文件夹/);
+    input.checked=false;const pending=input.onchange({target:input});assert.equal(input.checked,true);assert.equal(input.disabled,true);assert.equal(input.getAttribute('aria-busy'),'true');assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'Saving…':'保存中…');
+    const request=requests.at(-1);assert.equal(request.url,'/v0/management/plugins/cpa-mini-usage/settings');assert.equal(request.options.method,'POST');assert.equal(request.options.headers.Authorization,'Bearer key');assert.equal(request.options.headers['Content-Type'],'application/json');assert.deepEqual(JSON.parse(request.options.body),{persistence_enabled:false});
+    release({enabled:false,directory:'/data/{literal}/usage'});await pending;assert.equal(input.checked,false);assert.equal(input.disabled,false);assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'Memory only':'未保存');assert.match(input.title,/\{literal\}/);assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(d.elements.get('recent-table').children[0],table);assert.deepEqual(d.writes,[]);
+    const enable=d.api.savePersistence(true);release({enabled:false,directory:'/returned/actual'});await enable;assert.equal(input.checked,false);assert.match(input.title,/\/returned\/actual/);assert.deepEqual(JSON.parse(requests.at(-1).options.body),{persistence_enabled:true});
+    d.api.setLanguage(language==='en'?'zh':'en');assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'未保存':'Memory only');assert.equal(d.writes.length,1);assert.equal(d.writes[0][0],'cpa-mini-usage-language');
+  });
+
+  test(`${language}: storage write failures retain previous persistence preference and translate existing errors`,async()=>{
+    const sample={...twoAccounts(),persistence:{enabled:false,directory:'/prior/data'}},d=dashboard(login(),async url=>url.endsWith('settings')?reply({error:'storage_write_failed'},500):reply(sample),{language});
+    await d.api.load();const other=panel(d.elements,'other');await d.api.savePersistence(true);const input=d.elements.get('persistence-enabled');assert.equal(input.checked,false);assert.equal(input.disabled,false);assert.equal(panel(d.elements,'other'),other);assert.match(input.title,/\/prior\/data/);assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'Cannot save settings. Please retry later.':'无法保存设置，请稍后重试。');
+    d.api.setLanguage(language==='en'?'zh':'en');assert.equal(d.elements.get('persistence-status').textContent,language==='en'?'无法保存设置，请稍后重试。':'Cannot save settings. Please retry later.');assert.equal(d.writes.length,1);
+  });
+
+  test(`${language}: settings authentication failure clears snapshot and directory tooltip`,async()=>{
+    for(const status of [401,403]){
+      const d=dashboard(login(),async url=>url.endsWith('settings')?reply({},status):reply({...twoAccounts(),persistence:{enabled:true,directory:'/private/data'}}),{language});await d.api.load();await d.api.savePersistence(false);assert(!panel(d.elements,'account'));assert(d.elements.get('dashboard').classes.has('needs-login'));assert.equal(d.elements.get('persistence-enabled').disabled,true);assert(!d.elements.get('persistence-enabled').title.includes('/private/data'));assert.match(d.elements.get('alert').textContent,language==='en'?/expired/:/失效/);
+    }
+  });
+}
+
+test('old snapshots remain compatible, unknown persistence disabled, and setting-only snapshots preserve every content node',()=>{
+  const d=dashboard(),sample={...twoAccounts(),recent:[{output:100}]};d.api.renderSample(sample);assert.equal(d.elements.get('persistence-enabled').disabled,true);assert.equal(d.elements.get('persistence-status').textContent,'—');assert.equal(descendants(d.elements.get('recent-table')).find(n=>n.className==='num tps').textContent,'—');
+  const first=panel(d.elements,'account'),table=d.elements.get('recent-table').children[0],summary=d.elements.get('request-summary').children[0];
+  for(const persistence of [{enabled:true,directory:'/one'},{enabled:false,directory:'/two'}]){d.api.acceptSnapshot({...sample,persistence});assert.equal(panel(d.elements,'account'),first);assert.equal(d.elements.get('recent-table').children[0],table);assert.equal(d.elements.get('request-summary').children[0],summary);assert.equal(d.elements.get('persistence-enabled').checked,persistence.enabled);assert.match(d.elements.get('persistence-enabled').title,new RegExp(persistence.directory));}
+});
+
+for(const change of ['logout','key-change'])for(const storageEvent of [false,true]){
+  test(`settings response after ${change} discarded (${storageEvent?'storage event':'response check'})`,async()=>{
+    const stored=login(),sample={...twoAccounts(),persistence:{enabled:true,directory:'/private/prior'}},requests=[];let release;
+    const d=dashboard(stored,async(url,options)=>{requests.push({url,options});if(url.endsWith('settings'))return new Promise(resolve=>release=()=>resolve(reply({persistence:{enabled:false,directory:'/private/stale'}})));return reply(options.headers.Authorization==='Bearer new-key'?{quotas:[],persistence:{enabled:true,directory:'/new-user'}}:sample);});await d.api.load();const pending=d.api.savePersistence(false);
+    if(change==='logout')delete stored.managementKey;else stored.managementKey=JSON.stringify('new-key');if(storageEvent)await d.events.storage({key:'managementKey'});release();await pending;assert(!panel(d.elements,'account'));assert(!/\/private\//.test(d.elements.get('persistence-enabled').title));assert.equal(d.elements.get('persistence-enabled').disabled,change==='logout');assert.equal(d.elements.get('persistence-enabled').checked,true);assert.deepEqual(d.writes,[]);
+  });
+}
+
+test('settings network or malformed-response errors retain actual preference and do not store it locally',async()=>{
+  for(const malformed of [false,true]){
+    const sample={...twoAccounts(),persistence:{enabled:true,directory:'/actual'}},d=dashboard(login(),async url=>{if(url.endsWith('settings')){if(malformed)return reply({persistence:{enabled:'false'}});throw Error('access_token=secret');}return reply(sample);});await d.api.load();const before=panel(d.elements,'account');await d.api.savePersistence(false);assert.equal(d.elements.get('persistence-enabled').checked,true);assert.equal(d.elements.get('persistence-status').textContent,'无法保存设置，请稍后重试。');assert.equal(panel(d.elements,'account'),before);assert.deepEqual(d.writes,[]);
+  }
+});
+
+test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1120px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/v0\.1\.5/);
+});
+
+test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
+  const sample={...twoAccounts(),persistence:{enabled:false,directory:'/old'}},d=dashboard(login(),async url=>url.endsWith('settings')?reply({persistence:{enabled:true,directory:'/flushed'}}):reply(sample));await d.api.load();const table=d.elements.get('recent-table').children[0];await d.api.savePersistence(true);assert.equal(d.elements.get('persistence-enabled').checked,true);assert.equal(d.elements.get('persistence-status').textContent,'开启');assert.match(d.elements.get('persistence-enabled').title,/\/flushed/);assert.equal(d.elements.get('recent-table').children[0],table);
+});
+
+test('persistence updates do not interfere with a running individual account refresh',async()=>{
+  const sample={...twoAccounts(),persistence:{enabled:true,directory:'/data'}},posts=[];let release,refreshed=false;
+  const d=dashboard(login(),async(url,options)=>{if(url.endsWith('refresh-account')){posts.push(url);return new Promise(resolve=>release=()=>{refreshed=true;resolve(reply({refresh_finished_at:'old'},202));});}if(url.endsWith('settings')){posts.push(url);return reply({persistence:{enabled:false,directory:'/data'}});}return reply(refreshed?{...sample,persistence:{enabled:false,directory:'/data'},account_refresh:{account:{refreshing:false,finished_at:'done'}}}:sample);});await d.api.load();const other=panel(d.elements,'other'),pending=d.api.refreshAccount('account');await d.api.savePersistence(false);assert.equal(refreshButton(panel(d.elements,'account')).disabled,true);assert.equal(refreshButton(other).disabled,false);release();await pending;assert.equal(panel(d.elements,'other'),other);assert.equal(d.elements.get('persistence-enabled').checked,false);assert.equal(posts.length,2);
 });

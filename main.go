@@ -167,6 +167,7 @@ func dispatch(method string, body []byte) []byte {
 				{"Method": "GET", "Path": "/plugins/" + pluginID + "/data"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh-account"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},
 			},
 			"Resources": []map[string]string{
 				{"Path": "/dashboard", "Menu": "Mini Usage", "Description": "Quotas and credential usage"},
@@ -210,6 +211,20 @@ func dispatch(method string, body []byte) []byte {
 			}
 			body, _ := json.Marshal(result)
 			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/settings") {
+			var input struct {
+				PersistenceEnabled *bool `json:"persistence_enabled"`
+			}
+			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil || input.PersistenceEnabled == nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_settings"}`)))
+			}
+			settings, err := tracker.setPersistence(*input.PersistenceEnabled)
+			if err != nil {
+				return okEnvelope(httpResponse(500, "application/json", []byte(`{"error":"storage_write_failed"}`)))
+			}
+			body, _ := json.Marshal(map[string]any{"persistence": settings})
+			return okEnvelope(httpResponse(200, "application/json; charset=utf-8", body))
 		}
 		return okEnvelope(httpResponse(404, "application/json", []byte(`{"error":"not_found"}`)))
 	case "usage.handle":

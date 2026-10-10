@@ -233,6 +233,7 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 		state.Error = ""
 		e.accountRefresh[entry.ID] = state
 	}
+	e.persistQuotasLocked()
 	e.mu.Unlock()
 	return true
 }
@@ -251,6 +252,7 @@ func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	}
 	e.quotas[a.ID] = prior
 	e.names[a.ID] = a.Name
+	e.persistQuotasLocked()
 }
 
 func parseAuthList(v any) []AuthEntry {

@@ -33,6 +33,8 @@ type Event struct {
 	CacheWrite int64     `json:"cache_write"`
 	Total      int64     `json:"total"`
 	Failed     bool      `json:"failed"`
+	LatencyMS  *float64  `json:"latency_ms,omitempty"`
+	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
 }
 
 type ModelPrice struct {
@@ -120,6 +122,7 @@ type Snapshot struct {
 	QuotaRefreshing        bool                           `json:"quota_refreshing"`
 	QuotaRefreshFinishedAt string                         `json:"quota_refresh_finished_at,omitempty"`
 	AccountRefresh         map[string]AccountRefreshState `json:"account_refresh"`
+	Persistence            PersistenceSettings            `json:"persistence"`
 	StorageError           string                         `json:"storage_error,omitempty"`
 	PriceError             string                         `json:"price_error,omitempty"`
 	QuotaError             string                         `json:"quota_error,omitempty"`
@@ -141,6 +144,7 @@ type Engine struct {
 	priceError           string
 	quotaError           string
 	storageError         string
+	persistence          PersistenceSettings
 	dir                  string
 	done                 chan struct{}
 	stopOnce             sync.Once
@@ -153,7 +157,10 @@ func newEngine() *Engine {
 	if dir == "" {
 		dir = filepath.Join("data", "cpa-mini-usage")
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, done: make(chan struct{})}
+	if absolute, err := filepath.Abs(dir); err == nil {
+		dir = absolute
+	}
+	return &Engine{quotas: make(map[string]AccountQuota), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
 }
 
 func (e *Engine) start() {
@@ -200,6 +207,7 @@ func (e *Engine) load() {
 		e.storageError = "Unable to create the data directory"
 		return
 	}
+	e.loadPersistence()
 	path := filepath.Join(e.dir, "events.jsonl")
 	f, err := os.Open(path)
 	if err == nil {
@@ -246,6 +254,9 @@ func (e *Engine) compact() {
 		kept = kept[len(kept)-200000:]
 	}
 	e.events = kept
+	if !e.persistence.Enabled {
+		return
+	}
 	var buf bytes.Buffer
 	for _, x := range kept {
 		b, _ := json.Marshal(x)
@@ -313,11 +324,19 @@ func (e *Engine) capture(data []byte) {
 		return
 	}
 	evt := Event{At: when, AuthID: authID, Provider: provider, Model: str(m, "Model", "model", "Alias", "alias"), Input: input, Output: output, CacheRead: cached, CacheWrite: write, Total: total, Failed: getAny(m, "Failed", "failed") == true}
+	evt.LatencyMS = durationMilliseconds(m, "Latency", "latency")
+	// CPA sends zero TTFT for requests without a measured streaming first token.
+	if streamed, present := getAny(m, "Stream", "stream").(bool); !present || streamed {
+		evt.TTFTMS = durationMilliseconds(m, "TTFT", "ttft")
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.events = append(e.events, evt)
 	if len(e.events) > 200000 {
 		e.events = e.events[len(e.events)-200000:]
+	}
+	if !e.persistence.Enabled {
+		return
 	}
 	b, _ := json.Marshal(evt)
 	f, err := os.OpenFile(filepath.Join(e.dir, "events.jsonl"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
@@ -467,6 +486,7 @@ func (e *Engine) snapshot() Snapshot {
 	now := time.Now().UTC()
 	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []Event{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
 	result.QuotaRefreshing = e.quotaRefreshing
+	result.Persistence = e.persistence
 	if !e.quotaRefreshFinished.IsZero() {
 		result.QuotaRefreshFinishedAt = e.quotaRefreshFinished.Format(time.RFC3339Nano)
 	}
@@ -604,9 +624,11 @@ func (e *Engine) refreshPrices(force bool) {
 	e.prices = prices
 	e.priceUpdated = now
 	e.priceError = ""
-	b, _ := json.Marshal(map[string]any{"updated": now, "prices": prices})
-	if err := writeAtomic(filepath.Join(e.dir, "prices.json"), b); err != nil {
-		e.storageError = "Price catalog could not be persisted"
+	if e.persistence.Enabled {
+		b, _ := json.Marshal(map[string]any{"updated": now, "prices": prices})
+		if err := writeAtomic(filepath.Join(e.dir, "prices.json"), b); err != nil {
+			e.storageError = "Price catalog could not be persisted"
+		}
 	}
 	e.mu.Unlock()
 }
