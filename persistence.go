@@ -16,10 +16,11 @@ type PersistenceSettings struct {
 }
 
 type persistedQuotas struct {
-	Updated time.Time               `json:"updated"`
-	Quotas  map[string]AccountQuota `json:"quotas"`
-	Names   map[string]string       `json:"names"`
-	Aliases map[string]string       `json:"aliases"`
+	Updated   time.Time                `json:"updated"`
+	Quotas    map[string]AccountQuota  `json:"quotas"`
+	Names     map[string]string        `json:"names"`
+	Aliases   map[string]string        `json:"aliases"`
+	Forecasts map[string]SavedForecast `json:"forecasts,omitempty"`
 }
 
 // Called before starting workers. Older installations have no settings/quotas files.
@@ -52,6 +53,9 @@ func (e *Engine) loadPersistence() {
 				e.aliases = saved.Aliases
 			}
 			e.quotaUpdated = saved.Updated
+			if saved.Forecasts != nil {
+				e.forecasts = saved.Forecasts
+			}
 		} else {
 			e.storageError = "Quota history could not be read"
 		}
@@ -61,7 +65,7 @@ func (e *Engine) loadPersistence() {
 }
 
 func (e *Engine) writeQuotasLocked() error {
-	body, err := json.Marshal(persistedQuotas{Updated: e.quotaUpdated, Quotas: e.quotas, Names: e.names, Aliases: e.aliases})
+	body, err := json.Marshal(persistedQuotas{Updated: e.quotaUpdated, Quotas: e.quotas, Names: e.names, Aliases: e.aliases, Forecasts: e.forecasts})
 	if err != nil {
 		return err
 	}

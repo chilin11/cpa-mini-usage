@@ -163,7 +163,7 @@ test('official percentage precedes USD and readable compact tokens', () => {
 });
 test('missing model price does not display a false USD amount', () => {
   const {api,elements}=dashboard();
-  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_cost:120,estimated_total_tokens:4000000,missing_price:true}}]});
+  api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:25,estimated_total_tokens:4000000,missing_price:true}}]});
   const nodes=descendants(elements.get('quota-cards'));
   assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'—');
   assert(nodes.some(n=>n.textContent==='4m token'));
@@ -577,4 +577,11 @@ for(const language of ['zh','en'])test(`${language}: missing previous price does
 });
 for(const language of ['zh','en'])test(`${language}: missing TTFT does not hide measurable request-average TPS`,()=>{
   const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:20,latency_ms:1500},{output:20,latency_ms:1500,ttft_ms:100},{output:20,latency_ms:1500,ttft_ms:2000},{output:1,latency_ms:2500,stream:false}]});const nodes=descendants(d.elements.get('recent-table'));assert.deepEqual(nodes.filter(n=>n.className==='num tps').map(n=>n.textContent),['13.33','13.33','13.33','0.4']);assert(nodes.some(n=>n.className==='timing-value'&&n.textContent==='—'));
+});
+for(const language of ['zh','en'])test(`${language}: paired estimate remains visible while actuals advance and tooltip uses paired usage`,()=>{
+  const d=dashboard({},undefined,{language}),win={used_percent:25,observed_tokens:110000,observed_cost:.11,estimated_total_tokens:400000,estimated_total_cost:.4,estimated_basis:'quota',estimated_at:'2026-10-10T02:00:00Z',estimate_observed_tokens:100000,estimate_observed_cost:.1};d.api.renderSample({quotas:[{provider:'codex',five_hour:win}]});let nodes=descendants(d.elements.get('quota-cards')),token=nodes.find(n=>n.className==='estimate-value'),amount=nodes.find(n=>n.className==='estimate-cost');assert.equal(token.textContent,'400k '+(language==='en'?'tokens':'token'));assert.equal(amount.textContent,'$0.400');assert.match(token.title,/100,000/);assert(!token.title.includes('110,000'));assert.match(token.title,language==='en'?/Estimate basis time/:/估算依据时间/);assert.match(amount.title,/\$0\.100/);
+  d.api.renderSample({quotas:[{provider:'codex',five_hour:{...win,observed_tokens:120000,observed_cost:null,missing_price:true}}]});nodes=descendants(d.elements.get('quota-cards'));assert.equal(nodes.find(n=>n.className==='estimate-cost').textContent,'$0.400');assert.match(nodes.find(n=>n.className==='estimate-cost').title,language==='en'?/re-pairs/:/重新配对/);assert.equal(nodes.find(n=>n.className==='observed-cost').textContent,'—');
+});
+for(const language of ['zh','en'])test(`${language}: retained cycle forecast does not claim a new zero-percent formula`,()=>{
+  const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_tokens:110000,observed_cost:.11,estimated_total_tokens:400000,estimated_total_cost:.4,estimated_basis:'quota',estimate_used_percent:25,estimate_retained:true,estimated_at:'2026-10-10T02:00:00Z'}}]});const nodes=descendants(d.elements.get('quota-cards')),amount=nodes.find(n=>n.className==='estimate-cost'),token=nodes.find(n=>n.className==='estimate-value');assert.equal(amount.textContent,'$0.400');assert.equal(token.textContent,'400k '+(language==='en'?'tokens':'token'));assert.match(amount.title,language==='en'?/Retaining the last valid estimate/:/保留本周期上次有效预估/);assert(!/÷ 0%|\/ 0%/.test(amount.title));
 });

@@ -28,7 +28,7 @@ main.request-view{max-width:1480px}.request-view #page-requests th,.request-view
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.7</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.8</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -105,6 +105,8 @@ const translations={
   '观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%':'Observed: {observed} tokens\nEstimated total: observed tokens × 100 / {used}%',
   '观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%':'Observed cost: {cost}\nEstimated total: observed cost × 100 / {used}%',
   '已用（观测）':'Used (observed)','预估总额':'Est. total','参考上一周期的实际用量；不是按当前已用比例外推。':'Based on actual usage in the previous cycle, not the current quota fraction.','预估依据暂不可用，请刷新额度。':'Forecast basis unavailable; refresh quota.',
+  '估算依据时间：{time}\n新请求仅更新已用；额度刷新后重新配对估算，总额不低于已用。':'Estimate basis time: {time}\nNew requests update used values only; quota refresh re-pairs the estimate. Totals are floored at observed usage.',
+  '保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。':'Retaining the last valid estimate for this cycle; new quota progress or prices are unavailable. Waiting for quota refresh.',
   '本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。':'Usage observed by this CPA instance in this quota window; excludes requests before installation or from other clients.',
   '本机观测的 API 等价成本，不是官方账单或订阅扣款。':'API-equivalent cost observed by this CPA instance, not an official bill or subscription charge.',
   '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
@@ -432,18 +434,20 @@ function addWindow(parent,title,period,win){
   const track=add(section,'div','track');track.setAttribute('role','meter');track.setAttribute('aria-label',t('{window}官方剩余额度',{window:t(title)}));track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
   if(remaining!=null)track.setAttribute('aria-valuenow',String(remaining));track.setAttribute('aria-valuetext',remaining==null?t('未知'):t('{percent}% 剩余',{percent:remaining.toFixed(1)}));
   const fill=add(track,'div','fill');fill.style.width=(remaining??0)+'%';
-  const cost=win?.missing_price?null:validEstimate(win?.estimated_total_cost);
+  const cost=validEstimate(win?.estimated_total_cost);
   const stats=add(section,'div','windowstats'),labels=add(stats,'div','usage-row'),amounts=add(stats,'div','usage-row'),tokenRow=add(stats,'div','usage-row');
   const usedLabel=add(labels,'span','usage-label','已用（观测）');usedLabel.title=t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');add(labels,'span','usage-label','预估总额');
   const observedAmount=add(amounts,'div','observed-cost',money(validEstimate(win?.observed_cost))),amount=add(amounts,'div','estimate-cost',money(cost));
   const available=validEstimate(win?.estimated_total_tokens);
   const observedTokens=addTokens(tokenRow,'div','observed-value',win?.observed_tokens),tokenValue=addTokens(tokenRow,'div','estimate-value',available);
   observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。');
-  const basis=win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
-  tokenValue.title+='\n'+(basis||t('观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%',{observed:fmt(win?.observed_tokens),used:win?.used_percent??'—'}));
-  amount.title=basis||t('观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%',{cost:money(win?.observed_cost),used:win?.used_percent??'—'});
+  const basis=win?.estimate_retained?t('保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。'):win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
+  const estimateTokens=win?.estimate_observed_tokens??win?.observed_tokens,estimateCost=win?.estimate_observed_cost??win?.observed_cost,estimateUsed=win?.estimate_used_percent??win?.used_percent;
+  tokenValue.title+='\n'+(basis||t('观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%',{observed:fmt(estimateTokens),used:estimateUsed??'—'}));
+  amount.title=basis||t('观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%',{cost:money(estimateCost),used:estimateUsed??'—'});
+  if(win?.estimated_at){const note='\n'+t('估算依据时间：{time}\n新请求仅更新已用；额度刷新后重新配对估算，总额不低于已用。',{time:when(win.estimated_at)});tokenValue.title+=note;amount.title+=note;}
   const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
-  if(validEstimate(win?.observed_cost)==null&&win?.missing_price)observedAmount.title=t('缺少模型单价，金额暂不可用');if(win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
+  if(validEstimate(win?.observed_cost)==null&&win?.missing_price)observedAmount.title=t('缺少模型单价，金额暂不可用');if(cost==null&&win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
 }
 function renderQuotas(){
   const root=$('quota-cards'),quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';

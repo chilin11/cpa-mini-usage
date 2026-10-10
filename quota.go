@@ -229,7 +229,9 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.mu.Lock()
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
+	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining}
+	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	if state, ok := e.accountRefresh[entry.ID]; ok {
 		state.Error = ""
 		e.accountRefresh[entry.ID] = state

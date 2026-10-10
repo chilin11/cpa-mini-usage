@@ -18,7 +18,7 @@ func TestUsageTimingsAreNanoseconds(t *testing.T) {
 	if ev.LatencyMS == nil || *ev.LatencyMS != 2500 || ev.TTFTMS == nil || *ev.TTFTMS != 500 {
 		t.Fatalf("timings %+v", ev)
 	}
-	if got := float64(ev.Output) / ((*ev.LatencyMS - *ev.TTFTMS) / 1000); got != 50 {
+	if got := float64(ev.Output) / (*ev.LatencyMS / 1000); got != 40 {
 		t.Fatalf("TPS %v", got)
 	}
 	for _, body := range []string{`{"Stream":false,"Latency":2500000000,"TTFT":500000000}`, `{"Stream":true,"Latency":0,"TTFT":0}`, `{"Latency":-1,"TTFT":-1}`, `{"Latency":"2500000000","TTFT":"500000000"}`, `{}`} {

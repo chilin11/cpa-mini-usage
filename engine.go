@@ -79,15 +79,20 @@ type AccountQuota struct {
 }
 
 type WindowEstimate struct {
-	UsedPercent          float64  `json:"used_percent"`
-	ResetAt              string   `json:"reset_at,omitempty"`
-	ObservedTokens       int64    `json:"observed_tokens"`
-	ObservedCost         *float64 `json:"observed_cost,omitempty"`
-	EstimatedTotalTokens *float64 `json:"estimated_total_tokens,omitempty"`
-	EstimatedTotalCost   *float64 `json:"estimated_total_cost,omitempty"`
-	EstimatedBasis       string   `json:"estimated_basis,omitempty"`
-	MissingPrice         bool     `json:"missing_price"`
-	PartialHistory       bool     `json:"partial_history"`
+	UsedPercent            float64  `json:"used_percent"`
+	ResetAt                string   `json:"reset_at,omitempty"`
+	ObservedTokens         int64    `json:"observed_tokens"`
+	ObservedCost           *float64 `json:"observed_cost,omitempty"`
+	EstimatedTotalTokens   *float64 `json:"estimated_total_tokens,omitempty"`
+	EstimatedTotalCost     *float64 `json:"estimated_total_cost,omitempty"`
+	EstimatedBasis         string   `json:"estimated_basis,omitempty"`
+	EstimatedAt            string   `json:"estimated_at,omitempty"`
+	EstimateObservedTokens *int64   `json:"estimate_observed_tokens,omitempty"`
+	EstimateObservedCost   *float64 `json:"estimate_observed_cost,omitempty"`
+	EstimateUsedPercent    *float64 `json:"estimate_used_percent,omitempty"`
+	EstimateRetained       bool     `json:"estimate_retained,omitempty"`
+	MissingPrice           bool     `json:"missing_price"`
+	PartialHistory         bool     `json:"partial_history"`
 }
 
 type QuotaView struct {
@@ -154,6 +159,7 @@ type Engine struct {
 	mu                   sync.RWMutex
 	events               []Event
 	quotas               map[string]AccountQuota
+	forecasts            map[string]SavedForecast
 	names                map[string]string
 	aliases              map[string]string
 	prices               map[string]ModelPrice
@@ -181,7 +187,7 @@ func newEngine() *Engine {
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
+	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
 }
 
 func (e *Engine) start() {
@@ -544,19 +550,29 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 			out.ObservedCost = floatPtr(current.cost)
 		}
 	}
-	// Grace may retain actuals, never a forecast for a completed cycle. A quota
-	// lagging ANY current request cannot safely forecast either basis.
-	if !now.Before(reset) || (!observation.IsZero() && (observation.Before(start) || observation.After(now) || current.last.After(observation))) {
+	// Keep actuals live, but pair the percentage only with usage observed at
+	// the same quota timestamp. Later requests must not erase that estimate.
+	if !now.Before(reset) || (!observation.IsZero() && (observation.Before(start) || observation.After(now))) {
 		return out
 	}
-	if !observation.IsZero() && current.count > 0 && finite(win.Used) && win.Used > 0 && win.Used <= 100 {
+	basis := current
+	if !observation.IsZero() {
+		basis = e.usageBetween(e.canonicalAuth(authID), start, reset, observation)
+	}
+	if !observation.IsZero() && basis.count > 0 && finite(win.Used) && win.Used > 0 && win.Used <= 100 {
 		multiplier := 100 / win.Used
-		tokens := math.Max(float64(current.tokens), math.Round(float64(current.tokens)*multiplier))
-		cost := math.Max(current.cost, roundForecastCost(current.cost*multiplier))
-		if finite(multiplier) && finite(tokens) && (current.missingPrice || finite(cost)) {
+		tokens := math.Max(float64(current.tokens), math.Round(float64(basis.tokens)*multiplier))
+		cost := math.Max(basis.cost, roundForecastCost(basis.cost*multiplier))
+		if !current.missingPrice && finite(current.cost) {
+			cost = math.Max(current.cost, cost)
+		}
+		if finite(multiplier) && finite(tokens) && (basis.missingPrice || finite(cost)) {
 			out.EstimatedTotalTokens, out.EstimatedBasis = floatPtr(tokens), "quota"
-			if !current.missingPrice {
+			out.EstimatedAt = observation.Format(time.RFC3339Nano)
+			out.EstimateObservedTokens = &basis.tokens
+			if !basis.missingPrice {
 				out.EstimatedTotalCost = floatPtr(cost)
+				out.EstimateObservedCost = floatPtr(basis.cost)
 			}
 			return out
 		}
@@ -576,8 +592,8 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 }
 
 func (e *Engine) snapshot() Snapshot {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	now := time.Now().UTC()
 	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []RecentEvent{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
 	result.QuotaRefreshing = e.quotaRefreshing
@@ -595,9 +611,15 @@ func (e *Engine) snapshot() Snapshot {
 	if e.quotaUpdated.IsZero() {
 		result.QuotaUpdatedAt = ""
 	}
+	forecastsChanged := e.pruneForecastsLocked(now)
 	for _, q := range e.quotas {
-		observation, _ := time.Parse(time.RFC3339Nano, q.FetchedAt)
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummaryObserved(q.AuthID, now, observation, q.Five, 5*time.Hour), Week: e.windowSummaryObserved(q.AuthID, now, observation, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
+		five, changedFive := e.resolveForecastLocked(q, "5h", now)
+		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
+		forecastsChanged = forecastsChanged || changedFive || changedWeek
+		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
+	}
+	if forecastsChanged {
+		e.persistQuotasLocked()
 	}
 	sort.Slice(result.Quotas, func(i, j int) bool {
 		if result.Quotas[i].Provider != result.Quotas[j].Provider {

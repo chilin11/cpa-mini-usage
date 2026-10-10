@@ -162,7 +162,7 @@ func TestForecastPreviousEvidenceAndTooSmallGuard(t *testing.T) {
 func TestForecastObservationSafety(t *testing.T) {
 	e, now, q := forecastFixture()
 	e.events = []Event{forecastEvent(now.Add(-6*time.Hour), 50000, 50000), forecastEvent(now, 5000, 5000)}
-	for _, observation := range []time.Time{now.Add(-time.Nanosecond), now.Add(-5 * time.Hour), now.Add(time.Nanosecond)} {
+	for _, observation := range []time.Time{now.Add(-5 * time.Hour), now.Add(time.Nanosecond)} {
 		for _, used := range []float64{25, 0} {
 			q.Used = used
 			win := e.windowSummaryObserved("a", now, observation, q, 5*time.Hour)
@@ -255,5 +255,37 @@ func TestPreviousForecastCostToleranceMatchesManagerPlus(t *testing.T) {
 	win := e.windowSummary("a", now, q, 5*time.Hour)
 	if win.EstimatedBasis != "previous" || win.EstimatedTotalCost == nil {
 		t.Fatal("floating-point cost consistency epsilon must match Manager Plus")
+	}
+}
+
+func TestPairedForecastSurvivesNewRequestsAndRecomputesOnRefresh(t *testing.T) {
+	e, now, q := forecastFixture()
+	fetched := now.Add(-2 * time.Minute)
+	e.events = []Event{forecastEvent(fetched, 100000, 100000)}
+	first := e.windowSummaryObserved("a", now, fetched, q, 5*time.Hour)
+	e.events = append(e.events, forecastEvent(now, 10000, 10000))
+	second := e.windowSummaryObserved("a", now, fetched, q, 5*time.Hour)
+	if first.EstimatedTotalTokens == nil || second.EstimatedTotalTokens == nil || *first.EstimatedTotalTokens != 400000 || *second.EstimatedTotalTokens != 400000 || second.ObservedTokens != 110000 || second.EstimatedTotalCost == nil || *second.EstimatedTotalCost != .4 || second.EstimatedAt != fetched.Format(time.RFC3339Nano) || second.EstimateObservedTokens == nil || *second.EstimateObservedTokens != 100000 {
+		t.Fatalf("new requests erased or inflated the paired estimate %+v", second)
+	}
+	q.Used = 50
+	third := e.windowSummaryObserved("a", now, now, q, 5*time.Hour)
+	if third.EstimatedTotalTokens == nil || *third.EstimatedTotalTokens != 220000 || third.EstimatedTotalCost == nil || *third.EstimatedTotalCost != .22 {
+		t.Fatalf("refresh did not re-pair %+v", third)
+	}
+	e.events = append(e.events, Event{At: now, AuthID: "a", Provider: "codex", Model: "unknown", Total: 1000})
+	missing := e.windowSummaryObserved("a", now, fetched, q, 5*time.Hour)
+	if !missing.MissingPrice || missing.ObservedCost != nil || missing.EstimatedTotalCost == nil || *missing.EstimatedTotalCost != .2 {
+		t.Fatalf("later missing price erased known paired dollars %+v", missing)
+	}
+}
+
+func TestPreviousForecastSurvivesRequestsAfterObservation(t *testing.T) {
+	e, now, q := forecastFixture()
+	q.Used = 0
+	e.events = []Event{forecastEvent(now.Add(-6*time.Hour), 50000, 50000), forecastEvent(now, 5000, 5000)}
+	win := e.windowSummaryObserved("a", now, now.Add(-time.Minute), q, 5*time.Hour)
+	if win.EstimatedBasis != "previous" || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 50000 {
+		t.Fatalf("new current request erased previous-period basis %+v", win)
 	}
 }

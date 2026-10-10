@@ -76,7 +76,7 @@ func TestContextPricingUsesDeclaredThreshold(t *testing.T) {
 	}
 }
 
-func TestQuotaEstimateIncludesActualsButRejectsLaggingObservation(t *testing.T) {
+func TestQuotaEstimateUsesPairedObservationWithLiveActuals(t *testing.T) {
 	e := newEngine()
 	now := time.Now().UTC()
 	fetched := now.Add(-2 * time.Minute)
@@ -85,8 +85,8 @@ func TestQuotaEstimateIncludesActualsButRejectsLaggingObservation(t *testing.T) 
 	e.events = []Event{{AuthID: "a", Provider: "codex", Model: "test", At: fetched.Add(-time.Minute), Input: 100000, Output: 20000, Total: 120000}, {AuthID: "a", Provider: "codex", Model: "test", At: fetched.Add(time.Minute), Input: 1000000, Output: 100000, Total: 1100000}}
 	state := e.snapshot()
 	win := state.Quotas[0].Five
-	if win.ObservedTokens != 1220000 || win.ObservedCost == nil || math.Abs(*win.ObservedCost-3.16) > 1e-12 || win.EstimatedTotalTokens != nil || win.EstimatedTotalCost != nil || win.EstimatedBasis != "" {
-		t.Fatalf("stale quota must show full actuals without a forecast %+v", win)
+	if win.ObservedTokens != 1220000 || win.ObservedCost == nil || math.Abs(*win.ObservedCost-3.16) > 1e-12 || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 1220000 || win.EstimatedTotalCost == nil || math.Abs(*win.EstimatedTotalCost-3.16) > 1e-12 || win.EstimatedBasis != "quota" || win.EstimateObservedTokens == nil || *win.EstimateObservedTokens != 120000 || win.EstimateObservedCost == nil || math.Abs(*win.EstimateObservedCost-.36) > 1e-12 {
+		t.Fatalf("live actuals must retain paired forecast with actual floors %+v", win)
 	}
 	if state.Credentials[0].Total != 1220000 {
 		t.Fatal("request totals should still include new requests")
