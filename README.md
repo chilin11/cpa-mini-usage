@@ -96,6 +96,8 @@ Remove the artificial 5%-used threshold: any positive utilized fraction with obs
 
 Quota windows now display observed used USD/tokens alongside estimated remaining values on aligned rows, with measured usage and API-equivalent cost clearly distinguished from official balances/bills. Narrow screens stack the five-hour and seven-day windows without separating used/remaining pairs. The recent request Time column displays both first-token and total latency in seconds; missing measurements remain independently unknown. Chinese/English labels switch together, and the original timestamp column is labeled Requested at.
 
+The v0.1.6 replacement build moves refresh, language, and connection controls to the left-side toolbar below the tabs so CPA's top-right floating control does not cover the refresh button. Request refresh remains GET-only. Since the version number is unchanged, existing v0.1.6 installations may need a manual reinstall or `.so` replacement followed by a CPA restart; keep the data directory.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

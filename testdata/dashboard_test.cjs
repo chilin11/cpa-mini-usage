@@ -229,7 +229,7 @@ test('refresh cadence is low and entry animations are absent',()=>{
 test('logged-out view has a single visible login section',async()=>{
   const {api,elements}=dashboard();await api.load();
   assert(elements.get('dashboard').classes.has('needs-login'));
-  assert.match(html,/\.needs-login \.tabs,\.needs-login \.toolbar,\.needs-login \[role=tabpanel\],\.needs-login \.foot\{display:none\}/);
+  assert.match(html,/\.needs-login \.tabs,\.needs-login \[role=tabpanel\],\.needs-login \.foot,\.needs-login \.filter-control/);assert(!/\.needs-login \.toolbar\s*[,\{]/.test(html));
 });
 
 const reply=(payload,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload});
@@ -543,4 +543,16 @@ for(const language of ['zh','en']){
 }
 test('quota used and estimate rows retain readable sizing and stack windows on narrow screens',()=>{
   const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:22px/);assert.match(css,/\.observed-value\{font-size:14px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
+});
+test('refresh and language controls live below tabs, outside CPA top-right overlay area',()=>{
+  const d=dashboard(),root=d.elements.get('dashboard'),header=root.children.find(n=>n.tag==='header'),toolbar=root.children.find(n=>n.getAttribute('class')==='toolbar');
+  assert(!descendants(header).includes(d.elements.get('refresh')));assert(!descendants(header).includes(d.elements.get('language')));
+  assert(descendants(toolbar).includes(d.elements.get('refresh')));assert(descendants(toolbar).includes(d.elements.get('language')));
+  assert(root.children.indexOf(toolbar)>root.children.findIndex(n=>n.getAttribute('role')==='tablist'));
+  const actions=descendants(toolbar).find(n=>n.getAttribute('class')==='header-actions');assert.equal(actions.children[0],d.elements.get('refresh'));
+  assert.equal(descendants(root).filter(n=>n.id==='refresh').length,1);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.toolbar \.header-actions\{flex-wrap:wrap;justify-content:flex-start;width:auto/);
+});
+test('sign-in gate keeps toolbar language selection while hiding private-data controls',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert(!/\.needs-login \.toolbar\s*[,\{]/.test(css));assert.match(css,/\.needs-login \.filter-control/);assert.match(css,/\.needs-login #refresh/);
 });
