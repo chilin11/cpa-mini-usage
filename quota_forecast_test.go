@@ -113,7 +113,8 @@ func TestForecastPreviousAdjacentWindowAndBasis(t *testing.T) {
 	q.Used = 0
 	e.events = []Event{forecastEvent(now.Add(-2*time.Hour), 10000, 10000)}
 	win := e.windowSummary("a", now, q, 5*time.Hour)
-	if win.EstimatedBasis != "previous" || *win.EstimatedTotalTokens != 10000 || win.ObservedTokens != 0 {
+	assertUnusedForecast(t, win)
+	if win.ObservedTokens != 0 {
 		t.Fatalf("declared duration ignored: %+v", win)
 	}
 }
@@ -138,6 +139,10 @@ func TestForecastPreviousEvidenceAndTooSmallGuard(t *testing.T) {
 				e.events = append(e.events, forecastEvent(now, tc.currentTokens, tc.currentInput))
 			}
 			win := e.windowSummary("a", now, q, 5*time.Hour)
+			if tc.currentTokens == 0 && tc.currentInput == 0 {
+				assertUnusedForecast(t, win)
+				return
+			}
 			if !tc.want {
 				assertNoForecast(t, win)
 			} else if win.EstimatedBasis != "previous" || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != float64(tc.previousTokens) || win.EstimatedTotalCost == nil || *win.EstimatedTotalCost != float64(tc.previousInput)/1e6 {
@@ -287,5 +292,68 @@ func TestPreviousForecastSurvivesRequestsAfterObservation(t *testing.T) {
 	win := e.windowSummaryObserved("a", now, now.Add(-time.Minute), q, 5*time.Hour)
 	if win.EstimatedBasis != "previous" || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 50000 {
 		t.Fatalf("new current request erased previous-period basis %+v", win)
+	}
+}
+
+func TestEmptyCurrentWindowHasZeroObservedCostAndUnusedFiveHourTotal(t *testing.T) {
+	for _, duration := range []time.Duration{5 * time.Hour, 7 * 24 * time.Hour} {
+		for _, history := range []string{"none", "priced", "missing price"} {
+			t.Run(duration.String()+"/"+history, func(t *testing.T) {
+				e, now, q := forecastFixture()
+				q.Used = 0
+				q.Seconds = int64(duration / time.Second)
+				if history != "none" {
+					e.events = []Event{forecastEvent(now.Add(time.Hour-duration-time.Minute), 7090000, 1980000)}
+					if history == "missing price" {
+						e.events[0].Model = "unknown"
+					}
+				}
+				win := e.windowSummary("a", now, q, duration)
+				if win.ObservedTokens != 0 || win.ObservedCost == nil || *win.ObservedCost != 0 {
+					t.Fatalf("empty current window must have known zero observed cost: %+v", win)
+				}
+				if duration == 5*time.Hour {
+					assertUnusedForecast(t, win)
+				} else if history == "none" {
+					assertNoForecast(t, win)
+				} else if win.EstimatedBasis != "previous" || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 7090000 {
+					t.Fatalf("weekly previous history must remain independently labeled: %+v", win)
+				}
+				if duration != 5*time.Hour && history == "priced" && (win.EstimatedTotalCost == nil || *win.EstimatedTotalCost != 1.98) {
+					t.Fatalf("priced previous history lost: %+v", win)
+				}
+				if duration != 5*time.Hour && history == "missing price" && (!win.MissingPrice || win.EstimatedTotalCost != nil) {
+					t.Fatalf("missing previous price must not invent forecast dollars: %+v", win)
+				}
+				encoded, err := json.Marshal(win)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var obj map[string]any
+				if err := json.Unmarshal(encoded, &obj); err != nil || obj["observed_cost"] != float64(0) {
+					t.Fatalf("JSON omitted observed zero: %s (%v)", encoded, err)
+				}
+			})
+		}
+	}
+}
+
+func assertUnusedForecast(t *testing.T, win *WindowEstimate) {
+	t.Helper()
+	if win.EstimatedBasis != "unused" || win.EstimatedTotalTokens == nil || *win.EstimatedTotalTokens != 0 || win.EstimatedTotalCost == nil || *win.EstimatedTotalCost != 0 || win.EstimateRetained || win.MissingPrice {
+		t.Fatalf("unused five-hour window must show zero totals without history/cache: %+v", win)
+	}
+}
+
+func TestUnusedFiveHourRequiresValidActiveWindow(t *testing.T) {
+	for _, reset := range []string{"", "invalid", "2026-10-09T12:00:00Z", "2026-10-09T18:00:00Z"} {
+		e, now, q := forecastFixture()
+		q.Used, q.ResetAt = 0, reset
+		assertNoForecast(t, e.windowSummary("a", now, q, 5*time.Hour))
+	}
+	for _, used := range []float64{1, -1, math.NaN(), math.Inf(1)} {
+		e, now, q := forecastFixture()
+		q.Used = used
+		assertNoForecast(t, e.windowSummary("a", now, q, 5*time.Hour))
 	}
 }

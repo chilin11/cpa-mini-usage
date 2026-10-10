@@ -200,7 +200,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.10</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.11</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -280,6 +280,7 @@ const translations={
   '已用（观测）':'Used (observed)','预估总额':'Est. total','参考上一周期的实际用量；不是按当前已用比例外推。':'Based on actual usage in the previous cycle, not the current quota fraction.','预估依据暂不可用，请刷新额度。':'Forecast basis unavailable; refresh quota.',
   '估算依据时间：{time}\n新请求仅更新已用；额度刷新后重新配对估算，总额不低于已用。':'Estimate basis time: {time}\nNew requests update used values only; quota refresh re-pairs the estimate. Totals are floored at observed usage.',
   '保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。':'Retaining the last valid estimate for this cycle; new quota progress or prices are unavailable. Waiting for quota refresh.',
+  '本 5 小时窗口尚未使用，预估总额显示为 0；不引用上一周期或缓存预估。':'No usage yet in this five-hour window; estimated totals are shown as 0, without previous-cycle or cached forecasts.',
   '本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。':'Usage observed by this CPA instance in this quota window; excludes requests before installation or from other clients.',
   '本机观测的 API 等价成本，不是官方账单或订阅扣款。':'API-equivalent cost observed by this CPA instance, not an official bill or subscription charge.',
   '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
@@ -614,7 +615,7 @@ function addWindow(parent,title,period,win){
   const available=validEstimate(win?.estimated_total_tokens);
   const observedTokens=addTokens(tokenRow,'div','observed-value',win?.observed_tokens),tokenValue=addTokens(tokenRow,'div','estimate-value',available);
   observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。');
-  const basis=win?.estimate_retained?t('保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。'):win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
+  const basis=win?.estimated_basis==='unused'?t('本 5 小时窗口尚未使用，预估总额显示为 0；不引用上一周期或缓存预估。'):win?.estimate_retained?t('保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。'):win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
   const estimateTokens=win?.estimate_observed_tokens??win?.observed_tokens,estimateCost=win?.estimate_observed_cost??win?.observed_cost,estimateUsed=win?.estimate_used_percent??win?.used_percent;
   tokenValue.title+='\n'+(basis||t('观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%',{observed:fmt(estimateTokens),used:estimateUsed??'—'}));
   amount.title=basis||t('观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%',{cost:money(estimateCost),used:estimateUsed??'—'});

@@ -42,7 +42,7 @@ func (e *Engine) resolveForecastLocked(q AccountQuota, period string, now time.T
 		exists = false
 		changed = true
 	}
-	if !active || out == nil {
+	if !active || out == nil || out.EstimatedBasis == "unused" {
 		return out, changed
 	}
 	if out.EstimatedBasis == "quota" {

@@ -618,3 +618,19 @@ test('tech palette separates official quota, actual cost and forecast with acces
     assert.notEqual(theme['--accent'],theme['--forecast']);assert.notEqual(theme['--cost'],theme['--forecast']);
   }
 });
+
+for(const language of ['zh','en'])test(`${language}: unused five-hour quota displays zero totals without previous-cycle arithmetic`,()=>{
+  const d=dashboard({},undefined,{language}),suffix=language==='en'?'tokens':'token';
+  d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_cost:0,observed_tokens:0,estimated_total_cost:0,estimated_total_tokens:0,estimated_basis:'unused'}}]});
+  const nodes=descendants(d.elements.get('quota-cards')),stats=nodes.find(n=>n.className==='windowstats');
+  assert.equal(nodes.find(n=>n.className==='percent').textContent,'100.0');
+  assert.deepEqual(stats.children[0].children.map(n=>n.textContent),language==='en'?['Used (observed)','Est. total']:['已用（观测）','预估总额']);
+  assert.deepEqual(stats.children[1].children.map(n=>n.textContent),['$0.000','$0.000']);
+  assert.deepEqual(stats.children[2].children.map(n=>n.textContent),['0 '+suffix,'0 '+suffix]);
+  for(const metric of stats.children.slice(1).flatMap(row=>row.children).filter(n=>n.className.startsWith('estimate-'))){
+    assert.match(metric.title,language==='en'?/No usage yet in this five-hour window/:/本 5 小时窗口尚未使用/);
+    assert(!/×|÷/.test(metric.title));
+  }
+  d.api.setLanguage(language==='en'?'zh':'en');
+  assert.match(descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-cost').title,language==='en'?/本 5 小时窗口尚未使用/:/No usage yet in this five-hour window/);
+});

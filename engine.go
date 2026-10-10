@@ -521,6 +521,7 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 	if win == nil {
 		return nil
 	}
+	fiveHour := duration == 5*time.Hour
 	out := &WindowEstimate{UsedPercent: win.Used, ResetAt: win.ResetAt}
 	if !finite(out.UsedPercent) {
 		out.UsedPercent = 0 // Keep the snapshot JSON encodable for invalid quota data.
@@ -546,9 +547,15 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 	out.ObservedTokens, out.MissingPrice = current.tokens, current.missingPrice
 	if current.count > 0 {
 		out.PartialHistory = current.first.After(start.Add(10 * time.Minute))
-		if !current.missingPrice && finite(current.cost) {
-			out.ObservedCost = floatPtr(current.cost)
-		}
+	}
+	if !current.missingPrice && finite(current.cost) {
+		out.ObservedCost = floatPtr(current.cost)
+	}
+	// An unused five-hour window displays zero, not adjacent history or a cap.
+	if fiveHour && now.Before(reset) && win.Used == 0 && current.count == 0 {
+		out.EstimatedTotalTokens, out.EstimatedTotalCost = floatPtr(0), floatPtr(0)
+		out.EstimatedBasis = "unused"
+		return out
 	}
 	// Keep actuals live, but pair the percentage only with usage observed at
 	// the same quota timestamp. Later requests must not erase that estimate.

@@ -130,3 +130,19 @@ func TestQuotaRefreshRemembersOldForecastWithoutDashboardRead(t *testing.T) {
 		t.Fatal("refresh-before-snapshot lost valid forecast")
 	}
 }
+
+func TestUnusedFiveHourIgnoresCachedAndPreviousTotals(t *testing.T) {
+	e, now, q := cachedForecastFixture(t)
+	e.resolveForecastLocked(q, "5h", now)
+	// Simulate an empty current window while an old forecast and history exist.
+	e.events = []Event{forecastEvent(now.Add(-6*time.Hour), 7090000, 1980000)}
+	q.Five.Used = 0
+	unused, _ := e.resolveForecastLocked(q, "5h", now)
+	assertUnusedForecast(t, unused)
+	// Actual new usage must still be able to use the valid same-cycle cache.
+	e.events = append(e.events, forecastEvent(now, 1000, 1000))
+	used, _ := e.resolveForecastLocked(q, "5h", now)
+	if !used.EstimateRetained || used.EstimatedTotalTokens == nil || *used.EstimatedTotalTokens != 400000 {
+		t.Fatalf("new usage lost valid same-cycle forecast: %+v", used)
+	}
+}
