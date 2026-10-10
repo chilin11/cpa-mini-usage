@@ -34,7 +34,7 @@ func (e *Engine) kickFullRefresh() (string, bool) {
 	return previous, true
 }
 
-// Account refresh shares the provider-read lock, but never advances the full-scan clock.
+// Account refreshes share the provider-read lock, but never advance the full-scan clock.
 func (e *Engine) kickAccountRefresh(authID string) (int, string, string) {
 	return e.beginAccountRefresh(authID, hostRPC, e.refreshAccountQuota)
 }
@@ -43,17 +43,22 @@ func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, 
 	if strings.TrimSpace(authID) == "" || len(authID) > 1024 {
 		return 400, "", "invalid_auth_id"
 	}
-	e.mu.RLock()
-	_, known := e.quotas[authID]
-	e.mu.RUnlock()
-	if !known {
-		return 404, "", "account_not_found"
-	}
-	if !e.refreshMu.TryLock() {
+	if !e.refreshMu.TryRLock() {
 		return 409, "", "refresh_busy"
 	}
 	e.mu.Lock()
-	previous := e.accountRefresh[authID].FinishedAt
+	if _, known := e.quotas[authID]; !known {
+		e.mu.Unlock()
+		e.refreshMu.RUnlock()
+		return 404, "", "account_not_found"
+	}
+	state := e.accountRefresh[authID]
+	if state.Refreshing {
+		e.mu.Unlock()
+		e.refreshMu.RUnlock()
+		return 409, "", "refresh_busy"
+	}
+	previous := state.FinishedAt
 	e.accountRefresh[authID] = AccountRefreshState{Refreshing: true, FinishedAt: previous}
 	e.mu.Unlock()
 	go func() {
@@ -61,8 +66,8 @@ func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, 
 		defer func() {
 			e.mu.Lock()
 			e.accountRefresh[authID] = AccountRefreshState{FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Error: message}
+			e.refreshMu.RUnlock()
 			e.mu.Unlock()
-			e.refreshMu.Unlock()
 		}()
 		raw, err := rpc("host.auth.list", map[string]any{})
 		if err != nil {
@@ -96,7 +101,7 @@ func (e *Engine) refreshQuota(force bool) {
 	e.refreshQuotaLocked(force)
 }
 
-// Caller holds refreshMu for the whole batch, including all provider reads.
+// Caller holds refreshMu exclusively for the whole batch, including all provider reads.
 func (e *Engine) refreshQuotaLocked(force bool) {
 	e.mu.Lock()
 	if !force && time.Since(e.lastRefresh) < quotaInterval {

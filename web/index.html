@@ -200,7 +200,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.9</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.10</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -240,7 +240,8 @@ tbody tr:focus-within>td{background:var(--hover)}
 'use strict';
 let key = '', data = null, tab = 'quota', filter = '', expanded = '';
 let loading = false, headerLoading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
-let quotaStamp='',requestStamp='',lastSyncAt=0, accountJob=null;
+let quotaStamp='',requestStamp='',lastSyncAt=0, accountSnapshotSerial=0,appliedAccountSnapshotSerial=0;
+const accountJobs=new Map();
 let statusKey='正在读取登录状态', alertKeys=[];
 let settingsJob=null,settingsError=null;
 const cardCache=new Map(), accountErrors=new Map();
@@ -477,10 +478,10 @@ async function api(path,method='GET',body) {
 const remoteAccountBusy=()=>Object.values(data?.account_refresh||{}).some(state=>state?.refreshing);
 function syncAccountControls(){
   for(const [id,entry] of cardCache){
-    const busy=accountJob?.id===id||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度');
+    const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度');
     entry.button.disabled=busy;if(entry.button.textContent!==label)entry.button.textContent=label;
     if(entry.button.getAttribute('aria-busy')!==String(busy))entry.button.setAttribute('aria-busy',String(busy));
-    if(!accountErrors.has(id)&&accountJob?.id!==id){const error=data?.account_refresh?.[id]?.error||entry.backendError;const text=error?message(errorKey(error,'账户额度刷新失败，请稍后重试。')):'';if(entry.error.textContent!==text)entry.error.textContent=text;entry.error.hidden=!text;}
+    if(!accountErrors.has(id)&&!accountJobs.has(id)){const error=data?.account_refresh?.[id]?.error||entry.backendError;const text=error?message(errorKey(error,'账户额度刷新失败，请稍后重试。')):'';if(entry.error.textContent!==text)entry.error.textContent=text;entry.error.hidden=!text;}
   }
   syncHeader();
 }
@@ -491,7 +492,7 @@ function syncHeader(){
   const requests=tab==='requests',busy=requests?(headerLoading||Boolean(requestJob)):headerLoading;
   $('refresh-label').textContent=t(requests?(busy?'正在同步请求…':'刷新请求'):(headerLoading?'正在同步…':phase==='error'?'重试连接':'刷新全部'));
   $('refresh').setAttribute('aria-label',$('refresh-label').textContent);
-  $('refresh').disabled=requests?(loading||Boolean(requestJob)||Boolean(settingsJob)):(loading||Boolean(requestJob)||Boolean(accountJob)||remoteAccountBusy()||Boolean(data?.quota_refreshing));
+  $('refresh').disabled=requests?(loading||Boolean(requestJob)||Boolean(settingsJob)):(loading||Boolean(requestJob)||accountJobs.size>0||remoteAccountBusy()||Boolean(data?.quota_refreshing));
   $('dot').classList.toggle('off',!data&&!busy);$('dot').classList.toggle('busy',busy);updateHeaderStatus();
 }
 function syncControls(){
@@ -499,7 +500,7 @@ function syncControls(){
   $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
-  data=null;expanded='';recentPage=0;accountJob=null;settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
+  data=null;expanded='';recentPage=0;accountJobs.clear();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
   setAlert(msg);render();
@@ -507,7 +508,7 @@ function clearSnapshot(needsLogin,msg){
 function validSnapshot(snapshot){if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw failure('CPA 快照格式异常。');return snapshot;}
 const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));
 async function load(force=false){
-  if((accountJob||settingsJob||requestJob)&&key===guessKey())return;
+  if((accountJobs.size||settingsJob||requestJob)&&key===guessKey())return;
   const serial=++loadSerial,saved=guessKey();
   if(key!==saved){clearSnapshot(!saved,'');}
   const quiet=!force&&Boolean(data)&&key===saved;
@@ -562,25 +563,25 @@ function showAccountError(id,value){
 async function refreshAccount(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
-  if(accountJob||loading||data?.quota_refreshing||remoteAccountBusy()){showAccountError(id,'已有额度刷新正在进行，请稍后重试。');return;}
-  const job={id,key,serial:loadSerial};accountJob=job;showAccountError(id,null);syncAccountControls();
-  const current=()=>accountJob===job&&loadSerial===job.serial;
-  const authChanged=async()=>{if(guessKey()!==job.key){if(current()){accountJob=null;await load();}return true;}return !current();};
+  if(accountJobs.has(id)||loading||data?.quota_refreshing||data?.account_refresh?.[id]?.refreshing){showAccountError(id,'已有额度刷新正在进行，请稍后重试。');return;}
+  const job={id,key,serial:loadSerial};accountJobs.set(id,job);showAccountError(id,null);syncAccountControls();
+  const current=()=>accountJobs.get(id)===job&&loadSerial===job.serial;
+  const authChanged=async()=>{if(guessKey()!==job.key){if(current()){accountJobs.clear();await load();}return true;}return !current();};
   try{
     const accepted=await api('refresh-account','POST',{auth_id:id});if(await authChanged())return;
     const baseline=accepted.refresh_finished_at,deadline=Date.now()+120000;
     while(Date.now()<deadline){
       await pause();if(await authChanged())return;
-      const snapshot=await api('data');if(await authChanged())return;
-      acceptSnapshot(validSnapshot(snapshot));lastSyncAt=Date.now();
-      const state=snapshot.account_refresh?.[id];
+      const snapshotSerial=++accountSnapshotSerial,snapshot=await api('data');if(await authChanged())return;
+      validSnapshot(snapshot);if(snapshotSerial>appliedAccountSnapshotSerial){appliedAccountSnapshotSerial=snapshotSerial;acceptSnapshot(snapshot);lastSyncAt=Date.now();}
+      const state=data?.account_refresh?.[id];
       if(state&&!state.refreshing&&state.finished_at&&state.finished_at!==baseline){if(state.error)showAccountError(id,errorKey(state.error,'账户额度刷新失败，请稍后重试。'));return;}
     }
     showAccountError(id,'账户额度刷新超时，请稍后重试。');
   }catch(err){
     if(await authChanged())return;
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else showAccountError(id,err.ui||errorKey(err.message,'账户额度刷新失败，请稍后重试。'));
-  }finally{if(accountJob===job){accountJob=null;syncAccountControls();}}
+  }finally{if(accountJobs.get(id)===job){accountJobs.delete(id);syncAccountControls();}}
 }
 async function savePersistence(enabled){
   if(key!==guessKey()){await load();return;}
@@ -733,10 +734,10 @@ $('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 window.addEventListener('storage',e=>{if(e.key===languageStorage){setLanguage(initialLanguage(),false);return;}load();});
-window.addEventListener('focus',()=>{if(!loading&&!accountJob&&Date.now()-lastSyncAt>=60000)load();});
+window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});
 applyLanguage();
 load();
-setInterval(()=>{if(!document.hidden&&!loading&&!accountJob)load();},60000);
+setInterval(()=>{if(!document.hidden&&!loading&&!accountJobs.size)load();},60000);
 setInterval(()=>{if(!document.hidden&&data)updateCountdowns();},30000);
 })();
 </script>

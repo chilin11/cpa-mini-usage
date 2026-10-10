@@ -295,10 +295,10 @@ for(const language of ['zh','en']){
   });
 }
 
-test('backend refresh from another window changes only matching button, and rejects concurrent local requests',async()=>{
-  let posts=0;const sample=twoAccounts(),d=dashboard(login(),async url=>{if(url.endsWith('refresh-account'))posts++;return reply(sample);});await d.api.load();const first=panel(d.elements,'account'),other=panel(d.elements,'other'),table=d.elements.get('recent-table').children[0];
-  d.api.acceptSnapshot({...sample,generated_at:'new',account_refresh:{account:{refreshing:true}}});assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,false);await d.api.refreshAccount('other');assert.equal(posts,0);assert.match(accountError(other).textContent,/正在进行/);assert.equal(d.elements.get('recent-table').children[0],table);
-  d.api.acceptSnapshot({...sample,account_refresh:{account:{refreshing:false,finished_at:'done',error:'quota response invalid'}}});assert.equal(refreshButton(first).disabled,false);assert.equal(accountError(first).textContent,'额度响应格式异常。');
+test('backend refresh from another window blocks only the same account, not a different local account',async()=>{
+  let posts=0;const sample=twoAccounts(),d=dashboard(login(),async url=>{if(url.endsWith('refresh-account')){posts++;return reply({refresh_finished_at:'old'},202);}return reply({...sample,account_refresh:{account:{refreshing:true},other:{refreshing:false,finished_at:'done'}}});});await d.api.load();const first=panel(d.elements,'account'),other=panel(d.elements,'other'),table=d.elements.get('recent-table').children[0];
+  d.api.acceptSnapshot({...sample,generated_at:'new',account_refresh:{account:{refreshing:true}}});assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,false);await d.api.refreshAccount('other');assert.equal(posts,1);assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,false);assert.equal(accountError(other).textContent,'');assert.equal(d.elements.get('recent-table').children[0],table);
+  d.api.acceptSnapshot({...sample,account_refresh:{account:{refreshing:false,finished_at:'done',error:'quota response invalid'}}});assert.equal(refreshButton(first).disabled,false);assert.equal(accountError(first).textContent,'额度响应格式异常。');d.api.acceptSnapshot({...sample,account_refresh:{account:{refreshing:true}}});await d.api.refreshAccount('account');assert.equal(posts,1);assert.match(accountError(first).textContent,/正在进行/);
 });
 
 for(const step of ['accepted','snapshot'])for(const change of ['logout','key-change']){
@@ -320,9 +320,25 @@ test('manual global refresh keeps bodyless POST contract and temporary failure r
   const other=panel(d.elements,'other');failing=true;await d.api.load(true);assert.equal(panel(d.elements,'other'),other);
 });
 
-test('local individual refresh rejects a second account without toggling its button or posting twice',async()=>{
-  let release,posts=0;const sample=twoAccounts(),d=dashboard(login(),async url=>{if(url.endsWith('refresh-account')){posts++;return new Promise(resolve=>release=()=>resolve(reply({refresh_finished_at:'old'},202)));}return reply({...sample,account_refresh:{account:{refreshing:false,finished_at:'done'}}});});
-  await d.api.load();const other=panel(d.elements,'other'),pending=d.api.refreshAccount('account');await d.api.refreshAccount('other');assert.equal(posts,1);assert.equal(refreshButton(other).disabled,false);assert.match(accountError(other).textContent,/正在进行/);release();await pending;assert.equal(panel(d.elements,'other'),other);
+async function waitForTest(predicate){for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setImmediate(resolve));}assert.fail('async test condition did not settle');}
+for(const language of ['zh','en'])test(`${language}: two accounts refresh concurrently with independent completion/errors and stale polls ignored`,async()=>{
+  const sample=twoAccounts(),posts=new Map(),polls=[],calls=[];
+  const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('refresh-account')){const id=JSON.parse(options.body).auth_id;return new Promise(resolve=>posts.set(id,resolve));}if(posts.size)return new Promise(resolve=>polls.push(resolve));return reply(sample);},{language});
+  await d.api.load();const first=panel(d.elements,'account'),other=panel(d.elements,'other'),table=d.elements.get('recent-table').children[0];
+  const a=d.api.refreshAccount('account'),b=d.api.refreshAccount('other');assert.equal(posts.size,2);assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,true);await d.api.refreshAccount('account');assert.equal(calls.filter(c=>c.options.method==='POST').length,2);
+  posts.get('account')(reply({refresh_finished_at:'old-a'},202));await waitForTest(()=>polls.length===1);
+  posts.get('other')(reply({refresh_finished_at:'old-b'},202));await waitForTest(()=>polls.length===2);
+  polls[1](reply({...sample,account_refresh:{account:{refreshing:true,finished_at:'old-a'},other:{refreshing:false,finished_at:'done-b'}}}));await b;
+  assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,false);assert.equal(accountError(other).textContent,'');assert.equal(d.elements.get('refresh').disabled,true);
+  polls[0](reply({...sample,account_refresh:{account:{refreshing:true,finished_at:'old-a'},other:{refreshing:true,finished_at:'old-b'}}}));await waitForTest(()=>polls.length===3);assert.equal(refreshButton(other).disabled,false);
+  polls[2](reply({...sample,account_refresh:{account:{refreshing:false,finished_at:'done-a',error:'quota HTTP 429'},other:{refreshing:false,finished_at:'done-b'}}}));await a;
+  assert.equal(refreshButton(first).disabled,false);assert.equal(refreshButton(other).disabled,false);assert.equal(d.elements.get('refresh').disabled,false);assert.match(accountError(first).textContent,language==='en'?/HTTP 429/:/HTTP 429/);assert.equal(accountError(other).textContent,'');assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(d.elements.get('recent-table').children[0],table);assert(calls.filter(c=>c.options.method==='POST').every(c=>c.url.endsWith('refresh-account')));
+});
+for(const change of ['logout','key-change'])test(`two concurrent account jobs discard all old responses after ${change}`,async()=>{
+  const stored=login(),pendingPosts=new Map(),sample=twoAccounts();
+  const d=dashboard(stored,async(url,options)=>{if(url.endsWith('refresh-account'))return new Promise(resolve=>pendingPosts.set(JSON.parse(options.body).auth_id,resolve));return reply(options.headers.Authorization==='Bearer new-key'?{quotas:[],credentials:[],recent:[]}:sample);});
+  await d.api.load();const a=d.api.refreshAccount('account'),b=d.api.refreshAccount('other');assert.equal(pendingPosts.size,2);
+  if(change==='logout')delete stored.managementKey;else stored.managementKey=JSON.stringify('new-key');pendingPosts.get('account')(reply({refresh_finished_at:'old'},202));await a;pendingPosts.get('other')(reply({refresh_finished_at:'old'},202));await b;assert(!panel(d.elements,'account'));assert(!panel(d.elements,'other'));assert.equal(d.elements.get('refresh').disabled,false);
 });
 
 test('poll errors retain private snapshot unless authentication expires',async()=>{

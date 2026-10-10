@@ -175,7 +175,7 @@ type Engine struct {
 	dir                  string
 	done                 chan struct{}
 	stopOnce             sync.Once
-	refreshMu            sync.Mutex
+	refreshMu            sync.RWMutex
 	lastRefresh          time.Time
 }
 
