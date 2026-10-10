@@ -89,3 +89,52 @@ func TestQuotaEstimateStopsAtQuotaObservation(t *testing.T) {
 		t.Fatal("new quota fetch must include later requests")
 	}
 }
+
+func TestLowUsageClaudeWindowEstimate(t *testing.T) {
+	e := newEngine()
+	now := time.Now().UTC()
+	e.prices["anthropic/test"] = ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.2), CacheWrite: floatPtr(2.5)}
+	e.events = []Event{{At: now.Add(-time.Minute), AuthID: "a", Provider: "claude", Model: "test", Input: 100, CacheRead: 300, CacheWrite: 50, Output: 100, Total: 550}}
+	win := e.windowSummary("a", now, &QuotaWindow{Used: 3, ResetAt: now.Add(4 * time.Hour).Format(time.RFC3339)}, 5*time.Hour)
+	if win.EstimatedTotalTokens == nil || win.EstimatedTotalCost == nil {
+		t.Fatalf("3%% must be supported: %+v", win)
+	}
+	if math.Abs(*win.EstimatedTotalTokens*.97-550/.03*.97) > 1e-8 || math.Abs(*win.EstimatedTotalCost*.97-.001185/.03*.97) > 1e-9 {
+		t.Fatal("remaining arithmetic changed")
+	}
+	e.events[0].Model = "missing"
+	win = e.windowSummary("a", now, &QuotaWindow{Used: 3, ResetAt: now.Add(4 * time.Hour).Format(time.RFC3339)}, 5*time.Hour)
+	if win.EstimatedTotalTokens == nil || win.EstimatedTotalCost != nil || !win.MissingPrice {
+		t.Fatal("missing price must not hide known tokens or invent money")
+	}
+	e.events = nil
+	win = e.windowSummary("a", now, &QuotaWindow{Used: 3, ResetAt: now.Add(4 * time.Hour).Format(time.RFC3339)}, 5*time.Hour)
+	if win.EstimatedTotalTokens != nil || win.EstimatedTotalCost != nil {
+		t.Fatal("empty window must remain unknown")
+	}
+}
+
+func TestInputBreakdownAndSummary(t *testing.T) {
+	for _, tc := range []struct {
+		event           Event
+		total, uncached int64
+	}{
+		{Event{Provider: "claude", Input: 2, CacheRead: 60590, CacheWrite: 10960, Output: 2190, Total: 73742}, 71552, 2},
+		{Event{Provider: "codex", Input: 1000, CacheRead: 600, CacheWrite: 100, Output: 100, Total: 1100}, 1000, 300},
+		{Event{Provider: "codex", Input: 1000, CacheRead: 1500, CacheWrite: 500}, 1000, 0},
+	} {
+		total, uncached := inputBreakdown(tc.event)
+		if total != tc.total || uncached != tc.uncached {
+			t.Fatalf("input %d %d", total, uncached)
+		}
+		e := newEngine()
+		event := tc.event
+		event.At = time.Now().UTC()
+		event.AuthID = "a"
+		e.events = []Event{event, event}
+		credential := e.snapshot().Credentials[0]
+		if credential.TotalInput != 2*tc.total || credential.UncachedInput != 2*tc.uncached || credential.CacheWrite != 2*event.CacheWrite || credential.Input != 2*event.Input || credential.Output != 2*event.Output {
+			t.Fatalf("summary %+v", credential)
+		}
+	}
+}

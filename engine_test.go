@@ -210,12 +210,12 @@ func TestWindowEstimateArithmetic(t *testing.T) {
 		{At: now.Add(-6 * time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
 		{At: now.Add(time.Hour), AuthID: "a", Provider: "codex", Model: "test", Input: 1000000, Total: 1000000},
 	}
-	for _, used := range []float64{0, 4.99, 5, 25, 50, 100, 101} {
+	for _, used := range []float64{-1, 0, 0.1, 1, 3, 4.99, 5, 25, 50, 100, 101} {
 		win := e.windowSummary("a", now, &QuotaWindow{Used: used, ResetAt: now.Add(time.Hour).Format(time.RFC3339)}, 5*time.Hour)
 		if win.ObservedTokens != 120000 || win.ObservedCost == nil || math.Abs(*win.ObservedCost-.36) > 1e-9 {
 			t.Fatalf("observed=%+v", win)
 		}
-		if used < 5 || used > 100 {
+		if used <= 0 || used > 100 {
 			if win.EstimatedTotalTokens != nil || win.EstimatedTotalCost != nil {
 				t.Fatalf("unsupported used=%v extrapolated", used)
 			}

@@ -81,8 +81,8 @@ test('all token displays use compact units, retaining full values in tooltips', 
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
   const cells = requestNodes.filter(n => n.tag === 'td');
-  assert.deepEqual(cells.slice(2,8).map(n => n.textContent), ['1,234', '1.25m', '2.4b', '1.23k', '2.4b', '$3.50']);
-  assert.equal(cells[6].title, '2,401,250,000 token');
+  assert.deepEqual(cells.slice(2,9).map(n => n.textContent), ['1,234', '1.25m', '1.25m', '2.4b', '', '2.4b', '$3.50']);
+  assert.equal(cells[7].title, '2,401,250,000 token');
   assert(requestNodes.some(n => n.textContent === '1,234 次请求 · 2.4b token · $3.50' && n.title === '2,401,250,000 token'));
   assert(descendants(elements.get('recent-table')).some(n => n.textContent === 'gpt'));
 });
@@ -423,7 +423,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1120px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/v0\.1\.5/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);const version=JSON.parse(fs.readFileSync(path.join(__dirname,'../registry.json'),'utf8')).plugins[0].version;assert(html.includes('v'+version));
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -492,4 +492,25 @@ test('quota token tooltip exposes observed counts and remaining arithmetic in bo
     d.api.renderSample(sample);const metric=descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-value');
     assert.match(metric.title,/1,000,000/);assert.match(metric.title,/25%/);assert.match(metric.title,/75%/);
   }
+});
+
+for(const language of ['zh','en'])test(`${language}: separate total/uncached input from cache and output-only TPS`,()=>{
+  const d=dashboard({},undefined,{language});
+  const claude={auth_id:'a',provider:'claude',model:'opus',input:2,cache_read:60590,cache_write:10960,output:100,total:71652,ttft_ms:500,latency_ms:2500};
+  const codex={...claude,auth_id:'b',provider:'codex',input:1000,cache_read:600,cache_write:100,total:1100};
+  d.api.renderSample({recent:[claude,codex],credentials:[{auth_id:'a',provider:'claude',input:2,total_input:71552,uncached_input:2,cached:60590,cache_write:10960,output:100,total:71652,requests:1,cost:1}]});
+  const nodes=descendants(d.elements.get('recent-table')),rows=nodes.filter(n=>n.tag==='tr'&&n.children[0]?.tag==='td');
+  assert.deepEqual(rows[0].children.slice(3,6).map(n=>n.textContent),['71.55k','2','100']);
+  assert.equal(rows[0].children[3].title,'71,552 '+(language==='en'?'tokens':'token'));
+  assert.deepEqual(rows[1].children.slice(3,6).map(n=>n.textContent),['1k','300','100']);
+  assert.equal(d.api.requestTPS(claude),50);assert.equal(d.api.requestTPS({...codex,input:1e9,cache_read:1e9,total:2e9}),50);
+  for(const label of language==='en'?['Total input','Uncached input']:['总输入','非缓存输入'])assert(nodes.some(n=>n.tag==='th'&&n.textContent===label));
+  const summaryRow=descendants(d.elements.get('credential-table')).find(n=>n.tag==='tr'&&n.children[0]?.tag==='td');
+  assert.deepEqual(summaryRow.children.slice(3,6).map(n=>n.textContent),['71.55k','2','100']);
+});
+test('3-percent used quota displays estimated remaining tokens and cost',()=>{
+  const d=dashboard();d.api.renderSample({quotas:[{auth_id:'a',provider:'claude',five_hour:{used_percent:3,estimated_total_tokens:4000000,estimated_total_cost:12,observed_tokens:120000,observed_cost:.36}}]});
+  const nodes=descendants(d.elements.get('quota-cards'));
+  assert(nodes.some(n=>n.className==='estimate-value'&&n.textContent==='3.88m token'));
+  assert(nodes.some(n=>n.className==='estimate-cost'&&n.textContent==='$11.64'));
 });

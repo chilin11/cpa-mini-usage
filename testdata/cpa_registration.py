@@ -153,6 +153,8 @@ plugins:
         assert state["quota_refresh_finished_at"] == full_finished, "Single-account refresh changed full refresh state"
         print("PASS single-account refresh: HTTP 202, observable failure completion, full scan untouched")
         assert state["persistence"]["enabled"] is True
+        totals = next(credential for credential in state["credentials"] if credential["auth_id"] == "timing-only")
+        assert totals["total_input"] == 900 and totals["uncached_input"] == 900 and totals["cache_write"] == 0
         timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
         assert timing["output"] / ((timing["latency_ms"] - timing["ttft_ms"]) / 1000) == 50
@@ -187,6 +189,8 @@ plugins:
             raise AssertionError("Restarted CPA did not become ready")
         assert state["persistence"]["enabled"] is False
         assert any(q["auth_id"] == auth_id for q in state["quotas"])
+        totals = next(credential for credential in state["credentials"] if credential["auth_id"] == "timing-only")
+        assert totals["total_input"] == 900 and totals["uncached_input"] == 900
         timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
         assert (root / "data/events.jsonl").read_bytes() == saved_events

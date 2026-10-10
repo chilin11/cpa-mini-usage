@@ -16,6 +16,7 @@ main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-item
 .account-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}.account-refresh{padding:3px 7px;min-height:28px;font-size:11px}.language-control{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
 .toolbar{flex-wrap:wrap}.toolbar-options{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.persistence-control{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);min-width:0}.persistence-label{display:flex;align-items:center;gap:5px;white-space:nowrap}.persistence-label input{margin:0;accent-color:var(--accent);cursor:pointer}.persistence-label input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.persistence-error{color:var(--bad);overflow-wrap:anywhere}.tablewrap{max-width:100%;min-width:0}#page-requests{min-width:0}#recent-table table{min-width:1120px}#recent-table th,#recent-table td{padding-left:10px;padding-right:10px}.timing-unit{font-size:10px;color:var(--muted);font-weight:400}
 main.request-view{max-width:1480px}.request-view #page-requests th,.request-view #page-requests td{padding:7px 8px}.request-view .summary{padding:11px 0;margin-bottom:16px}.request-view .request-section+.request-section{margin-top:16px}.request-view .table-foot,.request-view .pagination{flex-wrap:wrap}.page-size-control{display:flex;align-items:center;gap:5px}.page-size-control select{min-height:28px;padding:3px 6px}
+#recent-table table{min-width:1220px}#credential-table table{min-width:1120px}
 .needs-login .tabs,.needs-login .toolbar,.needs-login [role=tabpanel],.needs-login .foot{display:none}
 </style>
 </head>
@@ -23,7 +24,7 @@ main.request-view{max-width:1480px}.request-view #page-requests th,.request-view
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.5</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.6</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
   <div class="header-actions">
@@ -102,6 +103,7 @@ const translations={
   '近 7 天请求':'Requests · Last 7 days','失败':'Failed','{n} 个凭证':'{n} credentials','近 7 天暂无凭证请求':'No credential requests in the last 7 days',
   '当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。':'No requests observed for this filter. New requests appear after the next snapshot sync.',
   '近 7 天凭证用量及模型':'Credential usage and models over the last 7 days','凭证':'Credential','模型':'Model','请求':'Requests','输入':'Input','输出':'Output','缓存读取':'Cache read','总 token':'Total tokens','估算美元':'Estimated USD',
+  '总输入':'Total input','非缓存输入':'Uncached input',
   '{n} 次失败':'{n} failures','价格缺失':'Price missing','各模型观测用量 · 近 7 天':'Observed model usage · Last 7 days','暂无模型明细。':'No model details yet.','{n} 次请求 · {tokens} token · {cost}':'{n} requests · {tokens} tokens · {cost}',
   '显示 {start}–{end} / {n} 条':'Showing {start}–{end} / {n}','暂无近期记录':'No recent records','等待请求快照':'Waiting for request snapshot','暂无近期请求':'No recent requests',
   '当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。':'The snapshot contains at most the latest 60 requests. No matches for this filter does not mean there is no request history.',
@@ -175,6 +177,16 @@ const active = d => !filter || d.provider===filter;
 const providerName = p => ({claude:'Claude',codex:'Codex'}[p]||p||t('未知服务商'));
 const modelName = m => typeof m==='string' && m.trim()?m:t('未知模型');
 const credentialName = s => s?.name||s?.auth_id||t('未知凭证');
+function inputParts(record,provider=record.provider){
+  const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+  if(valid(record.total_input)&&valid(record.uncached_input))return {total:record.total_input,uncached:record.uncached_input};
+  if(!valid(record.input))return {total:null,uncached:null};
+  const read=record.cache_read??record.cached??0,write=record.cache_write??0;
+  if(!valid(read)||!valid(write))return {total:null,uncached:null};
+  if(provider==='claude')return {total:record.input+read+write,uncached:record.input};
+  return {total:record.input,uncached:Math.max(0,record.input-Math.min(read,record.input)-Math.min(write,Math.max(0,record.input-read)))};
+}
+function addCacheCell(row,read,write){const cell=addCell(row,'','num cache-pair');addTokens(cell,'span','',read,'');add(cell,'span','slash','/');addTokens(cell,'span','',write,'');return cell;}
 // Timing fields are already milliseconds; never infer TTFT from total latency.
 const validMilliseconds=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
 const decimal=value=>new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(value);
@@ -472,18 +484,18 @@ function renderCredentials(credentials){
   const root=$('credential-table');root.replaceChildren();$('credential-count').textContent=t('{n} 个凭证',{n:data?fmt(credentials.length):'—'});
   if(!data){root.append(noData());return;}
   if(!credentials.length){root.append(empty('近 7 天暂无凭证请求','当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。'));return;}
-  const tbody=makeTable(root,'近 7 天凭证用量及模型', [['凭证','',19],['模型','',21],['请求','num',10],['输入','num',9],['输出','num',9],['缓存读取','num',10],['总 token','num',11],['估算美元','num',11]]);
+  const tbody=makeTable(root,'近 7 天凭证用量及模型', [['凭证','',17],['模型','',18],['请求','num',8],['总输入','num',10],['非缓存输入','num',10],['输出','num',8],['缓存 读 / 写','num',11],['总 token','num',9],['估算美元','num',9]]);
   credentials.forEach((s,i)=>{
     const tr=add(tbody,'tr','');const label=addCell(tr,'');const button=add(label,'button','credential-button');button.type='button';button.id='credential-toggle-'+i;button.setAttribute('aria-expanded',String(expanded===s.auth_id));button.setAttribute('aria-controls','credential-detail-'+i);
     button.setAttribute('aria-label',t('查看 {name} 的模型用量',{name:credentialName(s)}));
     add(button,'span','chevron',expanded===s.auth_id?'⌄':'›').setAttribute('aria-hidden','true');add(button,'span','credential-name',credentialName(s));add(label,'span','cell-secondary',providerName(s.provider));
     const models=list(s.models);const modelcell=addCell(tr,'');[...new Set(models.map(m=>modelName(m.model)))].forEach(model=>add(modelcell,'div','model',model));if(!models.length)add(modelcell,'span','model',t('未知模型'));
     const requests=addCell(tr,fmt(s.requests),'num');add(requests,'span','cell-secondary'+(s.failures?' failure-count':''),t('{n} 次失败',{n:fmt(s.failures||0)}));
-    ['input','output','cached','total'].forEach(field=>addTokens(tr,'td','num',s[field],''));const cost=addCell(tr,money(s.missing_price?null:s.cost),'num usd-value');if(s.missing_price||s.cost==null)add(cost,'span','cell-secondary','价格缺失');
+    const inputs=inputParts(s);addTokens(tr,'td','num',inputs.total,'');addTokens(tr,'td','num',inputs.uncached,'');addTokens(tr,'td','num',s.output,'');addCacheCell(tr,s.cached,s.cache_write??0);addTokens(tr,'td','num',s.total,'');const cost=addCell(tr,money(s.missing_price?null:s.cost),'num usd-value');if(s.missing_price||s.cost==null)add(cost,'span','cell-secondary','价格缺失');
     button.onclick=()=>{expanded=expanded===s.auth_id?'':s.auth_id;renderRequests();$(button.id)?.focus({preventScroll:true});};
     const detailtr=add(tbody,'tr','');detailtr.id='credential-detail-'+i;detailtr.hidden=expanded!==s.auth_id;
     if(expanded===s.auth_id){
-      const cell=add(detailtr,'td','details-cell');cell.colSpan=8;const detail=add(cell,'div','details');add(detail,'h3','','各模型观测用量 · 近 7 天');
+      const cell=add(detailtr,'td','details-cell');cell.colSpan=9;const detail=add(cell,'div','details');add(detail,'h3','','各模型观测用量 · 近 7 天');
       if(!models.length)add(detail,'p','muted','暂无模型明细。');
       models.forEach(m=>{const row=add(detail,'div','modelrow');add(row,'span','model',modelName(m.model));const stats=add(row,'span','tabnum',t('{n} 次请求 · {tokens} token · {cost}',{n:fmt(m.requests),tokens:tokens(m.tokens),cost:money(m.cost)}));stats.title=fmt(m.tokens)+' '+t('token');});
     }
@@ -500,12 +512,12 @@ function renderRecent(){
   $('recent-caption').textContent=data?(recent.length?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:recent.length}):t('暂无近期记录')):t('等待请求快照');
   if(!data){root.append(noData());return;}
   if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
-  const tbody=makeTable(root,'最近最多 60 条请求快照', [['时间','',12],['凭证','',14],['模型','',16],['输入','num',7],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',9],['首字时间','num',8],['TPS','num',10],['状态','',7]]);
+  const tbody=makeTable(root,'最近最多 60 条请求快照', [['时间','',11],['凭证','',13],['模型','',14],['总输入','num',7],['非缓存输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['首字时间','num',8],['TPS','num',8],['状态','',6]]);
   shown.forEach(x=>{
     const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString(locale()):'未知日期');
     const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
     const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addCell(tr,modelName(x.model),'model');
-    ['input','output'].forEach(field=>addTokens(tr,'td','num',x[field],''));const cache=addCell(tr,'','num cache-pair');addTokens(cache,'span','',x.cache_read,'');add(cache,'span','slash','/');addTokens(cache,'span','',x.cache_write,'');
+    const inputs=inputParts(x,x.provider||credential.provider);addTokens(tr,'td','num',inputs.total,'');addTokens(tr,'td','num',inputs.uncached,'');addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
     addTokens(tr,'td','num',x.total,'');addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
   });
 }

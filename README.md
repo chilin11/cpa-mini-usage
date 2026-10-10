@@ -90,6 +90,10 @@ Recent requests additionally show first-token time and generation-phase TPS. A s
 
 The requests tab has its own GET-only Refresh requests button, never queries OAuth quotas, and shows 20 rows by default with 40/60-row options in a wider, compact table. First-token time is displayed in seconds. Cache accounting and explicit long-context price tiers are regression-tested against the public CodexBar/CPA contracts. CodexBar's [quota-window summaries](https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/CostUsageModels%2BQuotaWindows.swift) aggregate observed usage separately from official percentages; the remaining-token extrapolation here is not claimed to be CodexBar's official balance.
 
+### v0.1.6
+
+Remove the artificial 5%-used threshold: any positive utilized fraction with observed requests can produce a remaining-value estimate. Zero utilization/no observed requests remain unknown, and missing prices do not invent dollars. Recent and credential tables now explicitly separate total input, uncached input, output, and cache read/write. Claude total input includes its independent cache classes; Codex total input already includes cache and is not added twice. TPS remains output-only divided by generation time after subtracting first-token time. Provider-native stored fields and historical pricing semantics are unchanged.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

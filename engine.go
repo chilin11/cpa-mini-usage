@@ -100,19 +100,22 @@ type ModelStat struct {
 }
 
 type CredentialView struct {
-	AuthID       string      `json:"auth_id"`
-	Name         string      `json:"name"`
-	Provider     string      `json:"provider"`
-	Requests     int64       `json:"requests"`
-	Success      int64       `json:"success"`
-	Failures     int64       `json:"failures"`
-	Input        int64       `json:"input"`
-	Output       int64       `json:"output"`
-	Cached       int64       `json:"cached"`
-	Total        int64       `json:"total"`
-	Cost         *float64    `json:"cost,omitempty"`
-	MissingPrice bool        `json:"missing_price"`
-	Models       []ModelStat `json:"models"`
+	AuthID        string      `json:"auth_id"`
+	Name          string      `json:"name"`
+	Provider      string      `json:"provider"`
+	Requests      int64       `json:"requests"`
+	Success       int64       `json:"success"`
+	Failures      int64       `json:"failures"`
+	Input         int64       `json:"input"`
+	TotalInput    int64       `json:"total_input"`
+	UncachedInput int64       `json:"uncached_input"`
+	CacheWrite    int64       `json:"cache_write"`
+	Output        int64       `json:"output"`
+	Cached        int64       `json:"cached"`
+	Total         int64       `json:"total"`
+	Cost          *float64    `json:"cost,omitempty"`
+	MissingPrice  bool        `json:"missing_price"`
+	Models        []ModelStat `json:"models"`
 }
 
 type AccountRefreshState struct {
@@ -494,7 +497,7 @@ func (e *Engine) windowSummary(authID string, now time.Time, win *QuotaWindow, d
 			out.ObservedCost = floatPtr(totalCost)
 		}
 		ratio := win.Used / 100
-		if ratio >= 0.05 && ratio <= 1 && out.ObservedTokens > 0 {
+		if ratio > 0 && ratio <= 1 && out.ObservedTokens > 0 {
 			out.EstimatedTotalTokens = floatPtr(float64(out.ObservedTokens) / ratio)
 			if !out.MissingPrice {
 				out.EstimatedTotalCost = floatPtr(totalCost / ratio)
@@ -568,6 +571,10 @@ func (e *Engine) snapshot() Snapshot {
 			s.Success++
 		}
 		s.Input += ev.Input
+		totalInput, uncachedInput := inputBreakdown(ev)
+		s.TotalInput += totalInput
+		s.UncachedInput += uncachedInput
+		s.CacheWrite += ev.CacheWrite
 		s.Output += ev.Output
 		s.Cached += ev.CacheRead
 		s.Total += ev.Total
@@ -711,4 +718,14 @@ func (e *Engine) canonicalAuth(id string) string {
 		return target
 	}
 	return id
+}
+
+// Keep provider-native input fields untouched for billing and old stored events.
+func inputBreakdown(ev Event) (total, uncached int64) {
+	if normalizeProvider(ev.Provider) == "claude" {
+		return ev.Input + ev.CacheRead + ev.CacheWrite, ev.Input
+	}
+	read := min(ev.CacheRead, ev.Input)
+	write := min(ev.CacheWrite, ev.Input-read)
+	return ev.Input, ev.Input - read - write
 }
