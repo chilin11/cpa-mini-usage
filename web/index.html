@@ -15,6 +15,7 @@ main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-item
 @media(max-width:380px){.window{padding:12px}.results{max-width:145px}.header-actions{width:100%;justify-content:flex-end}.account-actions{flex-wrap:wrap}}
 .account-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}.account-refresh{padding:3px 7px;min-height:28px;font-size:11px}.language-control{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
 .toolbar{flex-wrap:wrap}.toolbar-options{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.persistence-control{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);min-width:0}.persistence-label{display:flex;align-items:center;gap:5px;white-space:nowrap}.persistence-label input{margin:0;accent-color:var(--accent);cursor:pointer}.persistence-label input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.persistence-error{color:var(--bad);overflow-wrap:anywhere}.tablewrap{max-width:100%;min-width:0}#page-requests{min-width:0}#recent-table table{min-width:1120px}#recent-table th,#recent-table td{padding-left:10px;padding-right:10px}.timing-unit{font-size:10px;color:var(--muted);font-weight:400}
+main.request-view{max-width:1480px}.request-view #page-requests th,.request-view #page-requests td{padding:7px 8px}.request-view .summary{padding:11px 0;margin-bottom:16px}.request-view .request-section+.request-section{margin-top:16px}.request-view .table-foot,.request-view .pagination{flex-wrap:wrap}.page-size-control{display:flex;align-items:center;gap:5px}.page-size-control select{min-height:28px;padding:3px 6px}
 .needs-login .tabs,.needs-login .toolbar,.needs-login [role=tabpanel],.needs-login .foot{display:none}
 </style>
 </head>
@@ -46,7 +47,7 @@ main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-item
   <section class="request-section" aria-labelledby="recent-title">
     <div class="section-head"><h2 id="recent-title" data-i18n="近期请求">近期请求</h2><span class="section-label" data-i18n="最多 60 条">最多 60 条</span></div>
     <div id="recent-table" class="tablewrap" role="region" aria-label="近期请求表，窄屏可横向滚动" tabindex="0"></div>
-    <div class="table-foot"><span id="recent-caption">等待请求快照</span><nav class="pagination" aria-label="近期请求分页"><button class="button" type="button" id="recent-prev" aria-label="上一页" disabled>‹</button><span id="recent-page" class="tabnum">0 / 0</span><button class="button" type="button" id="recent-next" aria-label="下一页" disabled>›</button></nav></div>
+    <div class="table-foot"><span id="recent-caption">等待请求快照</span><nav class="pagination" aria-label="近期请求分页"><label class="page-size-control" for="recent-size"><span data-i18n="每页">每页</span><select id="recent-size" aria-label="每页请求数"><option value="20">20</option><option value="40">40</option><option value="60">60</option></select></label><button class="button" type="button" id="recent-prev" aria-label="上一页" disabled>‹</button><span id="recent-page" class="tabnum">0 / 0</span><button class="button" type="button" id="recent-next" aria-label="下一页" disabled>›</button></nav></div>
   </section>
   <section class="request-section" aria-labelledby="credentials-title">
     <div class="section-head"><h2 id="credentials-title" data-i18n="凭证用量 · 近 7 天">凭证用量 · 近 7 天</h2><span id="credential-count" class="section-label">— 个凭证</span></div>
@@ -59,12 +60,12 @@ main{max-width:1180px;margin:auto;padding:24px}.masthead{display:flex;align-item
 (() => {
 'use strict';
 let key = '', data = null, tab = 'quota', filter = '', expanded = '';
-let loading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
+let loading = false, headerLoading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
 let quotaStamp='',requestStamp='',lastSyncAt=0, accountJob=null;
 let statusKey='正在读取登录状态', alertKeys=[];
 let settingsJob=null,settingsError=null;
 const cardCache=new Map(), accountErrors=new Map();
-const pageSize = 10;
+let pageSize = 20,requestJob=null,requestStatusKey='';
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
 const languageStorage='cpa-mini-usage-language';
@@ -78,6 +79,7 @@ const translations={
   '凭证用量表，窄屏可横向滚动':'Credential usage table; scroll horizontally on small screens','近 7 天观测统计':'Observed usage over the last 7 days',
   '页面每分钟同步 · 额度每 15 分钟检查':'Snapshot every minute · All quotas checked every 15 minutes',
   '正在读取登录状态':'Reading sign-in status','正在同步…':'Syncing…','刷新全部':'Refresh all','刷新额度':'Refresh quota','正在刷新…':'Refreshing…','重试连接':'Retry connection',
+  '刷新请求':'Refresh requests','正在同步请求…':'Syncing requests…','请求已同步':'Requests synced','请求同步失败':'Request sync failed','请求同步 {time}':'Requests synced {time}','请求快照：{snapshot}':'Request snapshot: {snapshot}','每页':'Per page','每页请求数':'Requests per page',
   '等待 CPA 登录':'Waiting for CPA sign-in','连接失败':'Connection failed','正在连接':'Connecting','正在刷新额度':'Refreshing quotas','额度刷新中':'Quotas refreshing','部分数据异常':'Some data unavailable','已连接':'Connected',
   '待更新':'Pending update','未知时间':'Unknown time','未知日期':'Unknown date','重置时间待更新':'Reset time pending','等待额度更新':'Waiting for quota update',
   '还有 {d} 天 {h} 小时重置':'Resets in {d}d {h}h','还有 {h} 小时 {m} 分钟重置':'Resets in {h}h {m}m','还有 {m} 分钟重置':'Resets in {m}m',
@@ -93,6 +95,8 @@ const translations={
   '无效的账户标识。':'Invalid account ID.','未找到账户。':'Account not found.','已有额度刷新正在进行，请稍后重试。':'A quota refresh is already running. Please retry later.',
   '未知服务商':'Unknown provider','未知模型':'Unknown model','未知凭证':'Unknown credential','5 小时':'5 hours','7 天':'7 days','额度未知':'Quota unknown','剩余':'remaining','未知':'Unknown',
   '{window}官方剩余额度':'Official remaining quota: {window}','{percent}% 剩余':'{percent}% remaining','美元估算':'USD estimate','token':'tokens','缺少模型单价，金额暂不可用':'Model price missing; amount unavailable',
+  '观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%':'Observed: {observed} tokens\nRemaining estimate: observed tokens / {used}% × {remaining}%',
+  '观测成本：{cost}\n按已用比例换算剩余金额':'Observed cost: {cost}\nRemaining amount estimated from the used quota fraction',
   '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
   '{n} 个账户':'{n} accounts','可重置':'Resets remaining','次':'','刷新 {name} 的额度':'Refresh quota for {name}',
   '近 7 天请求':'Requests · Last 7 days','失败':'Failed','{n} 个凭证':'{n} credentials','近 7 天暂无凭证请求':'No credential requests in the last 7 days',
@@ -104,9 +108,9 @@ const translations={
   '最近最多 60 条请求快照':'Snapshot of up to 60 recent requests','时间':'Time','缓存 读 / 写':'Cache read / write','状态':'Status','成功':'Succeeded','查看 {name} 的模型用量':'View model usage for {name}',
   '额度接口不可用。':'Quota endpoint unavailable.','额度响应过大。':'Quota response too large.','额度响应格式异常。':'Invalid quota response.','缺少额度窗口。':'Quota windows missing.',
   '额度端点不允许访问。':'Quota endpoint not permitted.','额度接口返回 HTTP {code}。':'Quota endpoint returned HTTP {code}.','没有支持的模型。':'No supported models.',
+  '首字时间：{ttft} s\n总耗时：{latency} s':'First token: {ttft} s\nTotal latency: {latency} s',
+  'TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s':'TPS = output tokens / (total latency seconds − first-token seconds)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst token: {ttft} s',
   '首字时间':'First token','token/s':'tokens/s','耗时数据不可用':'Timing data unavailable',
-  '首字时间：{ttft} ms\n总耗时：{latency} ms':'First token: {ttft} ms\nTotal latency: {latency} ms',
-  'TPS = 输出 token / ((总耗时 − 首字时间) / 1000)\n输出：{output} token\n总耗时：{latency} ms\n首字时间：{ttft} ms':'TPS = output tokens / ((total latency − first-token time) / 1000)\nOutput: {output} tokens\nTotal latency: {latency} ms\nFirst token: {ttft} ms',
   '保存数据':'Save data','开启':'Enabled','未保存':'Memory only','保存中…':'Saving…','无法保存设置，请稍后重试。':'Cannot save settings. Please retry later.',
   '数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。':'Data is saved in an independent folder and retained across plugin updates. Disabling stops future request, quota and price saves; it never deletes saved history. Enabling saves current in-memory data.',
   '数据目录：':'Data directory:',
@@ -119,7 +123,7 @@ function initialLanguage(){
 let language=initialLanguage();
 const locale=()=>language==='en'?'en-US':'zh-CN';
 function t(text,values={}){return String(language==='en'?(translations[text]??text):text).replace(/\{(\w+)\}/g,(_,name)=>String(values[name]??''));}
-function setStatus(text){statusKey=text;$('status').textContent=t(text);}
+function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
@@ -174,7 +178,7 @@ const credentialName = s => s?.name||s?.auth_id||t('未知凭证');
 // Timing fields are already milliseconds; never infer TTFT from total latency.
 const validMilliseconds=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
 const decimal=value=>new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(value);
-function firstTokenTime(value){return validMilliseconds(value)?decimal(value<1000?value:value/1000)+(value<1000?' ms':' s'):'—';}
+function firstTokenTime(value){return validMilliseconds(value)?(value/1000).toFixed(2)+' s':'—';}
 function requestTPS(event){
   const {latency_ms:latency,ttft_ms:ttft,output}=event;
   if(event.failed||!validMilliseconds(latency)||!validMilliseconds(ttft)||latency<=ttft||typeof output!=='number'||!Number.isFinite(output)||output<=0)return null;
@@ -182,10 +186,10 @@ function requestTPS(event){
 }
 function addRequestTiming(row,event){
   const ttft=addCell(row,firstTokenTime(event.ttft_ms),'num first-token'),rate=requestTPS(event),tps=addCell(row,rate==null?'—':decimal(rate),'num tps');
-  const values={ttft:validMilliseconds(event.ttft_ms)?String(event.ttft_ms):'—',latency:validMilliseconds(event.latency_ms)?String(event.latency_ms):'—',output:typeof event.output==='number'&&Number.isFinite(event.output)?String(event.output):'—'};
-  ttft.title=t('首字时间：{ttft} ms\n总耗时：{latency} ms',values);
+  const values={ttft:validMilliseconds(event.ttft_ms)?(event.ttft_ms/1000).toFixed(2):'—',latency:validMilliseconds(event.latency_ms)?(event.latency_ms/1000).toFixed(2):'—',output:typeof event.output==='number'&&Number.isFinite(event.output)?String(event.output):'—'};
+  ttft.title=t('首字时间：{ttft} s\n总耗时：{latency} s',values);
   if(rate!=null)add(tps,'span','timing-unit',' '+t('token/s'));
-  tps.title=(rate==null?t('耗时数据不可用')+'\n':'')+t('TPS = 输出 token / ((总耗时 − 首字时间) / 1000)\n输出：{output} token\n总耗时：{latency} ms\n首字时间：{ttft} ms',values);
+  tps.title=(rate==null?t('耗时数据不可用')+'\n':'')+t('TPS = 输出 token / (总耗时秒 − 首字时间秒)\n输出：{output} token\n总耗时：{latency} s\n首字时间：{ttft} s',values);
 }
 function remainingPercent(win){
   const value=win?.used_percent;
@@ -215,8 +219,13 @@ function acceptSnapshot(snapshot){
   updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();restoreFocus(focused);
 }
 function updateSyncInfo(){
-  $('updated').textContent=data?t('额度更新 {time}',{time:clock(data.quota_updated_at)}):t(loading?'正在同步…':'尚未同步');
-  $('updated').title=data?t('快照：{snapshot}\n额度：{quota}',{snapshot:when(data.generated_at),quota:when(data.quota_updated_at)}):'';
+  if(tab==='requests'){
+    $('updated').textContent=requestJob?t('正在同步请求…'):data?t('请求同步 {time}',{time:clock(data.generated_at)}):t(loading?'正在同步请求…':'尚未同步');
+    $('updated').title=data?t('请求快照：{snapshot}',{snapshot:when(data.generated_at)}):'';
+  }else{
+    $('updated').textContent=data?t('额度更新 {time}',{time:clock(data.quota_updated_at)}):t(loading?'正在同步…':'尚未同步');
+    $('updated').title=data?t('快照：{snapshot}\n额度：{quota}',{snapshot:when(data.generated_at),quota:when(data.quota_updated_at)}):'';
+  }
 }
 function updatePersistence(){
   const state=data?.persistence,known=typeof state?.enabled==='boolean',busy=Boolean(settingsJob),input=$('persistence-enabled');
@@ -225,6 +234,7 @@ function updatePersistence(){
   const status=$('persistence-status');if(status.textContent!==text)status.textContent=text;status.classList.toggle('persistence-error',Boolean(settingsError));
   const info=t('数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。');
   const directory=typeof state?.directory==='string'?state.directory:'';$('persistence-control').title=info+(directory?'\n'+t('数据目录：')+' '+directory:'');input.title=$('persistence-control').title;
+  syncHeader();
 }
 function empty(title,description){
   const box=el('div','empty');const icon=add(box,'span','empty-symbol','—');icon.setAttribute('aria-hidden','true');
@@ -278,16 +288,24 @@ function syncAccountControls(){
     if(entry.button.getAttribute('aria-busy')!==String(busy))entry.button.setAttribute('aria-busy',String(busy));
     if(!accountErrors.has(id)&&accountJob?.id!==id){const error=data?.account_refresh?.[id]?.error||entry.backendError;const text=error?message(errorKey(error,'账户额度刷新失败，请稍后重试。')):'';if(entry.error.textContent!==text)entry.error.textContent=text;entry.error.hidden=!text;}
   }
-  $('refresh').disabled=loading||Boolean(accountJob)||remoteAccountBusy()||Boolean(data?.quota_refreshing);
+  syncHeader();
+}
+function updateHeaderStatus(){
+  $('status').textContent=t(tab==='requests'?((requestJob||headerLoading)?'正在同步请求…':requestStatusKey||(data?'请求已同步':statusKey)):statusKey);
+}
+function syncHeader(){
+  const requests=tab==='requests',busy=requests?(headerLoading||Boolean(requestJob)):headerLoading;
+  $('refresh-label').textContent=t(requests?(busy?'正在同步请求…':'刷新请求'):(headerLoading?'正在同步…':phase==='error'?'重试连接':'刷新全部'));
+  $('refresh').setAttribute('aria-label',$('refresh-label').textContent);
+  $('refresh').disabled=requests?(loading||Boolean(requestJob)||Boolean(settingsJob)):(loading||Boolean(requestJob)||Boolean(accountJob)||remoteAccountBusy()||Boolean(data?.quota_refreshing));
+  $('dot').classList.toggle('off',!data&&!busy);$('dot').classList.toggle('busy',busy);updateHeaderStatus();
 }
 function syncControls(){
-  $('refresh-label').textContent=t(loading?'正在同步…':phase==='error'?'重试连接':'刷新全部');
-  $('refresh').setAttribute('aria-label',$('refresh-label').textContent);
-  $('dot').classList.toggle('off',!data&&!loading);$('dot').classList.toggle('busy',loading);
-  $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading));syncAccountControls();updatePersistence();
+  syncHeader();
+  $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
-  data=null;expanded='';recentPage=0;accountJob=null;settingsJob=null;settingsError=null;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
+  data=null;expanded='';recentPage=0;accountJob=null;settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
   setAlert(msg);render();
@@ -295,13 +313,13 @@ function clearSnapshot(needsLogin,msg){
 function validSnapshot(snapshot){if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw failure('CPA 快照格式异常。');return snapshot;}
 const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));
 async function load(force=false){
-  if((accountJob||settingsJob)&&key===guessKey())return;
+  if((accountJob||settingsJob||requestJob)&&key===guessKey())return;
   const serial=++loadSerial,saved=guessKey();
   if(key!==saved){clearSnapshot(!saved,'');}
   const quiet=!force&&Boolean(data)&&key===saved;
   key=saved;if(!quiet)setAlert('');
   if(!key){loading=false;clearSnapshot(true,'');syncControls();return;}
-  loading=true;phase='loading';$('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');if(!quiet){setStatus(force?'正在刷新额度':'正在连接');syncControls();}
+  loading=true;headerLoading=!quiet;phase='loading';$('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');if(!quiet){setStatus(force?'正在刷新额度':'正在连接');syncControls();}
   if(!data)render();
   try {
     let finishedBefore=data?.quota_refresh_finished_at;
@@ -321,7 +339,27 @@ async function load(force=false){
     if(guessKey()!==saved){await load();return;}
     loading=false;
     if(err.auth){clearSnapshot(true,err.ui);}else if(data){setAlert(err.ui||errorKey(err.message));}else{clearSnapshot(false,err.ui||'无法连接 CPA。');}
-  } finally {if(serial===loadSerial){loading=false;syncControls();}}
+  } finally {if(serial===loadSerial){loading=false;headerLoading=false;syncControls();}}
+}
+// A request snapshot is independent of quota refresh/poll jobs and never accepts quota state.
+async function refreshRequests(){
+  if(requestJob||loading||settingsJob)return;
+  if(key!==guessKey()||!key){await load();return;}
+  const job={key,serial:loadSerial};requestJob=job;requestStatusKey='正在同步请求…';setAlert('');
+  syncHeader();updateSyncInfo();$('page-requests').setAttribute('aria-busy','true');
+  const current=()=>requestJob===job&&loadSerial===job.serial;
+  const authChanged=async()=>{if(guessKey()!==job.key){if(current()){requestJob=null;await load();}return true;}return !current();};
+  try{
+    const snapshot=await api('data');if(await authChanged())return;validSnapshot(snapshot);
+    const requests=requestContent({...data,credentials:snapshot.credentials,recent:snapshot.recent});
+    data={...data,credentials:snapshot.credentials,recent:snapshot.recent,generated_at:snapshot.generated_at};
+    if(requests!==requestStamp){renderRequests();requestStamp=requests;}
+    lastSyncAt=Date.now();requestStatusKey='请求已同步';
+    const issues=[snapshot.storage_error&&errorKey(snapshot.storage_error,'存储读取失败。'),snapshot.price_error&&errorKey(snapshot.price_error,'价格读取失败。')].filter(Boolean);setAlert(issues);
+  }catch(err){
+    if(await authChanged())return;
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else{requestStatusKey='请求同步失败';setAlert(err.ui||errorKey(err.message));}
+  }finally{if(requestJob===job){requestJob=null;syncHeader();updateSyncInfo();$('page-requests').setAttribute('aria-busy',String(loading));}}
 }
 function showAccountError(id,value){
   if(value)accountErrors.set(id,value);else accountErrors.delete(id);
@@ -378,7 +416,9 @@ function addWindow(parent,title,period,win){
   const stats=add(section,'div','windowstats');
   const amount=add(stats,'div','estimate-cost',money(cost));add(amount,'span','unit','美元估算');
   const available=remainingEstimate(win?.estimated_total_tokens,remaining);
-  addTokens(stats,'div','estimate-value',available);
+  const tokenValue=addTokens(stats,'div','estimate-value',available);
+  tokenValue.title+='\n'+t('观测：{observed} token\n剩余换算：观测 token ÷ {used}% × {remaining}%',{observed:fmt(win?.observed_tokens),used:win?.used_percent??'—',remaining:remaining??'—'});
+  amount.title=t('观测成本：{cost}\n按已用比例换算剩余金额',{cost:money(win?.observed_cost)});
   const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
   if(win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
 }
@@ -480,6 +520,7 @@ function render(){
 function setTab(selected){
   tab=selected==='requests'?'requests':'quota';
   ['quota','requests'].forEach(name=>{const selected=tab===name;$('tab-'+name).setAttribute('aria-selected',String(selected));$('tab-'+name).tabIndex=selected?0:-1;$('page-'+name).classList.toggle('hide',!selected);});
+  $('dashboard').classList.toggle('request-view',tab==='requests');syncHeader();updateSyncInfo();
 }
 ['quota','requests'].forEach(name=>{
   $('tab-'+name).onclick=()=>setTab(name);
@@ -487,7 +528,8 @@ function setTab(selected){
 });
 $('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render();};
 $('recent-prev').onclick=()=>{recentPage--;renderRecent();};$('recent-next').onclick=()=>{recentPage++;renderRecent();};
-$('refresh').onclick=()=>load(true);
+$('recent-size').value=String(pageSize);$('recent-size').onchange=e=>{const size=Number(e.target.value);pageSize=[20,40,60].includes(size)?size:20;$('recent-size').value=String(pageSize);recentPage=0;renderRecent();};
+$('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 window.addEventListener('storage',e=>{if(e.key===languageStorage){setLanguage(initialLanguage(),false);return;}load();});

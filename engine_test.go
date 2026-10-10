@@ -180,8 +180,8 @@ func TestEventCostArithmetic(t *testing.T) {
 		{"cache read replaces ordinary input", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 200000, Output: 100000}, 2.45},
 		{"all cache read", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 1000000}, .25},
 		{"cache read clamped to input", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(.25)}, Event{Input: 1000000, CacheRead: 2000000}, .25},
-		{"cache write separately charged", ModelPrice{Input: 5, Output: 25, CacheRead: floatPtr(.5), CacheWrite: floatPtr(6.25)}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 7.225},
-		{"absent cache prices fall back to input", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 3},
+		{"cache write replaces ordinary input", ModelPrice{Input: 5, Output: 25, CacheRead: floatPtr(.5), CacheWrite: floatPtr(6.25)}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 6.725},
+		{"absent cache prices fall back to input", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, CacheRead: 200000, CacheWrite: 100000, Output: 100000}, 2.8},
 		{"explicit free cache is retained", ModelPrice{Input: 2, Output: 8, CacheRead: floatPtr(0)}, Event{Input: 1000000, CacheRead: 1000000}, 0},
 		{"total tokens are not charged twice", ModelPrice{Input: 2, Output: 8}, Event{Input: 1000000, Output: 100000, Total: 9000000}, 2.8},
 	} {

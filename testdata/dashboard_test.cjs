@@ -76,7 +76,7 @@ test('all token displays use compact units, retaining full values in tooltips', 
     recent:[{auth_id:'account', at:'2026-10-09T00:00:00Z', model:'gpt', total:1250000}],
   });
   const quotaNodes = descendants(elements.get('quota-cards'));
-  assert(quotaNodes.some(n => n.textContent === '1.8b token' && n.title === '1,800,000,000 token'));
+  assert(quotaNodes.some(n => n.textContent === '1.8b token' && n.title.startsWith('1,800,000,000 token\n')));
   assert(!quotaNodes.some(n => n.textContent === '2.4b token'));
   assert(quotaNodes.some(n => n.textContent === '—'));
   const requestNodes = descendants(elements.get('credential-table'));
@@ -363,7 +363,7 @@ test('TPS excludes first-token wait, rejects absent/invalid timing, and never gu
     assert.equal(api.firstTokenTime(value),'—');
   }
   for(const patch of [{latency_ms:500},{latency_ms:0},{latency_ms:499},{ttft_ms:0,latency_ms:0},{output:0},{output:-1},{output:NaN},{output:Infinity},{output:'100'},{output:null},{failed:true}, {ttft_ms:undefined}, {latency_ms:undefined}])assert.equal(api.requestTPS({...event,...patch}),null,JSON.stringify(patch));
-  assert.equal(api.requestTPS({...event,ttft_ms:0}),40);assert.equal(api.firstTokenTime(0),'0 ms');assert.equal(api.firstTokenTime(450),'450 ms');assert.equal(api.firstTokenTime(1250),'1.25 s');
+  assert.equal(api.requestTPS({...event,ttft_ms:0}),40);assert.equal(api.firstTokenTime(0),'0.00 s');assert.equal(api.firstTokenTime(450),'0.45 s');assert.equal(api.firstTokenTime(1250),'1.25 s');
 });
 
 for(const language of ['zh','en']){
@@ -371,9 +371,9 @@ for(const language of ['zh','en']){
     const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{output:100,ttft_ms:500,latency_ms:2500,model:'gpt-test'},{output:100,ttft_ms:1250,latency_ms:3250},{output:100},{output:100,ttft_ms:500,latency_ms:2500,failed:true}]});
     const nodes=descendants(d.elements.get('recent-table')),ttft=nodes.filter(n=>n.className==='num first-token'),tps=nodes.filter(n=>n.className==='num tps');
     assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'First token':'首字时间')));assert(nodes.some(n=>n.tag==='th'&&n.textContent==='TPS'));
-    assert.deepEqual(ttft.map(n=>n.textContent),['500 ms','1.25 s','—','500 ms']);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
-    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2500 ms/);assert.match(tps[0].title,/500 ms/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/1000/);assert.match(tps[0].title,/−/);
-    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num tps');assert.match(translated.title,language==='en'?/首字时间/:/first-token time/);
+    assert.deepEqual(ttft.map(n=>n.textContent),['0.50 s','1.25 s','—','0.50 s']);assert.deepEqual(tps.map(n=>n.textContent),['50','50','—','—']);
+    assert.equal(tps[0].children[0].textContent,language==='en'?' tokens/s':' token/s');assert.match(tps[0].title,/2\.50 s/);assert.match(tps[0].title,/0\.50 s/);assert.match(ttft[0].title.split('\n')[0],/0\.50 s$/);assert.match(tps[0].title,/100 token/);assert.match(tps[0].title,/−/);
+    d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num tps');assert.match(translated.title,language==='en'?/首字时间/:/first-token seconds/);
   });
 
   test(`${language}: persistence toggle posts authenticated settings, shows busy, uses returned state, and preserves cards`,async()=>{
@@ -433,4 +433,63 @@ test('enabling persistence succeeds using returned setting and directory without
 test('persistence updates do not interfere with a running individual account refresh',async()=>{
   const sample={...twoAccounts(),persistence:{enabled:true,directory:'/data'}},posts=[];let release,refreshed=false;
   const d=dashboard(login(),async(url,options)=>{if(url.endsWith('refresh-account')){posts.push(url);return new Promise(resolve=>release=()=>{refreshed=true;resolve(reply({refresh_finished_at:'old'},202));});}if(url.endsWith('settings')){posts.push(url);return reply({persistence:{enabled:false,directory:'/data'}});}return reply(refreshed?{...sample,persistence:{enabled:false,directory:'/data'},account_refresh:{account:{refreshing:false,finished_at:'done'}}}:sample);});await d.api.load();const other=panel(d.elements,'other'),pending=d.api.refreshAccount('account');await d.api.savePersistence(false);assert.equal(refreshButton(panel(d.elements,'account')).disabled,true);assert.equal(refreshButton(other).disabled,false);release();await pending;assert.equal(panel(d.elements,'other'),other);assert.equal(d.elements.get('persistence-enabled').checked,false);assert.equal(posts.length,2);
+});
+
+for(const language of ['zh','en']){
+  test(`${language}: request top refresh is GET-only, visible, and independent of remote quota busy state`,async()=>{
+    const sample={...twoAccounts(),quota_refreshing:true,account_refresh:{other:{refreshing:true}},quota_updated_at:'2020-01-01T00:00:00Z'},calls=[];let release;
+    const d=dashboard(login(),async(url,options)=>{calls.push({url,options});return calls.length===1?reply(sample):new Promise(resolve=>release=()=>resolve(reply({...sample,generated_at:'2026-01-01T12:34:56Z',quota_refreshing:false,quotas:sample.quotas.map(q=>({...q,name:'changed-quota'})),recent:[{model:'fresh-request'}]})));},{language});
+    await d.api.load();assert.equal(d.elements.get('refresh').disabled,true);d.api.setTab('requests');assert.equal(d.elements.get('refresh-label').textContent,language==='en'?'Refresh requests':'刷新请求');assert.equal(d.elements.get('refresh').disabled,false);assert(d.elements.get('dashboard').classes.has('request-view'));
+    const first=panel(d.elements,'account'),other=panel(d.elements,'other'),quotaBusy=d.elements.get('page-quota').getAttribute('aria-busy'),pending=d.elements.get('refresh').onclick();
+    assert.equal(d.elements.get('refresh-label').textContent,language==='en'?'Syncing requests…':'正在同步请求…');assert.equal(d.elements.get('status').textContent,language==='en'?'Syncing requests…':'正在同步请求…');assert.equal(d.elements.get('refresh').disabled,true);assert.equal(d.elements.get('page-requests').getAttribute('aria-busy'),'true');assert.equal(d.elements.get('page-quota').getAttribute('aria-busy'),quotaBusy);assert.equal(refreshButton(first).disabled,false);assert.equal(refreshButton(other).disabled,true);
+    release();await pending;assert.equal(calls.length,2);assert(calls.every(c=>c.url.endsWith('/data')&&c.options.method==='GET'));assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(refreshButton(other).disabled,true);assert(descendants(d.elements.get('recent-table')).some(n=>n.textContent==='fresh-request'));assert.equal(d.elements.get('status').textContent,language==='en'?'Requests synced':'请求已同步');assert.match(d.elements.get('updated').textContent,language==='en'?/^Requests synced /:/^请求同步 /);assert.match(d.elements.get('updated').title,/2026/);assert(!/quota|额度/i.test(d.elements.get('updated').title));
+    d.api.setTab('quota');assert.equal(d.elements.get('refresh-label').textContent,language==='en'?'Refresh all':'刷新全部');assert.equal(d.elements.get('refresh').disabled,true);assert(!d.elements.get('dashboard').classes.has('request-view'));assert.match(d.elements.get('updated').textContent,language==='en'?/^Quota updated /:/^额度更新 /);
+  });
+
+  test(`${language}: switching tabs/language immediately reflects refresh label and generated_at request timestamp`,async()=>{
+    const sample={...twoAccounts(),generated_at:'2026-06-15T03:45:00Z',quota_updated_at:'2020-06-15T00:00:00Z',quota_refreshing:true};const d=dashboard(login(),async()=>reply(sample),{language});await d.api.load();d.api.setTab('requests');const opposite=language==='en'?'zh':'en';d.api.setLanguage(opposite);assert.equal(d.elements.get('refresh-label').textContent,opposite==='en'?'Refresh requests':'刷新请求');assert.equal(d.elements.get('refresh').getAttribute('aria-label'),d.elements.get('refresh-label').textContent);assert.equal(d.elements.get('status').textContent,opposite==='en'?'Requests synced':'请求已同步');assert.match(d.elements.get('updated').title,/2026/);assert(!/2020|quota|额度/i.test(d.elements.get('updated').title));d.api.setTab('quota');assert.equal(d.elements.get('refresh-label').textContent,opposite==='en'?'Refresh all':'刷新全部');assert.match(d.elements.get('updated').title,/2020/);
+  });
+
+  test(`${language}: request pagination defaults to 20, switches 40/60, resets pages, filters, and clamps shorter snapshots`,()=>{
+    const d=dashboard({},undefined,{language}),sample={recent:Array.from({length:75},(_,i)=>({provider:i%2?'claude':'codex',model:'model-'+i}))};d.api.setTab('requests');d.api.renderSample(sample);const rows=()=>descendants(d.elements.get('recent-table')).filter(n=>n.tag==='tbody')[0].children;
+    assert.equal(d.elements.get('recent-size').value,'20');assert.equal(rows().length,20);assert.equal(d.elements.get('recent-page').textContent,'1 / 3');assert.equal(d.elements.get('recent-caption').textContent,language==='en'?'Showing 1–20 / 60':'显示 1–20 / 60 条');d.elements.get('recent-next').onclick();assert.equal(d.elements.get('recent-page').textContent,'2 / 3');
+    for(const [size,expected,pages] of [['40',40,'1 / 2'],['60',60,'1 / 1']]){d.elements.get('recent-size').onchange({target:{value:size}});assert.equal(rows().length,expected);assert.equal(d.elements.get('recent-page').textContent,pages);assert.equal(d.elements.get('recent-caption').textContent,language==='en'?`Showing 1–${size} / 60`:`显示 1–${size} / 60 条`);}
+    d.elements.get('recent-size').onchange({target:{value:'20'}});d.elements.get('recent-next').onclick();d.elements.get('provider').onchange({target:{value:'codex'}});assert.equal(d.elements.get('recent-page').textContent,'1 / 2');assert.equal(d.elements.get('recent-caption').textContent,language==='en'?'Showing 1–20 / 30':'显示 1–20 / 30 条');d.elements.get('recent-next').onclick();assert.equal(rows().length,10);d.api.acceptSnapshot({recent:sample.recent.slice(0,5)});assert.equal(d.elements.get('recent-page').textContent,'1 / 1');assert.equal(rows().length,3);assert.equal(d.elements.get('recent-next').disabled,true);assert.deepEqual(d.writes,[]);
+  });
+}
+
+test('request snapshot refresh does not cancel or complete the individual account polling job',async()=>{
+  const sample=twoAccounts(),calls=[];let releaseAccount,complete=false;
+  const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('refresh-account'))return new Promise(resolve=>releaseAccount=()=>{complete=true;resolve(reply({refresh_finished_at:'baseline'},202));});if(complete)return reply({...sample,account_refresh:{account:{refreshing:false,finished_at:'done'}},quotas:sample.quotas.map(q=>q.auth_id==='account'?{...q,manual_reset_remaining:3}:q),recent:[{model:'post-account'}]});return reply({...sample,recent:[{model:calls.length>1?'request-during-account':'initial'}],account_refresh:{account:{refreshing:false,finished_at:'fake-completion'}}});});
+  await d.api.load();const other=panel(d.elements,'other'),first=panel(d.elements,'account'),account=d.api.refreshAccount('account');d.api.setTab('requests');assert.equal(d.elements.get('refresh').disabled,false);await d.elements.get('refresh').onclick();assert.equal(refreshButton(first).disabled,true);assert.equal(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert(descendants(d.elements.get('recent-table')).some(n=>n.textContent==='request-during-account'));releaseAccount();await account;assert.notEqual(panel(d.elements,'account'),first);assert.equal(panel(d.elements,'other'),other);assert.equal(refreshButton(panel(d.elements,'account')).disabled,false);assert(calls.filter(c=>c.options.method==='POST').every(c=>c.url.endsWith('refresh-account')));assert.equal(calls.filter(c=>c.url.endsWith('refresh-account')).length,1);
+});
+
+test('failed request snapshot retains quota/request nodes and language-switchable error feedback',async()=>{
+  let fail=false;const d=dashboard(login(),async()=>reply(twoAccounts(),fail?503:200));await d.api.load();const card=panel(d.elements,'account'),table=d.elements.get('recent-table').children[0];d.api.setTab('requests');fail=true;await d.elements.get('refresh').onclick();assert.equal(panel(d.elements,'account'),card);assert.equal(d.elements.get('recent-table').children[0],table);assert.equal(d.elements.get('status').textContent,'请求同步失败');d.api.setLanguage('en');assert.equal(d.elements.get('status').textContent,'Request sync failed');assert.equal(d.elements.get('refresh-label').textContent,'Refresh requests');assert.match(d.elements.get('alert').textContent,/HTTP 503/);
+});
+
+for(const change of ['logout','key-change']){
+  test(`request snapshot authentication ${change} discards stale data and clears privacy`,async()=>{
+    const stored=login();let release,delayed=false;const d=dashboard(stored,async(url,options)=>{if(options.headers.Authorization==='Bearer new-key')return reply({quotas:[],recent:[]});return delayed?new Promise(resolve=>release=()=>resolve(reply({...twoAccounts(),recent:[{model:'private-stale'}]}))):reply(twoAccounts());});await d.api.load();d.api.setTab('requests');delayed=true;const pending=d.elements.get('refresh').onclick();if(change==='logout')delete stored.managementKey;else stored.managementKey=JSON.stringify('new-key');release();await pending;assert(!panel(d.elements,'account'));assert(!descendants(d.elements.get('recent-table')).some(n=>n.textContent==='private-stale'));assert.equal(d.elements.get('refresh').disabled,false);
+  });
+}
+
+test('request-only compact CSS widens main without changing quota layout',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/main\{max-width:1180px/);assert.match(css,/main\.request-view\{max-width:1480px\}/);assert.match(css,/\.request-view #page-requests th,\.request-view #page-requests td\{padding:7px 8px\}/);assert.match(css,/\.tablewrap\{overflow-x:auto/);assert(!html.includes('\u8bcd\u5143'));
+});
+
+test('pending requests keep explicit feedback across tab/language switches without quota loading changes',async()=>{
+  let release,delayed=false;const sample=twoAccounts(),d=dashboard(login(),async()=>delayed?new Promise(resolve=>release=()=>resolve(reply(sample))):reply(sample));await d.api.load();const quota=panel(d.elements,'account');d.api.setTab('requests');delayed=true;const pending=d.elements.get('refresh').onclick();d.api.setLanguage('en');assert.equal(d.elements.get('refresh-label').textContent,'Syncing requests…');assert.equal(d.elements.get('status').textContent,'Syncing requests…');d.api.setTab('quota');assert.equal(d.elements.get('refresh-label').textContent,'Refresh all');assert.equal(d.elements.get('page-quota').getAttribute('aria-busy'),'false');assert.equal(d.elements.get('refresh').disabled,true);d.api.setTab('requests');assert.equal(d.elements.get('refresh-label').textContent,'Syncing requests…');release();await pending;assert.equal(d.elements.get('refresh-label').textContent,'Refresh requests');assert.equal(d.elements.get('status').textContent,'Requests synced');
+});
+
+test('quiet automatic request snapshots retain header labels and card identity',async()=>{
+  let release,delayed=false;const sample=twoAccounts(),d=dashboard(login(),async()=>reply(delayed?await new Promise(resolve=>release=()=>resolve(sample)):sample));await d.api.load();d.api.setTab('requests');const card=panel(d.elements,'account');delayed=true;const pending=d.api.load();assert.equal(d.elements.get('refresh-label').textContent,'刷新请求');assert.equal(d.elements.get('status').textContent,'请求已同步');release();await pending;assert.equal(d.elements.get('refresh-label').textContent,'刷新请求');assert.equal(d.elements.get('status').textContent,'请求已同步');assert.equal(panel(d.elements,'account'),card);
+});
+
+test('quota token tooltip exposes observed counts and remaining arithmetic in both languages',()=>{
+  for(const language of ['zh','en']){
+    const d=dashboard({},undefined,{language}),sample=sampleSnapshot();sample.quotas[0].five_hour.observed_tokens=1000000;sample.quotas[0].five_hour.observed_cost=30;
+    d.api.renderSample(sample);const metric=descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-value');
+    assert.match(metric.title,/1,000,000/);assert.match(metric.title,/25%/);assert.match(metric.title,/75%/);
+  }
 });

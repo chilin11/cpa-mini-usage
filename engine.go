@@ -37,11 +37,20 @@ type Event struct {
 	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
 }
 
-type ModelPrice struct {
+type PriceTier struct {
+	Threshold  int64    `json:"threshold"`
 	Input      float64  `json:"input"`
 	Output     float64  `json:"output"`
 	CacheRead  *float64 `json:"cache_read,omitempty"`
 	CacheWrite *float64 `json:"cache_write,omitempty"`
+}
+
+type ModelPrice struct {
+	Input       float64    `json:"input"`
+	Output      float64    `json:"output"`
+	CacheRead   *float64   `json:"cache_read,omitempty"`
+	CacheWrite  *float64   `json:"cache_write,omitempty"`
+	ContextTier *PriceTier `json:"context_tier,omitempty"`
 }
 
 type QuotaWindow struct {
@@ -314,11 +323,17 @@ func (e *Engine) capture(data []byte) {
 	}
 	input := number(detail, "InputTokens", "input_tokens")
 	output := number(detail, "OutputTokens", "output_tokens")
-	cached := number(detail, "CachedTokens", "cached_tokens", "CacheReadTokens", "cache_read_tokens")
+	cached := number(detail, "CacheReadTokens", "cache_read_tokens")
+	if getAny(detail, "CacheReadTokens", "cache_read_tokens") == nil {
+		cached = number(detail, "CachedTokens", "cached_tokens")
+	}
 	write := number(detail, "CacheCreationTokens", "cache_creation_tokens", "CacheWriteTokens", "cache_write_tokens")
 	total := number(detail, "TotalTokens", "total_tokens")
 	if total <= 0 {
-		total = input + output + write
+		total = input + output
+		if provider == "claude" {
+			total += cached + write
+		}
 	}
 	if input < 0 || output < 0 || cached < 0 || write < 0 || total < 0 {
 		return
@@ -389,26 +404,35 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 	if !ok {
 		return 0, false
 	}
-	cached := ev.CacheRead
-	if cached > ev.Input {
-		cached = ev.Input
+	contextSize := ev.Input
+	if normalizeProvider(ev.Provider) == "claude" {
+		contextSize += ev.CacheRead + ev.CacheWrite
 	}
-	baseInput := ev.Input - cached
+	if tier := p.ContextTier; tier != nil && contextSize > tier.Threshold {
+		p.Input, p.Output = tier.Input, tier.Output
+		if tier.CacheRead != nil {
+			p.CacheRead = tier.CacheRead
+		}
+		if tier.CacheWrite != nil {
+			p.CacheWrite = tier.CacheWrite
+		}
+	}
+	cached, write, baseInput := ev.CacheRead, ev.CacheWrite, ev.Input
+	if normalizeProvider(ev.Provider) != "claude" {
+		// OpenAI prompt totals include cache reads AND cache writes.
+		cached = min(cached, ev.Input)
+		write = min(write, ev.Input-cached)
+		baseInput = ev.Input - cached - write
+	}
 	cost := float64(baseInput)*p.Input/1e6 + float64(ev.Output)*p.Output/1e6
-	if cached > 0 {
-		if p.CacheRead != nil {
-			cost += float64(cached) * (*p.CacheRead) / 1e6
-		} else {
-			cost += float64(cached) * p.Input / 1e6
-		}
+	readPrice, writePrice := p.Input, p.Input
+	if p.CacheRead != nil {
+		readPrice = *p.CacheRead
 	}
-	if ev.CacheWrite > 0 {
-		if p.CacheWrite != nil {
-			cost += float64(ev.CacheWrite) * (*p.CacheWrite) / 1e6
-		} else {
-			cost += float64(ev.CacheWrite) * p.Input / 1e6
-		}
+	if p.CacheWrite != nil {
+		writePrice = *p.CacheWrite
 	}
+	cost += float64(cached)*readPrice/1e6 + float64(write)*writePrice/1e6
 	return cost, true
 }
 func priceProvider(p string) string {
@@ -501,7 +525,11 @@ func (e *Engine) snapshot() Snapshot {
 		result.QuotaUpdatedAt = ""
 	}
 	for _, q := range e.quotas {
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummary(q.AuthID, now, q.Five, 5*time.Hour), Week: e.windowSummary(q.AuthID, now, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
+		observedThrough := now
+		if fetched, err := time.Parse(time.RFC3339Nano, q.FetchedAt); err == nil && fetched.Before(now) {
+			observedThrough = fetched
+		}
+		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: e.windowSummary(q.AuthID, observedThrough, q.Five, 5*time.Hour), Week: e.windowSummary(q.AuthID, observedThrough, q.Week, 7*24*time.Hour), FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
 	}
 	sort.Slice(result.Quotas, func(i, j int) bool {
 		if result.Quotas[i].Provider != result.Quotas[j].Provider {
@@ -641,6 +669,16 @@ func decodePrices(raw []byte) (map[string]ModelPrice, error) {
 				Output     float64  `json:"output"`
 				CacheRead  *float64 `json:"cache_read"`
 				CacheWrite *float64 `json:"cache_write"`
+				Tiers      []struct {
+					Input      float64  `json:"input"`
+					Output     float64  `json:"output"`
+					CacheRead  *float64 `json:"cache_read"`
+					CacheWrite *float64 `json:"cache_write"`
+					Tier       struct {
+						Type string `json:"type"`
+						Size int64  `json:"size"`
+					} `json:"tier"`
+				} `json:"tiers"`
 			} `json:"cost"`
 		} `json:"models"`
 	}
@@ -649,12 +687,17 @@ func decodePrices(raw []byte) (map[string]ModelPrice, error) {
 	}
 	output := make(map[string]ModelPrice)
 	for _, provider := range []string{"openai", "anthropic"} {
-		x := data[provider]
-		for id, m := range x.Models {
+		for id, m := range data[provider].Models {
 			if m.Cost.Input == 0 && m.Cost.Output == 0 {
 				continue
 			}
-			output[provider+"/"+normalizeModel(id)] = ModelPrice{Input: m.Cost.Input, Output: m.Cost.Output, CacheRead: m.Cost.CacheRead, CacheWrite: m.Cost.CacheWrite}
+			price := ModelPrice{Input: m.Cost.Input, Output: m.Cost.Output, CacheRead: m.Cost.CacheRead, CacheWrite: m.Cost.CacheWrite}
+			for _, tier := range m.Cost.Tiers {
+				if tier.Tier.Type == "context" && tier.Tier.Size > 0 && (price.ContextTier == nil || tier.Tier.Size < price.ContextTier.Threshold) {
+					price.ContextTier = &PriceTier{Threshold: tier.Tier.Size, Input: tier.Input, Output: tier.Output, CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite}
+				}
+			}
+			output[provider+"/"+normalizeModel(id)] = price
 		}
 	}
 	if len(output) == 0 {
