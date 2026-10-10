@@ -109,6 +109,10 @@ Publish the verified v0.1.6 replacement fixes under a new version so the CPA plu
 
 Keep actual usage live without clearing a valid forecast whenever new requests arrive. Quota-based totals pair observed usage with the quota-query timestamp, rather than dividing new requests by an old percentage. Last valid forecasts are retained per account and cycle when later progress is zero/unusable or prices are temporarily missing, with explicit bilingual basis/time tooltips. Reliable fresh samples replace them; totals stay at least as high as known actuals. Fully used quotas retain totals until reset, while a changed/expired cycle never inherits its cached forecast. Save data persists these forecast-only values in the existing independent `quotas.json`; restart restores them and disabling persistence does not delete history. Official remaining percentages are never inferred from token/cost counts. Upgrade to 0.1.8 and restart CPA without deleting the data directory.
 
+### v0.1.9
+
+Refresh the dashboard into a compact tech console with graphite/navy surfaces, a subtle grid background and accessible light/dark palettes. Official quota percentages use cyan at 26px; observed and estimated money shrink from 22px to 17px, with slate observed values and cool-blue forecasts (no purple). Token counts remain 14px and reset credits 18px bold. Tabs, left-side toolbar, cards, request tables and status badges share a clearer visual hierarchy; mobile windows stack without page overflow. No animations, external fonts or new controls. Functionality, markup, accounting, forecasts, authentication, refresh cadence and persistence remain unchanged. Upgrade to 0.1.9 and restart CPA, keeping the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

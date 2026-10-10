@@ -346,7 +346,7 @@ test('names resembling translations or placeholders remain literal; no OAuth fie
 
 test('cadence keeps minute snapshot and 30-second countdown timers without browser quota POST scheduling',()=>{
   const d=dashboard();assert.deepEqual(d.intervals.map(i=>i.ms),[60000,30000]);assert.match(d.elements.get('footer').textContent,/每 15 分钟/);
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.percent\{font-size:22px/);assert.match(css,/\.estimate-cost\{[^}]*font-size:22px/);assert.match(css,/\.estimate-value\{font-size:14px/);assert.match(css,/\.manual-reset strong\{font-size:18px/);assert.match(css,/\.masthead\{[^}]*flex-wrap:wrap/);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.percent\{font-size:26px/);assert.match(css,/\.estimate-cost\{[^}]*font-size:17px/);assert.match(css,/\.estimate-value\{font-size:14px/);assert.match(css,/\.manual-reset strong\{font-size:18px/);assert.match(css,/\.masthead\{[^}]*flex-wrap:wrap/);
 });
 
 test('successful later refresh clears a prior local account error without replacing siblings',async()=>{
@@ -542,7 +542,7 @@ for(const language of ['zh','en']){
   });
 }
 test('quota used and estimate rows retain readable sizing and stack windows on narrow screens',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:22px/);assert.match(css,/\.observed-value\{font-size:14px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:17px/);assert.match(css,/\.observed-value\{font-size:14px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
 });
 test('refresh and language controls live below tabs, outside CPA top-right overlay area',()=>{
   const d=dashboard(),root=d.elements.get('dashboard'),header=root.children.find(n=>n.tag==='header'),toolbar=root.children.find(n=>n.getAttribute('class')==='toolbar');
@@ -584,4 +584,21 @@ for(const language of ['zh','en'])test(`${language}: paired estimate remains vis
 });
 for(const language of ['zh','en'])test(`${language}: retained cycle forecast does not claim a new zero-percent formula`,()=>{
   const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_tokens:110000,observed_cost:.11,estimated_total_tokens:400000,estimated_total_cost:.4,estimated_basis:'quota',estimate_used_percent:25,estimate_retained:true,estimated_at:'2026-10-10T02:00:00Z'}}]});const nodes=descendants(d.elements.get('quota-cards')),amount=nodes.find(n=>n.className==='estimate-cost'),token=nodes.find(n=>n.className==='estimate-value');assert.equal(amount.textContent,'$0.400');assert.equal(token.textContent,'400k '+(language==='en'?'tokens':'token'));assert.match(amount.title,language==='en'?/Retaining the last valid estimate/:/保留本周期上次有效预估/);assert(!/÷ 0%|\/ 0%/.test(amount.title));
+});
+
+test('tech palette separates official quota, actual cost and forecast with accessible contrast in both themes',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  assert.match(css,/\.percent\{[^}]*color:var\(--accent\)/);
+  assert.match(css,/\.observed-cost\{[^}]*color:var\(--cost\)/);
+  assert.match(css,/\.estimate-cost\{[^}]*color:var\(--forecast\)/);
+  assert.match(css,/\.usage-label:nth-child\(2\)\{color:var\(--forecast\)/);
+  assert.match(css,/--mono:ui-monospace/);assert(!/@import|url\(/.test(css));
+  const themes=[...css.matchAll(/:root\{([^}]+)\}/g)].map(m=>Object.fromEntries([...m[1].matchAll(/(--[\w-]+):(#(?:[\da-f]{6}|[\da-f]{3}))(?=;|$)/g)].map(v=>[v[1],v[2]])));
+  assert.equal(themes.length,2);
+  function luminance(hex){let digits=hex.slice(1);if(digits.length===3)digits=[...digits].map(c=>c+c).join('');return digits.match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);}
+  function contrast(a,b){const values=[luminance(a),luminance(b)].sort((a,b)=>b-a);return (values[0]+.05)/(values[1]+.05);}
+  for(const theme of themes){
+    for(const key of ['--ink','--muted','--accent','--forecast','--cost','--bad'])assert(contrast(theme[key],theme['--panel'])>=4.5,`${key} must be readable on card surfaces`);
+    assert.notEqual(theme['--accent'],theme['--forecast']);assert.notEqual(theme['--cost'],theme['--forecast']);
+  }
 });
