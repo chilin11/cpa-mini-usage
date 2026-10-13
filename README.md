@@ -128,6 +128,10 @@ Fix concurrent individual quota refresh: different accounts now run independentl
 
 An unused five-hour quota window now shows zero estimated USD and tokens instead of carrying previous-cycle usage or a cached forecast into the current window. The zero state requires official used percentage 0 and no requests observed in the current cycle; it is not an inferred official cap. Empty observed usage also reports a known zero cost rather than an unavailable amount. A bilingual tooltip explains the zero estimate without dividing by 0%. Actual requests resume the existing forecast behavior, and seven-day forecast rules remain unchanged. Upgrade to 0.1.11 and restart CPA, preserving the data directory and Docker persistent mount.
 
+### v0.1.12
+
+Record CPA's client-requested alias and upstream-declared response model alongside the existing execution/usage model. Recent requests show the response on a compact arrow line with an orange **Model mismatch / 模型不一致** badge when names differ, a separate variant label for recognized snapshot/name variants, and unknown when comparison data is absent. Bilingual tooltips explain that upstream declarations are not model-authenticity proof and the usage model is not guaranteed to be the final outbound model. Pricing and aggregation remain unchanged. Old history remains compatible but response names are not backfilled. Upgrade the plugin and restart CPA, preserving the data directory and Docker persistent mount. This release does not include fixes for the separately reported Compose/reinstall data-loss incident or guarantee compatibility with future CPA versions.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
