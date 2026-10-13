@@ -634,3 +634,41 @@ for(const language of ['zh','en'])test(`${language}: unused five-hour quota disp
   d.api.setLanguage(language==='en'?'zh':'en');
   assert.match(descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-cost').title,language==='en'?/本 5 小时窗口尚未使用/:/No usage yet in this five-hour window/);
 });
+
+test('model observations show four states and separate aliases without changing cost',()=>{
+  const {api,elements}=dashboard();
+  const recent=[
+    {model:'gpt-5',requested_model:'client-alias',response_model:'gpt-5',model_status:'same',cost:.0028},
+    {model:'gpt-5',response_model:'gpt-5-20260901',model_status:'variant'},
+    {model:'gpt-5',response_model:'gpt-5-mini',model_status:'different'},
+    {model:'legacy'},
+    {model:'gpt-5',response_model:'',model_status:'same'},
+  ];
+  api.renderSample({recent,credentials:[],quotas:[]});
+  const cells=descendants(elements.get('recent-table')).filter(n=>n.className==='request-model');
+  assert.equal(cells.length,5);
+  const badges=cells.map(c=>descendants(c).find(n=>n.className?.startsWith('model-badge')));
+  assert.deepEqual(badges.map(n=>n.textContent),['名称一致','版本变体','模型不一致','响应模型未知','响应模型未知']);
+  assert.equal(badges[2].parentNode.children[0].textContent,'↳ gpt-5-mini');
+  assert.match(html,/\.model-badge\.different\{color:var\(--warm\);background:var\(--warm-soft\);border-color:var\(--warm\)/);
+  assert.equal(cells[0].children[0].textContent,'client-alias');
+  assert.match(cells[0].title,/执行模型（用量记录）: gpt-5/);
+  assert.match(cells[0].title,/不保证等于最终出站模型/);
+  assert.match(cells[3].title,/旧记录不会自动补全/);
+  assert(descendants(elements.get('recent-table')).some(n=>n.textContent==='$0.0028'));
+  api.setLanguage('en');
+  const translated=descendants(elements.get('recent-table')).filter(n=>n.className?.startsWith('model-badge'));
+  assert.deepEqual(translated.map(n=>n.textContent),['Same name','Name variant','Model mismatch','Response model unknown','Response model unknown']);
+  assert.match(translated[2].title,/not proof of model authenticity/);
+  assert(!/[\u4e00-\u9fff]/.test(translated[2].title));
+});
+
+test('response model strings are literal text, and missing execution name is unknown',()=>{
+  const {api,elements}=dashboard();
+  const attack='<img src=x onerror=alert(1)>';
+  api.renderSample({recent:[{model:'safe',requested_model:attack,response_model:attack,model_status:'different'},{response_model:'gpt',model_status:'same'}]});
+  const nodes=descendants(elements.get('recent-table'));
+  assert.equal(nodes.filter(n=>n.textContent===attack||n.textContent==='↳ '+attack).length,2);
+  assert(!nodes.some(n=>n.tag==='img'));
+  assert.deepEqual(nodes.filter(n=>n.className?.startsWith('model-badge')).map(n=>n.textContent),['模型不一致','响应模型未知']);
+});

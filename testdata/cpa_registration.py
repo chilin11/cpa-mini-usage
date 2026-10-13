@@ -60,7 +60,7 @@ plugins:
 """)
     environment = os.environ.copy()
     (root / "data").mkdir()
-    timing_event = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "auth_id": "timing-only", "provider": "codex", "model": "test", "input": 900, "output": 100, "total": 1000, "ttft_ms": 500, "latency_ms": 2500}
+    timing_event = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "auth_id": "timing-only", "provider": "codex", "model": "test", "requested_model": "client-alias", "response_model": "test-20260901", "input": 900, "output": 100, "total": 1000, "ttft_ms": 500, "latency_ms": 2500}
     (root / "data/events.jsonl").write_text(json.dumps(timing_event) + "\n")
     environment["CPA_MINI_USAGE_DATA_DIR"] = str(root / "data")
     # Do not expose the runner's GitHub token to the test host.
@@ -159,6 +159,7 @@ plugins:
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
         assert timing["output"] / (timing["latency_ms"] / 1000) == 40
         assert timing["missing_price"] is True and "cost" not in timing
+        assert timing["requested_model"] == "client-alias" and timing["response_model"] == "test-20260901" and timing["model_status"] == "variant"
         settings_url = refresh_url.rsplit("/", 1)[0] + "/settings"
         for authenticated, payload, expected in [(False, {"persistence_enabled": False}, (401, 403)), (True, {}, (400,))]:
             headers = {"Content-Type": "application/json"}
@@ -195,6 +196,7 @@ plugins:
         timing = next(event for event in state["recent"] if event["auth_id"] == "timing-only")
         assert timing["ttft_ms"] == 500 and timing["latency_ms"] == 2500
         assert timing["missing_price"] is True and "cost" not in timing
+        assert timing["requested_model"] == "client-alias" and timing["response_model"] == "test-20260901" and timing["model_status"] == "variant"
         assert (root / "data/events.jsonl").read_bytes() == saved_events
         print("PASS persistent storage: authenticated settings, quota/timing restore after host restart, disabled writes preserve history")
 except Exception:

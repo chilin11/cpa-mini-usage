@@ -24,18 +24,20 @@ const (
 )
 
 type Event struct {
-	At         time.Time `json:"at"`
-	AuthID     string    `json:"auth_id"`
-	Provider   string    `json:"provider"`
-	Model      string    `json:"model"`
-	Input      int64     `json:"input"`
-	Output     int64     `json:"output"`
-	CacheRead  int64     `json:"cache_read"`
-	CacheWrite int64     `json:"cache_write"`
-	Total      int64     `json:"total"`
-	Failed     bool      `json:"failed"`
-	LatencyMS  *float64  `json:"latency_ms,omitempty"`
-	TTFTMS     *float64  `json:"ttft_ms,omitempty"`
+	At             time.Time `json:"at"`
+	AuthID         string    `json:"auth_id"`
+	Provider       string    `json:"provider"`
+	Model          string    `json:"model"`
+	RequestedModel string    `json:"requested_model,omitempty"`
+	ResponseModel  string    `json:"response_model,omitempty"`
+	Input          int64     `json:"input"`
+	Output         int64     `json:"output"`
+	CacheRead      int64     `json:"cache_read"`
+	CacheWrite     int64     `json:"cache_write"`
+	Total          int64     `json:"total"`
+	Failed         bool      `json:"failed"`
+	LatencyMS      *float64  `json:"latency_ms,omitempty"`
+	TTFTMS         *float64  `json:"ttft_ms,omitempty"`
 }
 
 // RecentEvent adds snapshot-only valuation without changing stored usage records.
@@ -43,6 +45,7 @@ type RecentEvent struct {
 	Event
 	Cost         *float64 `json:"cost,omitempty"`
 	MissingPrice bool     `json:"missing_price"`
+	ModelStatus  string   `json:"model_status"`
 }
 
 type PriceTier struct {
@@ -357,6 +360,9 @@ func (e *Engine) capture(data []byte) {
 		return
 	}
 	evt := Event{At: when, AuthID: authID, Provider: provider, Model: str(m, "Model", "model", "Alias", "alias"), Input: input, Output: output, CacheRead: cached, CacheWrite: write, Total: total, Failed: getAny(m, "Failed", "failed") == true}
+	// Keep the existing usage model for pricing; observation names are diagnostic only.
+	evt.RequestedModel = observedModelName(str(m, "Alias", "alias"))
+	evt.ResponseModel = observedModelName(str(m, "ResponseModel", "response_model"))
 	evt.LatencyMS = durationMilliseconds(m, "Latency", "latency")
 	// CPA sends zero TTFT for requests without a measured streaming first token.
 	if streamed, present := getAny(m, "Stream", "stream").(bool); !present || streamed {
@@ -645,7 +651,7 @@ func (e *Engine) snapshot() Snapshot {
 		result.TotalRequests++
 		cost, ok := e.eventCost(ev)
 		if len(result.Recent) < 60 {
-			recent := RecentEvent{Event: ev, MissingPrice: !ok}
+			recent := RecentEvent{Event: ev, MissingPrice: !ok, ModelStatus: modelObservationStatus(ev)}
 			recent.AuthID = e.canonicalAuth(ev.AuthID)
 			if ok {
 				recent.Cost = floatPtr(cost)

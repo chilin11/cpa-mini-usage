@@ -155,6 +155,14 @@ tbody tr:focus-within>td{background:var(--hover)}
 .cell-secondary{display:block;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;font-weight:400;letter-spacing:0;color:var(--muted);margin-top:2px}
 .model{font-family:var(--mono);font-size:11px;color:var(--ink)}
 .model+.model{margin-top:4px}
+.model-observation{margin-top:4px;color:var(--muted);font-size:10px;line-height:1.5}
+.model-observation .model{font-size:10px;color:inherit}
+.model-response{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px}
+.model-response .model-badge{margin-top:0}
+.model-badge{display:inline-block;margin-top:3px;padding:1px 5px;border:1px solid var(--line);border-radius:4px;font:500 10px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--muted);background:var(--subtle)}
+.model-badge.same{color:var(--good);background:var(--good-soft)}
+.model-badge.variant{color:var(--cost)}
+.model-badge.different{color:var(--warm);background:var(--warm-soft);border-color:var(--warm);border-radius:3px;padding:0 4px}
 .request-state{display:inline-block;padding:2px 5px;border-radius:4px;font-size:10px;font-weight:600;color:var(--good);background:var(--good-soft)}
 .request-state.failed{color:var(--bad);background:var(--bad-soft)}
 .failure-count{color:var(--bad)}
@@ -294,6 +302,9 @@ const translations={
   '显示 {start}–{end} / {n} 条':'Showing {start}–{end} / {n}','暂无近期记录':'No recent records','等待请求快照':'Waiting for request snapshot','暂无近期请求':'No recent requests',
   '当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。':'The snapshot contains at most the latest 60 requests. No matches for this filter does not mean there is no request history.',
   '最近最多 60 条请求快照':'Snapshot of up to 60 recent requests','时间':'Time','缓存 读 / 写':'Cache read / write','状态':'Status','成功':'Succeeded','查看 {name} 的模型用量':'View model usage for {name}',
+  '请求名称':'Requested name','执行模型（用量记录）':'Execution model (usage record)','响应模型':'Response model','未提供':'Not provided','名称一致':'Same name','版本变体':'Name variant','模型不一致':'Model mismatch','响应模型未知':'Response model unknown',
+  '响应模型由上游自行声明，不能证明模型真伪。执行模型是 CPA 用量记录名称，不保证等于最终出站模型；合法映射也可能产生名称差异。仅比较名称，不改变计费。':'The response model is declared by the upstream, not proof of model authenticity. The execution model is the CPA usage-record name, not necessarily the final outbound model; valid mappings may also cause name differences. Name comparison only; pricing is unchanged.',
+  '缺少响应模型或执行模型，无法比较；旧记录不会自动补全。':'A response or execution model is missing, so comparison is unavailable; old records are not backfilled.',
   '额度接口不可用。':'Quota endpoint unavailable.','额度响应过大。':'Quota response too large.','额度响应格式异常。':'Invalid quota response.','缺少额度窗口。':'Quota windows missing.',
   '额度端点不允许访问。':'Quota endpoint not permitted.','额度接口返回 HTTP {code}。':'Quota endpoint returned HTTP {code}.','没有支持的模型。':'No supported models.',
   '首字时间：{ttft} s\n总耗时：{latency} s':'First token: {ttft} s\nTotal latency: {latency} s',
@@ -694,6 +705,19 @@ function recentRequests(){
   const credentials=list(data?.credentials),quotas=list(data?.quotas);
   return list(data?.recent).slice(0,60).filter(x=>active({provider:x.provider||credentials.find(s=>s.auth_id===x.auth_id)?.provider||quotas.find(s=>s.auth_id===x.auth_id)?.provider}));
 }
+function addRequestModel(tr,x){
+  const requested=typeof x.requested_model==='string'?x.requested_model.trim():'';
+  const execution=typeof x.model==='string'?x.model.trim():'';
+  const response=typeof x.response_model==='string'?x.response_model.trim():'';
+  const cell=addCell(tr,'','request-model');add(cell,'div','model',modelName(requested||execution));
+  if(requested&&execution&&requested!==execution){const line=add(cell,'div','model-observation');add(line,'span','',t('执行模型（用量记录）')+': ');add(line,'span','model',execution);}
+  const line=add(cell,'div','model-observation model-response');add(line,'span','model','↳ '+(response||t('未提供')));
+  const status=response&&execution&&['same','variant','different'].includes(x.model_status)?x.model_status:'unknown';
+  const labels={same:'名称一致',variant:'版本变体',different:'模型不一致',unknown:'响应模型未知'};
+  const title=[t('请求名称')+': '+(requested||t('未提供')),t('执行模型（用量记录）')+': '+(execution||t('未提供')),t('响应模型')+': '+(response||t('未提供')),t('响应模型由上游自行声明，不能证明模型真伪。执行模型是 CPA 用量记录名称，不保证等于最终出站模型；合法映射也可能产生名称差异。仅比较名称，不改变计费。')];
+  if(status==='unknown')title.push(t('缺少响应模型或执行模型，无法比较；旧记录不会自动补全。'));
+  cell.title=title.join('\n');line.setAttribute('aria-label',t('响应模型')+': '+(response||t('未提供')));const badge=add(line,'span','model-badge '+status,labels[status]);badge.title=cell.title;
+}
 function renderRecent(){
   const root=$('recent-table');root.replaceChildren();const recent=recentRequests();const pages=Math.ceil(recent.length/pageSize);recentPage=Math.max(0,Math.min(recentPage,pages-1));
   const start=recentPage*pageSize, shown=recent.slice(start,start+pageSize);
@@ -705,7 +729,7 @@ function renderRecent(){
   shown.forEach(x=>{
     const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString(locale()):'未知日期');
     const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
-    const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addCell(tr,modelName(x.model),'model');
+    const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addRequestModel(tr,x);
     addInputCell(tr,x,x.provider||credential.provider);addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
     addTokens(tr,'td','num',x.total,'');const costValue=x.missing_price?null:validEstimate(x.cost),costCell=addCell(tr,requestMoney(costValue),'num usd-value request-cost');costCell.title=costValue==null?t('缺少模型单价，金额暂不可用'):'$'+String(costValue)+' USD\n'+t('按当前模型单价计算的 API 等价金额，不是订阅扣款。');
     addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
