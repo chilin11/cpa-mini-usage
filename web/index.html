@@ -6,7 +6,9 @@
 <title>用量与额度 · CPA Mini Usage</title>
 <style>
 /* Compact telemetry console: official quota in cyan, forecasts in cool blue,
-   observed cost in slate, Claude identity in amber. System fonts; no motion. */
+   observed cost in slate, Claude identity in amber. System fonts; no motion.
+   Surface rhythm: 4/8/12/16/24px; 8px controls, 12px cards. Keep metrics primary,
+   quiet chrome, visible focus, internal table scrolling and immediate feedback. */
 :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;--bg:#eef3f9;--panel:#ffffff;--subtle:#f5f8fc;--ink:#18283e;--muted:#53677f;--line:#d8e2ed;--edge:#b9ccde;--accent:#086f98;--accent-blue:#286ad6;--accent-soft:#e7f3fc;--forecast:#285cb0;--forecast-soft:#eaf1fc;--cost:#354a63;--track:#dce6f0;--good:#16745b;--good-soft:#e6f5ef;--bad:#b33546;--bad-soft:#fff0f2;--warm:#92550d;--warm-soft:#fff1dd;--hover:#f0f6fc;--grid:rgba(41,81,128,.04);--glow:rgba(61,140,228,.09);--shadow:0 2px 8px rgba(26,52,84,.035),0 12px 32px rgba(26,52,84,.025);--radius:12px}
 @media(prefers-color-scheme:dark){:root{--bg:#0a111c;--panel:#111d2c;--subtle:#0e1826;--ink:#e6eefb;--muted:#9cacc2;--line:#293b50;--edge:#3b536e;--accent:#62d5f3;--accent-blue:#6096ff;--accent-soft:#142e43;--forecast:#93baff;--forecast-soft:#192b45;--cost:#c7d4e6;--track:#25364a;--good:#78dbb5;--good-soft:#152f2c;--bad:#ffa0ac;--bad-soft:#34202c;--warm:#efba75;--warm-soft:#30271f;--hover:#18283b;--grid:rgba(123,160,201,.035);--glow:rgba(39,108,191,.12);--shadow:0 2px 8px rgba(0,0,0,.12),0 16px 36px rgba(0,0,0,.08)}}
 *{box-sizing:border-box}
@@ -27,17 +29,17 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,[t
 .sr-only{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
 main{max-width:1180px;margin:auto;padding:24px}
 main.request-view{max-width:1480px}
-.masthead{display:flex;align-items:center;justify-content:flex-start;gap:16px;flex-wrap:wrap;padding-right:48px}
+.masthead{display:flex;align-items:center;justify-content:flex-start;gap:16px;flex-wrap:wrap;padding:0 0 0 12px;border-left:3px solid var(--accent)}
 .masthead>div{min-width:0;overflow-wrap:anywhere}
 .brandline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.3px;color:var(--muted);margin-bottom:4px}
 .brandline>span:first-child{color:var(--accent)}
-.version{font-size:10px;line-height:1.6;letter-spacing:0;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px;background:var(--panel)}
+.version{font-size:11px;line-height:1.6;letter-spacing:0;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px;background:var(--panel)}
 .header-actions{display:flex;align-items:center;gap:12px;min-width:0}
 .statusbar{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
 .dot.off{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
 .dot.busy{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;border:1px solid var(--edge);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:550;min-height:34px;overflow-wrap:anywhere}
+.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;border:1px solid var(--edge);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:550;min-height:34px;overflow-wrap:anywhere;box-shadow:0 1px 2px var(--glow)}
 .button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .button:active:not(:disabled){background:var(--track);border-color:var(--accent)}
 .button svg{width:14px;height:14px;flex-shrink:0}
@@ -56,14 +58,14 @@ main.request-view{max-width:1480px}
 .tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 14px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;margin-bottom:-1px;color:var(--muted);font-size:13px}
 .tabs button:hover{color:var(--ink);background:var(--subtle)}
 .tabs button:active{background:var(--track)}
-.tabs button[aria-selected=true]{color:var(--accent);background:var(--accent-soft);border-bottom-color:var(--accent);font-weight:650}
-.tab-count{display:inline-block;min-width:24px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-family:var(--mono);font-size:10px;line-height:1.5;color:var(--muted);font-variant-numeric:tabular-nums}
+.tabs button[aria-selected=true]{color:var(--accent);background:var(--accent-soft);border-bottom-color:var(--accent);font-weight:650;box-shadow:inset 0 1px 0 var(--panel)}
+.tab-count{display:inline-block;min-width:24px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--muted);font-variant-numeric:tabular-nums}
 .tabs button[aria-selected=true] .tab-count{color:var(--accent);border-color:var(--edge)}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0 20px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0 20px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--subtle);box-shadow:inset 0 1px 0 var(--panel)}
 .toolbar-options{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;max-width:100%}
 .toolbar .header-actions{flex-wrap:wrap;justify-content:flex-start;width:auto;gap:10px}
 .toolbar .toolbar-options{gap:12px}
-.toolbar .statusbar{font-size:10px}
+.toolbar .statusbar{font-size:11px}
 .filter-control{display:flex;align-items:center;gap:8px;min-width:0}
 .filter-control label{display:none}
 select{max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:6px 8px;font-size:12px;min-height:32px;cursor:pointer}
@@ -77,7 +79,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .persistence-label input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .persistence-error{color:var(--bad);overflow-wrap:anywhere}
 .results{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .section-head h2{min-width:0;overflow-wrap:anywhere}
 .section-label{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
@@ -86,8 +88,8 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .provider-section+.provider-section{margin-top:12px}
 .provider-section>.section-head h2{display:flex;align-items:center;gap:8px}
 .provider-section>.section-head h2::before{content:"";width:3px;height:14px;flex-shrink:0;background:var(--provider-accent);border-radius:2px}
-.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-.accounttop{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 1px 0 var(--panel)}
+.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
+.accounttop{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:linear-gradient(110deg,var(--subtle),var(--panel));box-shadow:inset 0 2px 0 var(--provider-accent)}
 .identity{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 160px}
 .account-icon{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:650;flex-shrink:0}
 .account-icon.claude{color:var(--warm);background:var(--warm-soft)}
@@ -97,6 +99,8 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .manual-reset{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .manual-reset strong{font-size:18px;font-weight:750;line-height:1.2;color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .account-refresh{padding:4px 8px;min-height:28px;font-size:11px;font-weight:500;border-color:var(--line)}
+.button[aria-busy=true]{cursor:progress;border-style:dashed;box-shadow:none}
+.button:disabled{box-shadow:none}
 .windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 .window{display:flex;flex-direction:column;padding:12px 16px;min-width:0}
 .window+.window{border-left:1px solid var(--line)}
@@ -110,9 +114,10 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .fill{height:100%;background:linear-gradient(90deg,var(--accent-blue),var(--accent));border-radius:3px}
 .low .fill{background:var(--bad)}
 .unknown .percent{color:var(--muted)}
-.windowstats{margin:0;padding:0;border:0;background:none;min-width:0}
+.windowstats{margin:0 0 12px;padding:8px 0;border:0;border-radius:6px;background:linear-gradient(90deg,transparent calc(50% + 4px),var(--forecast-soft) calc(50% + 4px));min-width:0}
 .usage-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:baseline}
 .usage-row>*{min-width:0}
+.usage-row>:nth-child(2){padding-left:8px;padding-right:4px}
 .usage-label{font-size:11px;color:var(--muted);margin-bottom:4px;overflow-wrap:anywhere}
 .usage-label:nth-child(2){color:var(--forecast)}
 .observed-cost{font-size:17px;font-weight:600;letter-spacing:-.5px;line-height:1.35;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--cost);overflow-wrap:anywhere}
@@ -121,14 +126,14 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .usage-row .estimate-cost{display:block;overflow-wrap:anywhere}
 .observed-value{font-size:14px;color:var(--muted);margin-top:2px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
 .estimate-value{font-size:14px;color:var(--forecast);margin-top:2px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
-.reset{font-size:11px;color:var(--muted);margin-top:auto;padding-top:12px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.reset{font-size:11px;color:var(--muted);margin-top:auto;padding-top:8px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .account-error{margin:12px 16px 0;padding:8px 10px;border-left:2px solid var(--bad);border-radius:4px;background:var(--bad-soft);font-size:11px;color:var(--bad);overflow-wrap:anywhere}
 .account-error:empty{display:none}
 .empty{grid-column:1/-1;min-width:0;padding:32px 20px;border:1px dashed var(--edge);border-radius:var(--radius);background:var(--panel);text-align:center;color:var(--muted);overflow-wrap:anywhere}
 .empty-symbol{display:none}
 .empty strong{font-size:13px;font-weight:600;color:var(--ink)}
 .empty p{font-size:12px;line-height:1.7;margin:6px auto 0;max-width:64ch}
-.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:12px 0;margin-bottom:20px;box-shadow:var(--shadow)}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-top-color:var(--edge);background:var(--panel);border-radius:var(--radius);padding:12px 0;margin-bottom:20px;box-shadow:var(--shadow)}
 .summary-item{display:flex;flex-direction:column;justify-content:space-between;gap:4px;padding:0 16px;min-width:0}
 .summary-item+.summary-item{border-left:1px solid var(--line)}
 .summary-label{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
@@ -139,7 +144,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .summary-note{display:none}
 .request-section{min-width:0}
 .request-section+.request-section{margin-top:20px}
-.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);scrollbar-color:var(--edge) var(--subtle)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);scrollbar-color:var(--edge) var(--subtle);overscroll-behavior-x:contain;box-shadow:var(--shadow)}
 .tablewrap{max-width:100%;min-width:0}
 .tablewrap .empty{border:0;border-radius:0}
 #page-requests{min-width:0}
@@ -148,15 +153,17 @@ th{font-size:11px;color:var(--muted);font-weight:600;line-height:1.5;text-align:
 td{padding:10px 12px;border-top:1px solid var(--line);overflow-wrap:anywhere;vertical-align:middle;font-variant-numeric:tabular-nums}
 td.num,th.num{text-align:right;white-space:nowrap}
 td.num{font-family:var(--mono);font-size:11px;letter-spacing:-.2px;white-space:normal}
+tbody tr:nth-child(even)>td{background:var(--subtle)}
+tbody tr:has(.credential-button[aria-expanded=true])>td{background:var(--accent-soft)}
 tbody tr:hover>td{background:var(--hover)}
 tbody tr:focus-within>td{background:var(--hover)}
 .usd-value,td.usd-value{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--cost)}
 .timestamp{font-family:var(--mono);font-size:11px;color:var(--cost)}
-.cell-secondary{display:block;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;font-weight:400;letter-spacing:0;color:var(--muted);margin-top:2px}
+.cell-secondary{display:block;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:11px;font-weight:400;letter-spacing:0;color:var(--muted);margin-top:2px}
 .model{font-family:var(--mono);font-size:11px;color:var(--ink)}
 .model+.model{margin-top:4px}
-.model-observation{margin-top:4px;color:var(--muted);font-size:10px;line-height:1.5}
-.model-observation .model{font-size:10px;color:inherit}
+.model-observation{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.5}
+.model-observation .model{font-size:11px;color:inherit}
 .model-response{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px}
 .model-response .model-badge{margin-top:0}
 .model-badge{display:inline-block;margin-top:3px;padding:1px 5px;border:1px solid var(--line);border-radius:4px;font:500 10px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--muted);background:var(--subtle)}
@@ -184,7 +191,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 .details h3{font-size:11px;color:var(--muted);margin-bottom:8px}
 .modelrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:11px;overflow-wrap:anywhere}
 .modelrow .tabnum{text-align:right;color:var(--cost)}
-.foot{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);overflow-wrap:anywhere}
+.foot{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 #recent-table table{min-width:1220px}
 #credential-table table{min-width:1120px}
 #recent-table th,#recent-table td{padding-left:10px;padding-right:10px}
@@ -208,7 +215,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.12</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.13</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -311,6 +318,7 @@ const translations={
   'TPS = 输出 token ÷ 总耗时秒（请求平均速度）\n输出：{output} token\n总耗时：{latency} s\n首字时间独立展示，不从总耗时扣除；不是纯解码速度。':'TPS = output tokens / total latency seconds (request average)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst-token time is shown separately, not subtracted; this is not pure decode speed.',
   '首字时间':'First token','请求时间':'Requested at','首字':'First token','总时间':'Total','token/s':'tokens/s','耗时数据不可用':'Timing data unavailable',
   '保存数据':'Save data','开启':'Enabled','未保存':'Memory only','保存中…':'Saving…','无法保存设置，请稍后重试。':'Cannot save settings. Please retry later.',
+  '只读保护':'Read-only protection','存储读取不完整，已停止写盘以保护原文件。新记录仅保留在内存；请先备份并修复数据文件或权限，再重启 CPA。':'Storage was not fully readable; disk writes are blocked to protect the originals. New records remain in memory only. Back up and repair the files or permissions, then restart CPA.',
   '数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。':'Data is saved in an independent folder and retained across plugin updates. Disabling stops future request, quota and price saves; it never deletes saved history. Enabling saves current in-memory data.',
   '数据目录：':'Data directory:',
   '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.'
@@ -435,11 +443,12 @@ function updateSyncInfo(){
   }
 }
 function updatePersistence(){
+  const readOnly=Boolean(data?.persistence?.read_only);
   const state=data?.persistence,known=typeof state?.enabled==='boolean',busy=Boolean(settingsJob),input=$('persistence-enabled');
-  input.checked=known?state.enabled:true;input.disabled=!known||busy||loading;input.setAttribute('aria-busy',String(busy));
-  const text=settingsError?message(settingsError):t(busy?'保存中…':known?(state.enabled?'开启':'未保存'):'—');
-  const status=$('persistence-status');if(status.textContent!==text)status.textContent=text;status.classList.toggle('persistence-error',Boolean(settingsError));
-  const info=t('数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。');
+  input.checked=known?state.enabled:true;input.disabled=!known||busy||loading||readOnly;input.setAttribute('aria-busy',String(busy));
+  const text=readOnly?t('只读保护'):settingsError?message(settingsError):t(busy?'保存中…':known?(state.enabled?'开启':'未保存'):'—');
+  const status=$('persistence-status');if(status.textContent!==text)status.textContent=text;status.classList.toggle('persistence-error',Boolean(settingsError)||readOnly);
+  const info=t(readOnly?'存储读取不完整，已停止写盘以保护原文件。新记录仅保留在内存；请先备份并修复数据文件或权限，再重启 CPA。':'数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。');
   const directory=typeof state?.directory==='string'?state.directory:'';$('persistence-control').title=info+(directory?'\n'+t('数据目录：')+' '+directory:'');input.title=$('persistence-control').title;
   syncHeader();
 }
@@ -597,7 +606,7 @@ async function refreshAccount(id){
 }
 async function savePersistence(enabled){
   if(key!==guessKey()){await load();return;}
-  if(settingsJob||loading||typeof data?.persistence?.enabled!=='boolean'){updatePersistence();return;}
+  if(settingsJob||loading||data?.persistence?.read_only||typeof data?.persistence?.enabled!=='boolean'){updatePersistence();return;}
   const job={key};settingsJob=job;settingsError=null;updatePersistence();
   const current=()=>settingsJob===job;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){settingsJob=null;await load();}return true;}return !current();};
@@ -711,12 +720,14 @@ function addRequestModel(tr,x){
   const response=typeof x.response_model==='string'?x.response_model.trim():'';
   const cell=addCell(tr,'','request-model');add(cell,'div','model',modelName(requested||execution));
   if(requested&&execution&&requested!==execution){const line=add(cell,'div','model-observation');add(line,'span','',t('执行模型（用量记录）')+': ');add(line,'span','model',execution);}
-  const line=add(cell,'div','model-observation model-response');add(line,'span','model','↳ '+(response||t('未提供')));
   const status=response&&execution&&['same','variant','different'].includes(x.model_status)?x.model_status:'unknown';
   const labels={same:'名称一致',variant:'版本变体',different:'模型不一致',unknown:'响应模型未知'};
   const title=[t('请求名称')+': '+(requested||t('未提供')),t('执行模型（用量记录）')+': '+(execution||t('未提供')),t('响应模型')+': '+(response||t('未提供')),t('响应模型由上游自行声明，不能证明模型真伪。执行模型是 CPA 用量记录名称，不保证等于最终出站模型；合法映射也可能产生名称差异。仅比较名称，不改变计费。')];
   if(status==='unknown')title.push(t('缺少响应模型或执行模型，无法比较；旧记录不会自动补全。'));
-  cell.title=title.join('\n');line.setAttribute('aria-label',t('响应模型')+': '+(response||t('未提供')));const badge=add(line,'span','model-badge '+status,labels[status]);badge.title=cell.title;
+  cell.title=title.join('\n');
+  if(status==='same')return;
+  const line=add(cell,'div','model-observation model-response');add(line,'span','model','↳ '+(response||t('未提供')));
+  line.setAttribute('aria-label',t('响应模型')+': '+(response||t('未提供')));const badge=add(line,'span','model-badge '+status,labels[status]);badge.title=cell.title;
 }
 function renderRecent(){
   const root=$('recent-table');root.replaceChildren();const recent=recentRequests();const pages=Math.ceil(recent.length/pageSize);recentPage=Math.max(0,Math.min(recentPage,pages-1));

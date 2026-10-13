@@ -13,6 +13,7 @@ import (
 type PersistenceSettings struct {
 	Enabled   bool   `json:"enabled"`
 	Directory string `json:"directory"`
+	ReadOnly  bool   `json:"read_only,omitempty"`
 }
 
 type persistedQuotas struct {
@@ -21,6 +22,14 @@ type persistedQuotas struct {
 	Names     map[string]string        `json:"names"`
 	Aliases   map[string]string        `json:"aliases"`
 	Forecasts map[string]SavedForecast `json:"forecasts,omitempty"`
+}
+
+// A partial load must never become the authoritative file on disk. Recovery is
+// explicit: back up/repair the files or permissions, then restart the plugin.
+func (e *Engine) blockStorageWrites(message string) {
+	e.storageReadFailed = true
+	e.persistence.ReadOnly = true
+	e.storageError = message + "; storage is read-only until repaired and restarted"
 }
 
 // Called before starting workers. Older installations have no settings/quotas files.
@@ -32,17 +41,17 @@ func (e *Engine) loadPersistence() {
 			Enabled *bool `json:"persistence_enabled"`
 		}
 		if json.Unmarshal(body, &settings) != nil || settings.Enabled == nil {
-			e.storageError = "Storage settings could not be read"
+			e.blockStorageWrites("Storage settings could not be read")
 		} else {
 			e.persistence.Enabled = *settings.Enabled
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		e.storageError = "Storage settings could not be read"
+		e.blockStorageWrites("Storage settings could not be read")
 	}
 	body, err = os.ReadFile(filepath.Join(e.dir, "quotas.json"))
 	if err == nil {
 		var saved persistedQuotas
-		if json.Unmarshal(body, &saved) == nil {
+		if json.Unmarshal(body, &saved) == nil && !bytes.Equal(bytes.TrimSpace(body), []byte("null")) {
 			if saved.Quotas != nil {
 				e.quotas = saved.Quotas
 			}
@@ -57,14 +66,17 @@ func (e *Engine) loadPersistence() {
 				e.forecasts = saved.Forecasts
 			}
 		} else {
-			e.storageError = "Quota history could not be read"
+			e.blockStorageWrites("Quota history could not be read")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		e.storageError = "Quota history could not be read"
+		e.blockStorageWrites("Quota history could not be read")
 	}
 }
 
 func (e *Engine) writeQuotasLocked() error {
+	if e.storageReadFailed {
+		return errors.New("storage is read-only after an incomplete load")
+	}
 	body, err := json.Marshal(persistedQuotas{Updated: e.quotaUpdated, Quotas: e.quotas, Names: e.names, Aliases: e.aliases, Forecasts: e.forecasts})
 	if err != nil {
 		return err
@@ -72,7 +84,7 @@ func (e *Engine) writeQuotasLocked() error {
 	return writeAtomic(filepath.Join(e.dir, "quotas.json"), body)
 }
 func (e *Engine) persistQuotasLocked() {
-	if e.persistence.Enabled {
+	if e.persistence.Enabled && !e.storageReadFailed {
 		if err := e.writeQuotasLocked(); err != nil {
 			e.storageError = "Quota history could not be persisted"
 		}
@@ -82,6 +94,9 @@ func (e *Engine) persistQuotasLocked() {
 func (e *Engine) setPersistence(enabled bool) (PersistenceSettings, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.storageReadFailed {
+		return e.persistence, errors.New("storage is read-only after an incomplete load")
+	}
 	e.persistence.Directory = e.dir
 	if err := os.MkdirAll(e.dir, 0700); err != nil {
 		e.storageError = "Storage settings could not be persisted"

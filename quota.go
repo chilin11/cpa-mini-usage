@@ -103,6 +103,11 @@ func (e *Engine) refreshQuota(force bool) {
 
 // Caller holds refreshMu exclusively for the whole batch, including all provider reads.
 func (e *Engine) refreshQuotaLocked(force bool) {
+	e.refreshQuotaWith(force, hostRPC, e.refreshAccountQuota)
+}
+
+// Injectable boundaries keep full-scan coverage/concurrency regression-testable.
+func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error), read func(AuthEntry) bool) {
 	e.mu.Lock()
 	if !force && time.Since(e.lastRefresh) < quotaInterval {
 		e.mu.Unlock()
@@ -117,7 +122,7 @@ func (e *Engine) refreshQuotaLocked(force bool) {
 		e.quotaRefreshFinished = time.Now().UTC()
 		e.mu.Unlock()
 	}()
-	raw, err := hostRPC("host.auth.list", map[string]any{})
+	raw, err := rpc("host.auth.list", map[string]any{})
 	if err != nil {
 		e.quotaFailure("CPA credential callback is unavailable")
 		return
@@ -133,9 +138,6 @@ func (e *Engine) refreshQuotaLocked(force bool) {
 	jobs := make(chan AuthEntry, len(auths))
 	for _, entry := range auths {
 		if entry.Provider == "claude" || entry.Provider == "codex" {
-			if len(jobs) == 40 {
-				break
-			}
 			jobs <- entry
 		}
 	}
@@ -153,7 +155,7 @@ func (e *Engine) refreshQuotaLocked(force bool) {
 					return
 				default:
 				}
-				results <- e.refreshAccountQuota(entry)
+				results <- read(entry)
 			}
 		}()
 	}

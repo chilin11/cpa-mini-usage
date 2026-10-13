@@ -174,6 +174,7 @@ type Engine struct {
 	priceError           string
 	quotaError           string
 	storageError         string
+	storageReadFailed    bool
 	persistence          PersistenceSettings
 	dir                  string
 	done                 chan struct{}
@@ -234,7 +235,7 @@ func (e *Engine) kickRefresh(force bool) {
 
 func (e *Engine) load() {
 	if err := os.MkdirAll(e.dir, 0700); err != nil {
-		e.storageError = "Unable to create the data directory"
+		e.blockStorageWrites("Unable to create the data directory")
 		return
 	}
 	e.loadPersistence()
@@ -246,16 +247,23 @@ func (e *Engine) load() {
 		scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 		cutoff := time.Now().Add(-eventDays * 24 * time.Hour)
 		for scanner.Scan() {
+			if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+				continue
+			}
 			var x Event
-			if json.Unmarshal(scanner.Bytes(), &x) == nil && !x.At.Before(cutoff) {
+			if json.Unmarshal(scanner.Bytes(), &x) != nil || x.At.IsZero() {
+				e.blockStorageWrites("Some historical records could not be read")
+				continue
+			}
+			if !x.At.Before(cutoff) {
 				e.events = append(e.events, x)
 			}
 		}
 		if scanner.Err() != nil {
-			e.storageError = "Some historical records could not be read"
+			e.blockStorageWrites("Some historical records could not be read")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		e.storageError = "Unable to read historical usage"
+		e.blockStorageWrites("Unable to read historical usage")
 	}
 	b, err := os.ReadFile(filepath.Join(e.dir, "prices.json"))
 	if err == nil {
@@ -263,10 +271,14 @@ func (e *Engine) load() {
 			Updated time.Time             `json:"updated"`
 			Prices  map[string]ModelPrice `json:"prices"`
 		}
-		if json.Unmarshal(b, &v) == nil && len(v.Prices) > 0 {
+		if json.Unmarshal(b, &v) != nil || bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+			e.blockStorageWrites("Price history could not be read")
+		} else if len(v.Prices) > 0 {
 			e.prices = v.Prices
 			e.priceUpdated = v.Updated
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		e.blockStorageWrites("Price history could not be read")
 	}
 	e.compact()
 }
@@ -284,7 +296,7 @@ func (e *Engine) compact() {
 		kept = kept[len(kept)-200000:]
 	}
 	e.events = kept
-	if !e.persistence.Enabled {
+	if !e.persistence.Enabled || e.storageReadFailed {
 		return
 	}
 	var buf bytes.Buffer
@@ -298,8 +310,21 @@ func (e *Engine) compact() {
 	}
 }
 func writeAtomic(path string, body []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, body, 0600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err = f.Write(body); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -374,7 +399,7 @@ func (e *Engine) capture(data []byte) {
 	if len(e.events) > 200000 {
 		e.events = e.events[len(e.events)-200000:]
 	}
-	if !e.persistence.Enabled {
+	if !e.persistence.Enabled || e.storageReadFailed {
 		return
 	}
 	b, _ := json.Marshal(evt)
@@ -459,6 +484,9 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 		writePrice = *p.CacheWrite
 	}
 	cost += float64(cached)*readPrice/1e6 + float64(write)*writePrice/1e6
+	if !finite(cost) || cost < 0 {
+		return 0, false
+	}
 	return cost, true
 }
 func priceProvider(p string) string {
@@ -638,7 +666,10 @@ func (e *Engine) snapshot() Snapshot {
 		if result.Quotas[i].Provider != result.Quotas[j].Provider {
 			return result.Quotas[i].Provider < result.Quotas[j].Provider
 		}
-		return result.Quotas[i].Name < result.Quotas[j].Name
+		if result.Quotas[i].Name != result.Quotas[j].Name {
+			return result.Quotas[i].Name < result.Quotas[j].Name
+		}
+		return result.Quotas[i].AuthID < result.Quotas[j].AuthID
 	})
 	stats := make(map[string]*CredentialView)
 	modelStats := make(map[string]map[string]*ModelStat)
@@ -713,10 +744,20 @@ func (e *Engine) snapshot() Snapshot {
 		for _, m := range modelStats[s.AuthID] {
 			s.Models = append(s.Models, *m)
 		}
-		sort.Slice(s.Models, func(i, j int) bool { return s.Models[i].Tokens > s.Models[j].Tokens })
+		sort.Slice(s.Models, func(i, j int) bool {
+			if s.Models[i].Tokens != s.Models[j].Tokens {
+				return s.Models[i].Tokens > s.Models[j].Tokens
+			}
+			return s.Models[i].Model < s.Models[j].Model
+		})
 		result.Credentials = append(result.Credentials, *s)
 	}
-	sort.Slice(result.Credentials, func(i, j int) bool { return result.Credentials[i].Total > result.Credentials[j].Total })
+	sort.Slice(result.Credentials, func(i, j int) bool {
+		if result.Credentials[i].Total != result.Credentials[j].Total {
+			return result.Credentials[i].Total > result.Credentials[j].Total
+		}
+		return result.Credentials[i].AuthID < result.Credentials[j].AuthID
+	})
 	return result
 }
 
@@ -762,7 +803,7 @@ func (e *Engine) refreshPrices(force bool) {
 	e.prices = prices
 	e.priceUpdated = now
 	e.priceError = ""
-	if e.persistence.Enabled {
+	if e.persistence.Enabled && !e.storageReadFailed {
 		b, _ := json.Marshal(map[string]any{"updated": now, "prices": prices})
 		if err := writeAtomic(filepath.Join(e.dir, "prices.json"), b); err != nil {
 			e.storageError = "Price catalog could not be persisted"

@@ -635,7 +635,7 @@ for(const language of ['zh','en'])test(`${language}: unused five-hour quota disp
   assert.match(descendants(d.elements.get('quota-cards')).find(n=>n.className==='estimate-cost').title,language==='en'?/本 5 小时窗口尚未使用/:/No usage yet in this five-hour window/);
 });
 
-test('model observations show four states and separate aliases without changing cost',()=>{
+test('model observations hide matching responses and preserve other states and aliases without changing cost',()=>{
   const {api,elements}=dashboard();
   const recent=[
     {model:'gpt-5',requested_model:'client-alias',response_model:'gpt-5',model_status:'same',cost:.0028},
@@ -648,7 +648,8 @@ test('model observations show four states and separate aliases without changing 
   const cells=descendants(elements.get('recent-table')).filter(n=>n.className==='request-model');
   assert.equal(cells.length,5);
   const badges=cells.map(c=>descendants(c).find(n=>n.className?.startsWith('model-badge')));
-  assert.deepEqual(badges.map(n=>n.textContent),['名称一致','版本变体','模型不一致','响应模型未知','响应模型未知']);
+  assert.deepEqual(badges.map(n=>n?.textContent??null),[null,'版本变体','模型不一致','响应模型未知','响应模型未知']);
+  assert(!descendants(cells[0]).some(n=>n.className==='model-observation model-response'));
   assert.equal(badges[2].parentNode.children[0].textContent,'↳ gpt-5-mini');
   assert.match(html,/\.model-badge\.different\{color:var\(--warm\);background:var\(--warm-soft\);border-color:var\(--warm\)/);
   assert.equal(cells[0].children[0].textContent,'client-alias');
@@ -658,9 +659,21 @@ test('model observations show four states and separate aliases without changing 
   assert(descendants(elements.get('recent-table')).some(n=>n.textContent==='$0.0028'));
   api.setLanguage('en');
   const translated=descendants(elements.get('recent-table')).filter(n=>n.className?.startsWith('model-badge'));
-  assert.deepEqual(translated.map(n=>n.textContent),['Same name','Name variant','Model mismatch','Response model unknown','Response model unknown']);
-  assert.match(translated[2].title,/not proof of model authenticity/);
-  assert(!/[\u4e00-\u9fff]/.test(translated[2].title));
+  assert.deepEqual(translated.map(n=>n.textContent),['Name variant','Model mismatch','Response model unknown','Response model unknown']);
+  assert.match(translated[1].title,/not proof of model authenticity/);
+  assert(!/[\u4e00-\u9fff]/.test(translated[1].title));
+});
+
+test('identical model names render a single model line in both languages',()=>{
+  const {api,elements}=dashboard();
+  api.renderSample({recent:[{model:'gpt-6.1-sol',requested_model:'gpt-6.1-sol',response_model:'gpt-6.1-sol',model_status:'same'}]});
+  for(const language of ['zh','en']){
+    api.setLanguage(language);
+    const cell=descendants(elements.get('recent-table')).find(n=>n.className==='request-model');
+    assert.equal(cell.children.length,1);
+    assert.equal(cell.children[0].textContent,'gpt-6.1-sol');
+    assert.match(cell.title,/gpt-6\.1-sol/);
+  }
 });
 
 test('response model strings are literal text, and missing execution name is unknown',()=>{
@@ -671,4 +684,20 @@ test('response model strings are literal text, and missing execution name is unk
   assert.equal(nodes.filter(n=>n.textContent===attack||n.textContent==='↳ '+attack).length,2);
   assert(!nodes.some(n=>n.tag==='img'));
   assert.deepEqual(nodes.filter(n=>n.className?.startsWith('model-badge')).map(n=>n.textContent),['模型不一致','响应模型未知']);
+});
+
+test('storage read-only protection is explicit and cannot be toggled away',async()=>{
+  const requests=[];
+  const sample={credentials:[],quotas:[],recent:[],persistence:{enabled:true,directory:'/persistent/usage',read_only:true}};
+  const d=dashboard(login(),async(url)=>{requests.push(url);return reply(sample);});
+  await d.api.load();
+  assert.equal(d.elements.get('persistence-enabled').disabled,true);
+  assert.equal(d.elements.get('persistence-status').textContent,'只读保护');
+  assert.match(d.elements.get('persistence-control').title,/仅保留在内存/);
+  await d.api.savePersistence(false);
+  assert(!requests.some(url=>url.endsWith('/settings')));
+  d.api.setLanguage('en');
+  assert.equal(d.elements.get('persistence-status').textContent,'Read-only protection');
+  assert.match(d.elements.get('persistence-control').title,/memory only/);
+  assert.match(d.elements.get('persistence-control').title,/\/persistent\/usage/);
 });

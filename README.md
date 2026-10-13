@@ -39,11 +39,17 @@ The dashboard automatically reuses the saved login from the **same-origin CPA ma
 
 For Docker, bind-mount this directory or use a named volume, for example set `CPA_MINI_USAGE_DATA_DIR=/data/cpa-mini-usage` and mount `./mini-usage-data:/data/cpa-mini-usage`. A browser toggle cannot preserve files from a container that is deleted without a persistent mount.
 
+If any existing history/settings/quota/price file cannot be fully read, the plugin enters **read-only protection** instead of replacing it with partial or empty memory. Valid records already read remain viewable and new requests can be tracked in memory, but no persistence writes or save-setting changes are allowed until the original files/permissions are backed up, repaired and CPA is restarted. Do not delete the files just to clear the warning. This protection cannot recover data removed with an unmounted Docker container; keep a fixed `CPA_MINI_USAGE_DATA_DIR` and its bind mount/volume. Atomic replacements use private temporary files and sync file contents before rename.
+
+Full quota refresh covers every supported account (still limited to four concurrent provider reads). Equal-usage accounts and models use stable tie-breakers so unchanged snapshots do not reorder the dashboard.
+
 ### Response model observations
 
 The recent request model column shows the client-requested alias (CPA `Alias`, when supplied), the execution/usage model (`Model`, when different), and the upstream-declared response model (`ResponseModel`). CPA 8.0.22 already forwards these fields through `usage.handle`; newer builds may improve provider coverage. This plugin now retains the two observation names alongside the existing usage model in `events.jsonl`. Existing records and hosts/providers without a response declaration remain **unknown** and are not backfilled.
 
 Name status is calculated from the execution/usage model and response declaration at snapshot time: **same name** (ignoring case), **name variant** (recognized thinking suffixes, provider paths, `-latest`, date snapshots or three-digit version suffixes), **different name**, or **comparison unavailable**. Variant classification is a naming heuristic, not a guarantee that two snapshots behave identically. CPA can apply additional executor-specific mappings without exposing the final outbound model in the usage callback, so a difference is diagnostic only, not proof of substitution. An upstream can also rewrite its declaration; a matching name does not prove authenticity. No inference probes or request/response bodies are stored for this feature. Pricing and credential/model aggregation continue using the original `Model`, never the alias or response declaration. Rebuild/reinstall the plugin and restart CPA while preserving the existing data directory; upgrading CPA alone does not update this plugin.
+
+Matching execution/response names keep the response arrow line and same-name badge hidden to avoid duplicates; the full diagnostic names remain available in the model-cell tooltip. Variant, mismatch and unknown states stay visible, and a distinct requested alias still shows the execution/usage model separately.
 
 ### Request timing
 
@@ -131,6 +137,10 @@ An unused five-hour quota window now shows zero estimated USD and tokens instead
 ### v0.1.12
 
 Record CPA's client-requested alias and upstream-declared response model alongside the existing execution/usage model. Recent requests show the response on a compact arrow line with an orange **Model mismatch / 模型不一致** badge when names differ, a separate variant label for recognized snapshot/name variants, and unknown when comparison data is absent. Bilingual tooltips explain that upstream declarations are not model-authenticity proof and the usage model is not guaranteed to be the final outbound model. Pricing and aggregation remain unchanged. Old history remains compatible but response names are not backfilled. Upgrade the plugin and restart CPA, preserving the data directory and Docker persistent mount. This release does not include fixes for the separately reported Compose/reinstall data-loss incident or guarantee compatibility with future CPA versions.
+
+### v0.1.13
+
+Hide duplicate response-model lines and same-name badges when names match, while retaining variants, orange mismatches, unknown states and full tooltips. Refine the graphite/navy tech dashboard with accessible light/dark surfaces, cyan primary metrics, cool-blue forecasts and compact tables. Add read-only storage protection after incomplete or corrupt history/settings/quota/price loads so partial memory cannot overwrite the original files; recovery requires backing up and repairing the files/permissions, then restarting CPA. Atomic file replacements use private synced temporary files. Full quota refresh now covers all supported accounts instead of stopping at 40, with the existing four-worker concurrency limit. Stabilize equal-usage sorting, reject nonfinite/negative costs and return HTTP 500 on snapshot encoding failure. Add storage, refresh, pricing-example and real-browser regression tests. Standard API-equivalent valuation and quota extrapolation rules are unchanged; they are not subscription billing or official dollar caps. Upgrade to 0.1.13 and restart CPA, preserving the data directory and Docker persistent mount. This protection does not recover files lost from a deleted unmounted container or establish the cause of the separately reported Compose/reinstall incident.
 
 ## Optional CPA Plugin Store source
 
