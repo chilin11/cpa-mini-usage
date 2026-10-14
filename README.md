@@ -142,6 +142,10 @@ Record CPA's client-requested alias and upstream-declared response model alongsi
 
 Hide duplicate response-model lines and same-name badges when names match, while retaining variants, orange mismatches, unknown states and full tooltips. Refine the graphite/navy tech dashboard with accessible light/dark surfaces, cyan primary metrics, cool-blue forecasts and compact tables. Add read-only storage protection after incomplete or corrupt history/settings/quota/price loads so partial memory cannot overwrite the original files; recovery requires backing up and repairing the files/permissions, then restarting CPA. Atomic file replacements use private synced temporary files. Full quota refresh now covers all supported accounts instead of stopping at 40, with the existing four-worker concurrency limit. Stabilize equal-usage sorting, reject nonfinite/negative costs and return HTTP 500 on snapshot encoding failure. Add storage, refresh, pricing-example and real-browser regression tests. Standard API-equivalent valuation and quota extrapolation rules are unchanged; they are not subscription billing or official dollar caps. Upgrade to 0.1.13 and restart CPA, preserving the data directory and Docker persistent mount. This protection does not recover files lost from a deleted unmounted container or establish the cause of the separately reported Compose/reinstall incident.
 
+### v0.1.14
+
+Add a [pinned Magpie usage/accounting audit](docs/magpie-usage-audit.md) covering token bucket semantics, API-equivalent valuation, quota extrapolation and CPA 8.0.22 callback limits. The report documents reproduced issues and suggested follow-up fixes; this release does not implement those accounting or forecast fixes. Runtime behavior remains the same as v0.1.13 apart from version metadata. Existing installations do not need to upgrade for the report alone. If upgrading, restart CPA and preserve the data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
