@@ -578,7 +578,12 @@ for(const language of ['zh','en']){
     const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{cost:1.25},{cost:.001185},{cost:0},{cost:.004925,failed:true},{cost:9,missing_price:true},{},{cost:-1},{cost:Infinity},{cost:'1.2'}]});
     const nodes=descendants(d.elements.get('recent-table')),costs=nodes.filter(n=>n.className==='num usd-value request-cost');
     assert(nodes.some(n=>n.tag==='th'&&n.textContent===(language==='en'?'Cost':'金额')));assert.deepEqual(costs.map(n=>n.textContent),['$1.25','$0.001185','$0.000','$0.004925','—','—','—','—','—']);assert.match(costs[1].title,/0\.001185 USD/);assert.match(costs[1].title,language==='en'?/not a subscription charge/:/不是订阅扣款/);assert.equal(costs[4].title,language==='en'?'Model price missing; amount unavailable':'缺少模型单价，金额暂不可用');
+    assert.match(costs[0].title,language==='en'?/including applicable long-context tiers/:/包含适用的长上下文档位/);
     d.api.setLanguage(language==='en'?'zh':'en');const translated=descendants(d.elements.get('recent-table')).find(n=>n.className==='num usd-value request-cost');assert.match(translated.title,language==='en'?/不是订阅扣款/:/not a subscription charge/);
+  });
+  test(`${language}: incomplete and inconsistent usage explain unknown cost`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample({recent:[{total:1000,missing_price:true,usage_quality:'unclassified'},{input:100,cache_read:200,missing_price:true,usage_quality:'inconsistent'}]});
+    const costs=descendants(d.elements.get('recent-table')).filter(n=>n.className==='num usd-value request-cost');assert.deepEqual(costs.map(n=>n.textContent),['—','—']);assert(costs.every(n=>n.title===(language==='en'?'Usage buckets are incomplete or inconsistent; amount unavailable':'用量分桶不完整或不一致，金额暂不可用')));
   });
   test(`${language}: previous-cycle forecasts explain their actual basis without quota arithmetic`,()=>{
     const d=dashboard({},undefined,{language});d.api.renderSample({quotas:[{provider:'codex',five_hour:{used_percent:0,observed_tokens:100,observed_cost:.01,estimated_total_tokens:6400,estimated_total_cost:.06,estimated_basis:'previous'}}]});

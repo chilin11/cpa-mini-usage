@@ -58,7 +58,7 @@ func TestContextPricingUsesDeclaredThreshold(t *testing.T) {
 	e := newEngine()
 	e.prices = prices
 	for _, input := range []int64{200001, 272000, 272001} {
-		ev := Event{Provider: "codex", Model: "test", Input: input, CacheRead: 100000, Output: 1000}
+		ev := Event{Provider: "openai", Model: "test", Input: input, CacheRead: 100000, Output: 1000}
 		want := float64(input-100000)*2.5/1e6 + .025 + .015
 		if input > 272000 {
 			want = float64(input-100000)*5/1e6 + .05 + .0225
@@ -250,18 +250,15 @@ func TestSnapshotCostRevaluationDoesNotMutatePersistedEvents(t *testing.T) {
 	}
 }
 
-func TestMissingCacheReadPriceManagerPlusDefault(t *testing.T) {
+func TestMissingCachePricesAreUnknown(t *testing.T) {
 	for _, provider := range []string{"codex", "claude"} {
-		e := newEngine()
-		e.prices[priceProvider(provider)+"/test"] = ModelPrice{Input: 2, CacheWrite: floatPtr(0)}
-		ev := Event{Provider: provider, Model: "test", Input: 1000, CacheRead: 500, CacheWrite: 100}
-		want := .0009 // 400 ordinary input + 500 read at 10%, write explicitly free.
-		if provider == "claude" {
-			want = .0021 // Independent read/write buckets do not reduce native input.
-		}
-		cost, ok := e.eventCost(ev)
-		if !ok || math.Abs(cost-want) > 1e-12 {
-			t.Fatalf("provider=%s cost=%v known=%v", provider, cost, ok)
+		for _, ev := range []Event{{Input: 1000, CacheRead: 500}, {Input: 1000, CacheWrite: 100}} {
+			e := newEngine()
+			e.prices[priceProvider(provider)+"/test"] = ModelPrice{Input: 2}
+			ev.Provider, ev.Model = provider, "test"
+			if cost, ok := e.eventCost(ev); ok {
+				t.Fatalf("missing cache price invented: provider=%s event=%+v cost=%v", provider, ev, cost)
+			}
 		}
 	}
 }

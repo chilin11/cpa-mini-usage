@@ -46,6 +46,7 @@ type RecentEvent struct {
 	Cost         *float64 `json:"cost,omitempty"`
 	MissingPrice bool     `json:"missing_price"`
 	ModelStatus  string   `json:"model_status"`
+	UsageQuality string   `json:"usage_quality"`
 }
 
 type PriceTier struct {
@@ -57,11 +58,12 @@ type PriceTier struct {
 }
 
 type ModelPrice struct {
-	Input       float64    `json:"input"`
-	Output      float64    `json:"output"`
-	CacheRead   *float64   `json:"cache_read,omitempty"`
-	CacheWrite  *float64   `json:"cache_write,omitempty"`
-	ContextTier *PriceTier `json:"context_tier,omitempty"`
+	Input        float64     `json:"input"`
+	Output       float64     `json:"output"`
+	CacheRead    *float64    `json:"cache_read,omitempty"`
+	CacheWrite   *float64    `json:"cache_write,omitempty"`
+	ContextTier  *PriceTier  `json:"context_tier,omitempty"` // Legacy price-cache compatibility.
+	ContextTiers []PriceTier `json:"context_tiers,omitempty"`
 }
 
 type QuotaWindow struct {
@@ -433,7 +435,7 @@ func str(m map[string]any, keys ...string) string {
 func number(m map[string]any, keys ...string) int64 {
 	switch v := getAny(m, keys...).(type) {
 	case float64:
-		if v > 0 {
+		if finite(v) && v >= math.MinInt64 && v < math.MaxInt64 {
 			return int64(v)
 		}
 	case json.Number:
@@ -448,6 +450,9 @@ func f64(v any) (float64, bool)   { x, ok := v.(float64); return x, ok }
 func floatPtr(v float64) *float64 { return &v }
 
 func (e *Engine) eventCost(ev Event) (float64, bool) {
+	if usageQuality(ev) != "complete" {
+		return 0, false
+	}
 	key := normalizeModel(ev.Model)
 	p, ok := e.prices[priceProvider(ev.Provider)+"/"+key]
 	if !ok {
@@ -457,7 +462,17 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 	if normalizeProvider(ev.Provider) == "claude" {
 		contextSize += ev.CacheRead + ev.CacheWrite
 	}
+	var selected *PriceTier
 	if tier := p.ContextTier; tier != nil && contextSize > tier.Threshold {
+		selected = tier
+	}
+	for i := range p.ContextTiers {
+		tier := &p.ContextTiers[i]
+		if contextSize > tier.Threshold && (selected == nil || tier.Threshold >= selected.Threshold) {
+			selected = tier
+		}
+	}
+	if tier := selected; tier != nil {
 		p.Input, p.Output = tier.Input, tier.Output
 		if tier.CacheRead != nil {
 			p.CacheRead = tier.CacheRead
@@ -469,21 +484,22 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 	cached, write, baseInput := ev.CacheRead, ev.CacheWrite, ev.Input
 	if normalizeProvider(ev.Provider) != "claude" {
 		// OpenAI prompt totals include cache reads AND cache writes.
-		cached = min(cached, ev.Input)
-		write = min(write, ev.Input-cached)
 		baseInput = ev.Input - cached - write
 	}
 	cost := float64(baseInput)*p.Input/1e6 + float64(ev.Output)*p.Output/1e6
-	// Manager Plus defaults missing fine-grained cache reads to 10% of input.
-	// An explicitly configured zero remains free; cache writes default to input.
-	readPrice, writePrice := p.Input*0.1, p.Input
-	if p.CacheRead != nil {
-		readPrice = *p.CacheRead
+	// A missing cache price is unknown, not a guessed discount or a free rate.
+	if cached > 0 {
+		if p.CacheRead == nil {
+			return 0, false
+		}
+		cost += float64(cached) * *p.CacheRead / 1e6
 	}
-	if p.CacheWrite != nil {
-		writePrice = *p.CacheWrite
+	if write > 0 {
+		if p.CacheWrite == nil {
+			return 0, false
+		}
+		cost += float64(write) * *p.CacheWrite / 1e6
 	}
-	cost += float64(cached)*readPrice/1e6 + float64(write)*writePrice/1e6
 	if !finite(cost) || cost < 0 {
 		return 0, false
 	}
@@ -682,7 +698,7 @@ func (e *Engine) snapshot() Snapshot {
 		result.TotalRequests++
 		cost, ok := e.eventCost(ev)
 		if len(result.Recent) < 60 {
-			recent := RecentEvent{Event: ev, MissingPrice: !ok, ModelStatus: modelObservationStatus(ev)}
+			recent := RecentEvent{Event: ev, MissingPrice: !ok, UsageQuality: usageQuality(ev), ModelStatus: modelObservationStatus(ev)}
 			recent.AuthID = e.canonicalAuth(ev.AuthID)
 			if ok {
 				recent.Cost = floatPtr(cost)
@@ -816,13 +832,13 @@ func decodePrices(raw []byte) (map[string]ModelPrice, error) {
 	var data map[string]struct {
 		Models map[string]struct {
 			Cost struct {
-				Input      float64  `json:"input"`
-				Output     float64  `json:"output"`
+				Input      *float64 `json:"input"`
+				Output     *float64 `json:"output"`
 				CacheRead  *float64 `json:"cache_read"`
 				CacheWrite *float64 `json:"cache_write"`
 				Tiers      []struct {
-					Input      float64  `json:"input"`
-					Output     float64  `json:"output"`
+					Input      *float64 `json:"input"`
+					Output     *float64 `json:"output"`
 					CacheRead  *float64 `json:"cache_read"`
 					CacheWrite *float64 `json:"cache_write"`
 					Tier       struct {
@@ -839,14 +855,32 @@ func decodePrices(raw []byte) (map[string]ModelPrice, error) {
 	output := make(map[string]ModelPrice)
 	for _, provider := range []string{"openai", "anthropic"} {
 		for id, m := range data[provider].Models {
-			if m.Cost.Input == 0 && m.Cost.Output == 0 {
+			if m.Cost.Input == nil || m.Cost.Output == nil {
 				continue
 			}
-			price := ModelPrice{Input: m.Cost.Input, Output: m.Cost.Output, CacheRead: m.Cost.CacheRead, CacheWrite: m.Cost.CacheWrite}
+			price := ModelPrice{Input: *m.Cost.Input, Output: *m.Cost.Output, CacheRead: m.Cost.CacheRead, CacheWrite: m.Cost.CacheWrite}
 			for _, tier := range m.Cost.Tiers {
-				if tier.Tier.Type == "context" && tier.Tier.Size > 0 && (price.ContextTier == nil || tier.Tier.Size < price.ContextTier.Threshold) {
-					price.ContextTier = &PriceTier{Threshold: tier.Tier.Size, Input: tier.Input, Output: tier.Output, CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite}
+				if tier.Tier.Type != "context" || tier.Tier.Size <= 0 {
+					continue
 				}
+				resolved := PriceTier{Threshold: tier.Tier.Size, Input: price.Input, Output: price.Output, CacheRead: price.CacheRead, CacheWrite: price.CacheWrite}
+				if tier.Input != nil {
+					resolved.Input = *tier.Input
+				}
+				if tier.Output != nil {
+					resolved.Output = *tier.Output
+				}
+				if tier.CacheRead != nil {
+					resolved.CacheRead = tier.CacheRead
+				}
+				if tier.CacheWrite != nil {
+					resolved.CacheWrite = tier.CacheWrite
+				}
+				price.ContextTiers = append(price.ContextTiers, resolved)
+			}
+			sort.SliceStable(price.ContextTiers, func(i, j int) bool { return price.ContextTiers[i].Threshold < price.ContextTiers[j].Threshold })
+			if len(price.ContextTiers) > 0 {
+				price.ContextTier = &price.ContextTiers[0]
 			}
 			output[provider+"/"+normalizeModel(id)] = price
 		}

@@ -215,7 +215,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.14</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.15</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -290,6 +290,7 @@ const translations={
   '无效的账户标识。':'Invalid account ID.','未找到账户。':'Account not found.','已有额度刷新正在进行，请稍后重试。':'A quota refresh is already running. Please retry later.',
   '未知服务商':'Unknown provider','未知模型':'Unknown model','未知凭证':'Unknown credential','5 小时':'5 hours','7 天':'7 days','额度未知':'Quota unknown','剩余':'remaining','未知':'Unknown',
   '{window}官方剩余额度':'Official remaining quota: {window}','{percent}% 剩余':'{percent}% remaining','美元估算':'USD estimate','token':'tokens','缺少模型单价，金额暂不可用':'Model price missing; amount unavailable',
+  '用量分桶不完整或不一致，金额暂不可用':'Usage buckets are incomplete or inconsistent; amount unavailable',
   '观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%':'Observed: {observed} tokens\nEstimated total: observed tokens × 100 / {used}%',
   '观测成本：{cost}\n总额换算：观测成本 × 100 ÷ {used}%':'Observed cost: {cost}\nEstimated total: observed cost × 100 / {used}%',
   '已用（观测）':'Used (observed)','预估总额':'Est. total','参考上一周期的实际用量；不是按当前已用比例外推。':'Based on actual usage in the previous cycle, not the current quota fraction.','预估依据暂不可用，请刷新额度。':'Forecast basis unavailable; refresh quota.',
@@ -304,6 +305,7 @@ const translations={
   '当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。':'No requests observed for this filter. New requests appear after the next snapshot sync.',
   '近 7 天凭证用量及模型':'Credential usage and models over the last 7 days','凭证':'Credential','模型':'Model','请求':'Requests','输入':'Input','输出':'Output','缓存读取':'Cache read','总 token':'Total tokens','估算美元':'Estimated USD',
   '总输入':'Total input','金额':'Cost','按当前模型单价计算的 API 等价金额，不是订阅扣款。':'API-equivalent cost at current model prices, not a subscription charge.',
+  '按标准 API 价格比较，包含适用的长上下文档位；不是订阅扣款。':'Compared at Standard API prices, including applicable long-context tiers; not a subscription charge.',
   '总输入包含普通输入、缓存读取和缓存写入。':'Total input includes ordinary input, cache reads and cache writes.','总输入已包含缓存，缓存读写不能重复相加。':'Total input already includes cache; do not add cache reads/writes again.',
   '{n} 次失败':'{n} failures','价格缺失':'Price missing','各模型观测用量 · 近 7 天':'Observed model usage · Last 7 days','暂无模型明细。':'No model details yet.','{n} 次请求 · {tokens} token · {cost}':'{n} requests · {tokens} tokens · {cost}',
   '显示 {start}–{end} / {n} 条':'Showing {start}–{end} / {n}','暂无近期记录':'No recent records','等待请求快照':'Waiting for request snapshot','暂无近期请求':'No recent requests',
@@ -634,7 +636,7 @@ function addWindow(parent,title,period,win){
   const observedAmount=add(amounts,'div','observed-cost',money(validEstimate(win?.observed_cost))),amount=add(amounts,'div','estimate-cost',money(cost));
   const available=validEstimate(win?.estimated_total_tokens);
   const observedTokens=addTokens(tokenRow,'div','observed-value',win?.observed_tokens),tokenValue=addTokens(tokenRow,'div','estimate-value',available);
-  observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。');
+  observedTokens.title+='\n'+t('本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。');observedAmount.title=t('本机观测的 API 等价成本，不是官方账单或订阅扣款。')+'\n'+t('按标准 API 价格比较，包含适用的长上下文档位；不是订阅扣款。');
   const basis=win?.estimated_basis==='unused'?t('本 5 小时窗口尚未使用，预估总额显示为 0；不引用上一周期或缓存预估。'):win?.estimate_retained?t('保留本周期上次有效预估；新比例或价格暂不可用，等待额度刷新。'):win?.estimated_basis==='previous'?t('参考上一周期的实际用量；不是按当前已用比例外推。'):available==null&&cost==null?t('预估依据暂不可用，请刷新额度。'):null;
   const estimateTokens=win?.estimate_observed_tokens??win?.observed_tokens,estimateCost=win?.estimate_observed_cost??win?.observed_cost,estimateUsed=win?.estimate_used_percent??win?.used_percent;
   tokenValue.title+='\n'+(basis||t('观测：{observed} token\n总额换算：观测 token × 100 ÷ {used}%',{observed:fmt(estimateTokens),used:estimateUsed??'—'}));
@@ -742,7 +744,7 @@ function renderRecent(){
     const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
     const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addRequestModel(tr,x);
     addInputCell(tr,x,x.provider||credential.provider);addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
-    addTokens(tr,'td','num',x.total,'');const costValue=x.missing_price?null:validEstimate(x.cost),costCell=addCell(tr,requestMoney(costValue),'num usd-value request-cost');costCell.title=costValue==null?t('缺少模型单价，金额暂不可用'):'$'+String(costValue)+' USD\n'+t('按当前模型单价计算的 API 等价金额，不是订阅扣款。');
+    addTokens(tr,'td','num',x.total,'');const costValue=x.missing_price?null:validEstimate(x.cost),costCell=addCell(tr,requestMoney(costValue),'num usd-value request-cost');costCell.title=costValue==null?t(x.usage_quality==='unclassified'||x.usage_quality==='inconsistent'?'用量分桶不完整或不一致，金额暂不可用':'缺少模型单价，金额暂不可用'):'$'+String(costValue)+' USD\n'+t('按当前模型单价计算的 API 等价金额，不是订阅扣款。')+'\n'+t('按标准 API 价格比较，包含适用的长上下文档位；不是订阅扣款。');
     addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
   });
 }

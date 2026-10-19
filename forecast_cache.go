@@ -7,9 +7,10 @@ import (
 
 // Only one active-cycle estimate per account/window; never store credentials.
 type SavedForecast struct {
-	ResetAt  time.Time      `json:"reset_at"`
-	Seconds  int64          `json:"seconds"`
-	Estimate WindowEstimate `json:"estimate"`
+	ResetAt       time.Time      `json:"reset_at"`
+	Seconds       int64          `json:"seconds"`
+	Estimate      WindowEstimate `json:"estimate"`
+	PricingPolicy string         `json:"pricing_policy,omitempty"`
 }
 
 func forecastValue(v *float64) bool { return v != nil && finite(*v) && *v >= 0 }
@@ -37,7 +38,11 @@ func (e *Engine) resolveForecastLocked(q AccountQuota, period string, now time.T
 	}
 	active := err == nil && now.Before(reset) && seconds > 0 && seconds <= int64((35*24*time.Hour)/time.Second) && !reset.Add(-time.Duration(seconds)*time.Second).After(now)
 	changed := false
-	if exists && (!active || !saved.ResetAt.Equal(reset) || saved.Seconds != seconds) {
+	policy := ""
+	if normalizeProvider(q.Provider) == "codex" {
+		policy = "api-standard-v1"
+	}
+	if exists && (!active || !saved.ResetAt.Equal(reset) || saved.Seconds != seconds || saved.PricingPolicy != policy) {
 		delete(e.forecasts, key)
 		exists = false
 		changed = true
@@ -51,7 +56,7 @@ func (e *Engine) resolveForecastLocked(q AccountQuota, period string, now time.T
 	validTokens, validCost := forecastValue(out.EstimatedTotalTokens), forecastValue(out.EstimatedTotalCost)
 	if (validTokens || validCost) && (out.EstimatedBasis == "quota" || out.EstimatedBasis == "previous") && !(exists && (out.EstimatedBasis == "previous" || (!validCost && forecastValue(saved.Estimate.EstimatedTotalCost)))) {
 		fresh := WindowEstimate{EstimatedTotalTokens: out.EstimatedTotalTokens, EstimatedTotalCost: out.EstimatedTotalCost, EstimatedBasis: out.EstimatedBasis, EstimatedAt: out.EstimatedAt, EstimateObservedTokens: out.EstimateObservedTokens, EstimateObservedCost: out.EstimateObservedCost, EstimateUsedPercent: out.EstimateUsedPercent}
-		candidate := SavedForecast{ResetAt: reset, Seconds: seconds, Estimate: fresh}
+		candidate := SavedForecast{ResetAt: reset, Seconds: seconds, Estimate: fresh, PricingPolicy: policy}
 		if !exists || !reflect.DeepEqual(saved, candidate) {
 			e.forecasts[key] = candidate
 			changed = true
