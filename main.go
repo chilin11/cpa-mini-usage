@@ -44,7 +44,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.15"
+const pluginVersion = "0.1.16"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -168,6 +168,7 @@ func dispatch(method string, body []byte) []byte {
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh-account"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/consume-reset"},
 			},
 			"Resources": []map[string]string{
 				{"Path": "/dashboard", "Menu": "Mini Usage", "Description": "Quotas and credential usage"},
@@ -186,6 +187,7 @@ func dispatch(method string, body []byte) []byte {
 			return okEnvelope(httpResponse(200, "text/html; charset=utf-8", []byte(dashboardHTML)))
 		}
 		if req.Method == "GET" && strings.HasSuffix(req.Path, "/"+pluginID+"/data") {
+			tracker.syncAuthStatus(hostRPC)
 			data, err := json.Marshal(tracker.snapshot())
 			if err != nil {
 				return okEnvelope(httpResponse(500, "application/json", []byte(`{"error":"snapshot_encoding_failed"}`)))
@@ -213,6 +215,23 @@ func dispatch(method string, body []byte) []byte {
 				result = map[string]any{"error": failure}
 			}
 			body, _ := json.Marshal(result)
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/consume-reset") {
+			var input struct {
+				AuthID          string `json:"auth_id"`
+				RedeemRequestID string `json:"redeem_request_id"`
+			}
+			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
+			}
+			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID)
+			var body []byte
+			if failure != "" {
+				body, _ = json.Marshal(map[string]any{"error": failure})
+			} else {
+				body, _ = json.Marshal(result)
+			}
 			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
 		}
 		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/settings") {

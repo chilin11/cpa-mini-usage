@@ -57,6 +57,13 @@ The recent request table has a **Time** column with separate **First token** and
 
 Audited benchmark definitions differ: [vLLM](https://github.com/vllm-project/vllm/blob/193922d6ff5f7e213eacadd3cb7dd96612b30ed3/vllm/benchmarks/serve.py) and [SGLang](https://github.com/sgl-project/sglang/blob/78218194adf0c6bef69aa6f71919751fee9f3834/python/sglang/benchmark/serving.py) calculate TPOT as `(latency − TTFT) / (output tokens − 1)` with a shared client timing basis; its inverse is post-first-token speed. [llama.cpp](https://github.com/ggml-org/llama.cpp/blob/10a60cf303566e10d6a7a2774c17d2085503d87b/tools/ui/src/lib/components/app/chat/ChatMessages/ChatMessageStatistics/ChatMessageStatistics.svelte) uses server-reported generation count/time. CPA 8.0.22 starts latency at reporter creation but may start TTFT at upstream transport and may fall back to the first packet. The plugin cannot derive an exact pure-decode interval from these two fields, so it does not pretend the subtraction is one.
 
+### Account actions
+
+Each quota card can manage its credential without switching to CPA's own pages:
+
+- **Enable switch** (on = enabled) calls CPA's official `PATCH /v0/management/auth-files/status` with the saved same-origin management key, exactly like CPA's credential switch. One click flips it in either direction; while the request runs the switch shows the requested state and is locked, and a failure snaps back to CPA's actual state. Disabled cards show a **Disabled** badge with dimmed windows. Every snapshot re-reads CPA's live state, so changes made in CPA's own UI appear on the next sync.
+- **Use reset** (Codex only, shown when the official remaining reset count is positive and the account is enabled) spends **one** rate-limit reset credit via the official Codex `POST /backend-api/wham/rate-limit-reset-credits/consume`, after a second click within 5 seconds. The OAuth token stays inside the plugin. Each confirmed click sends a fresh random `redeem_request_id`; after a network/5xx failure the same id is reused on retry so the provider can answer `already_redeemed` instead of spending twice. One request per account may run at a time, there is no direct-HTTP fallback, and the account's quota refreshes afterwards. Outcomes `reset`, `nothing_to_reset`, `no_credit` and `already_redeemed` are explained on the card.
+
 ### Limits of estimates
 
 - Percentages and reset times are read from the provider's **OAuth quota endpoint** and are not calculated from token counts.
@@ -73,7 +80,7 @@ Audited benchmark definitions differ: [vLLM](https://github.com/vllm-project/vll
 
 ### Security
 
-Resource HTML is public by design; actual usage/quota data comes only from **management-key-protected** plugin routes. Upstream credential tokens and CPA management keys are not written to disk, emitted in API responses, or included in logs. OAuth lookups are restricted to known HTTPS hosts.
+Resource HTML is public by design; actual usage/quota data comes only from **management-key-protected** plugin routes. Upstream credential tokens and CPA management keys are not written to disk, emitted in API responses, or included in logs. OAuth lookups are restricted to known HTTPS hosts; the only write request to a provider is the fixed Codex reset-credit consume URL, sent only after an explicit confirmed click.
 
 ### Limitations
 
@@ -150,6 +157,10 @@ Add a [pinned Magpie usage/accounting audit](docs/magpie-usage-audit.md) coverin
 ### v0.1.15
 
 Fix unknown-cost handling for nonzero total-only usage and inconsistent cache buckets, without rewriting raw token history. Preserve all declared context-price tiers, select the highest applicable threshold and inherit omitted rates from base prices; explicit zero remains free, while a missing price for a used cache bucket remains unknown. Keep one Standard API-equivalent valuation for all requests, including Codex OAuth, so values can be compared with API-priced dashboards; this includes applicable long-context tiers and does not represent subscription deductions. Version Codex forecast caches to prevent retaining estimates from another pricing policy. Add bilingual accounting tooltips, regression tests and a [pinned gateway comparison](docs/magpie-accounting-fix.md). Upgrade the plugin and restart CPA while preserving the data directory and Docker persistent mount.
+
+### v0.1.16
+
+Manage accounts from each quota card: an enable switch (one click, via CPA's official `PATCH /v0/management/auth-files/status`, live state on every snapshot) and, for Codex accounts with remaining reset credits, **Use reset** with a 5-second second-click confirmation that spends one credit through the official consume endpoint with an idempotent `redeem_request_id`. Tokens stay in the plugin; there is no direct-HTTP fallback for the write. Accounting, forecasts and persistence are unchanged. Upgrade to 0.1.16 and restart CPA, keeping the existing data directory.
 
 ## Optional CPA Plugin Store source
 

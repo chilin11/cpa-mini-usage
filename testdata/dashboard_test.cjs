@@ -49,7 +49,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(options.fakeClock)fakeNow+=ms;callback();}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, consumeReset, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events};
 }
@@ -705,4 +705,118 @@ test('storage read-only protection is explicit and cannot be toggled away',async
   assert.equal(d.elements.get('persistence-status').textContent,'Read-only protection');
   assert.match(d.elements.get('persistence-control').title,/memory only/);
   assert.match(d.elements.get('persistence-control').title,/\/persistent\/usage/);
+});
+
+const resetButton=card=>descendants(card).find(n=>n.className==='button account-action account-reset');
+const toggleButton=card=>descendants(card).find(n=>n.className==='account-switch');
+const accountNoteNode=card=>descendants(card).find(n=>n.className==='account-note');
+function actionAccounts(){const sample=sampleSnapshot();return {...sample,quotas:[
+  {auth_id:'codex-a',provider:'codex',name:'alice@example.com',manual_reset_remaining:2,five_hour:{used_percent:100}},
+  {auth_id:'codex-zero',provider:'codex',name:'zero@example.com',manual_reset_remaining:0},
+  {auth_id:'codex-off',provider:'codex',name:'off@example.com',manual_reset_remaining:3,disabled:true},
+  {auth_id:'claude-a',provider:'claude',name:'claude@example.com',manual_reset_remaining:1},
+]};}
+
+for(const language of ['zh','en']){
+  test(`${language}: reset and status controls render only where supported and are translated`,()=>{
+    const d=dashboard({},undefined,{language});d.api.renderSample(actionAccounts());
+    const a=panel(d.elements,'codex-a'),zero=panel(d.elements,'codex-zero'),off=panel(d.elements,'codex-off'),claude=panel(d.elements,'claude-a');
+    assert(resetButton(a));assert(!resetButton(zero));assert(!resetButton(off));assert(!resetButton(claude));
+    assert.equal(resetButton(a).textContent,language==='en'?'Use reset':'使用重置卡');
+    for(const card of [a,off]){assert.equal(toggleButton(card).getAttribute('role'),'switch');assert.equal(toggleButton(card).textContent,'');assert(descendants(toggleButton(card)).some(n=>n.className==='switch-thumb'));}
+    assert.equal(toggleButton(a).getAttribute('aria-checked'),'true');assert.equal(toggleButton(off).getAttribute('aria-checked'),'false');
+    assert.equal(toggleButton(a).title,language==='en'?'Enabled; click to disable':'已启用，点击禁用');assert.equal(toggleButton(off).title,language==='en'?'Disabled; click to enable':'已禁用，点击启用');
+    assert(off.className.includes('account-disabled'));assert(descendants(off).some(n=>n.className==='account-state'&&n.textContent===(language==='en'?'Disabled':'已禁用')));
+    assert(!descendants(a).some(n=>n.className==='account-state'));
+    assert.equal(toggleButton(claude).getAttribute('aria-label'),language==='en'?'Enable claude@example.com':'启用 claude@example.com');
+    if(language==='en')for(const node of descendants(d.elements.get('quota-cards'))){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);assert(!/[\u3400-\u9fff]/.test(node.title||''),node.title);for(const v of Object.values(node.attributes))assert(!/[\u3400-\u9fff]/.test(v),v);}
+  });
+}
+
+test('reset credit needs a second click, posts one idempotent request, then refreshes that account',async()=>{
+  const calls=[];let consumed=false;
+  const d=dashboard(login(),async(url,options)=>{calls.push({url,options});
+    if(url.endsWith('consume-reset')){consumed=true;return reply({code:'reset',windows_reset:2});}
+    if(url.endsWith('refresh-account'))return reply({refresh_finished_at:'before'},202);
+    const sample=actionAccounts();if(consumed)sample.account_refresh={'codex-a':{refreshing:false,finished_at:'after'}};return reply(sample);});
+  await d.api.load();const before=calls.length;
+  await resetButton(panel(d.elements,'codex-a')).onclick();
+  assert.equal(calls.length,before,'first click must not spend a credit');
+  assert.equal(resetButton(panel(d.elements,'codex-a')).textContent,'确认使用重置卡？');assert(resetButton(panel(d.elements,'codex-a')).classes.has('armed'));
+  await resetButton(panel(d.elements,'codex-a')).onclick();
+  const posts=calls.filter(c=>c.url.endsWith('consume-reset'));assert.equal(posts.length,1);
+  assert.equal(posts[0].url,'/v0/management/plugins/cpa-mini-usage/consume-reset');assert.equal(posts[0].options.method,'POST');assert.equal(posts[0].options.headers.Authorization,'Bearer key');
+  const body=JSON.parse(posts[0].options.body);assert.equal(body.auth_id,'codex-a');assert.match(body.redeem_request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(calls.filter(c=>c.url.endsWith('refresh-account')).length,1);
+  assert.equal(accountNoteNode(panel(d.elements,'codex-a')).textContent,'已使用重置卡，重置了 2 个额度窗口。');
+  assert.equal(resetButton(panel(d.elements,'codex-a')).textContent,'使用重置卡');assert.equal(resetButton(panel(d.elements,'codex-a')).disabled,false);
+});
+
+test('reset outcomes are explained; ambiguous failures reuse the redeem id and rejections do not',async()=>{
+  for(const [code,zh] of [['nothing_to_reset','当前没有需要重置的额度窗口。'],['no_credit','没有可用的重置卡。'],['already_redeemed','该重置请求已处理，未重复扣除。']]){
+    const d=dashboard(login(),async url=>url.endsWith('consume-reset')?reply({code,windows_reset:0}):url.endsWith('refresh-account')?reply({refresh_finished_at:'x'},202):reply({...actionAccounts(),account_refresh:{'codex-a':{refreshing:false,finished_at:'y'}}}));
+    await d.api.load();await d.api.consumeReset('codex-a');await d.api.consumeReset('codex-a');
+    assert.equal(accountNoteNode(panel(d.elements,'codex-a')).textContent,zh);
+  }
+  const ids=[];let mode=503;
+  const d=dashboard(login(),async(url,options)=>{if(url.endsWith('consume-reset')){ids.push(JSON.parse(options.body).redeem_request_id);return reply({error:mode===503?'reset endpoint unavailable':'reset_busy'},mode);}return reply(actionAccounts());});
+  await d.api.load();
+  for(let i=0;i<2;i++){await d.api.consumeReset('codex-a');await d.api.consumeReset('codex-a');}
+  assert.equal(ids.length,2);assert.equal(ids[0],ids[1],'retry after an ambiguous failure must reuse the redeem id');
+  assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'重置接口不可用，请稍后重试。');
+  mode=409;await d.api.consumeReset('codex-a');await d.api.consumeReset('codex-a');assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'重置卡请求正在处理中。');
+  await d.api.consumeReset('codex-a');await d.api.consumeReset('codex-a');
+  assert.equal(ids.length,4);assert.equal(ids[2],ids[0]);assert.notEqual(ids[3],ids[2],'a definitive rejection starts a new request id');
+});
+
+test('reset errors never echo backend text',async()=>{
+  const d=dashboard(login(),async url=>url.endsWith('consume-reset')?reply({error:'access_token=secret'},502):reply(actionAccounts()));
+  await d.api.load();await d.api.consumeReset('codex-a');await d.api.consumeReset('codex-a');
+  assert(!/secret/.test(accountError(panel(d.elements,'codex-a')).textContent));assert(accountError(panel(d.elements,'codex-a')).textContent);
+});
+
+test('the switch flips CPA status with one click in both directions; state follows the snapshot',async()=>{
+  const calls=[];let disabled=false;
+  const snapshot=()=>{const s=actionAccounts();s.quotas=s.quotas.map(q=>q.auth_id==='codex-a'?{...q,disabled}:q);return s;};
+  const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('/auth-files/status')){disabled=JSON.parse(options.body).disabled;return reply({status:'ok',disabled});}return reply(snapshot());});
+  await d.api.load();
+  await toggleButton(panel(d.elements,'codex-a')).onclick();
+  const patch=calls.filter(c=>c.url.endsWith('/auth-files/status'));assert.equal(patch.length,1);
+  assert.equal(patch[0].url,'/v0/management/auth-files/status');assert.equal(patch[0].options.method,'PATCH');assert.equal(patch[0].options.headers.Authorization,'Bearer key');assert.equal(patch[0].options.headers['Content-Type'],'application/json');
+  assert.deepEqual(JSON.parse(patch[0].options.body),{name:'codex-a',disabled:true});
+  assert(calls.at(-1).url.endsWith('/data'),'status change is followed by a snapshot');
+  let card=panel(d.elements,'codex-a');assert(card.className.includes('account-disabled'));assert(!resetButton(card));assert.equal(toggleButton(card).getAttribute('aria-checked'),'false');
+  assert.equal(accountNoteNode(card).textContent,'账户已禁用，CPA 不会再调度它。');
+  await toggleButton(card).onclick();
+  assert.deepEqual(JSON.parse(calls.filter(c=>c.url.endsWith('/auth-files/status'))[1].options.body),{name:'codex-a',disabled:false});
+  card=panel(d.elements,'codex-a');assert(!card.className.includes('account-disabled'));assert(resetButton(card));assert.equal(toggleButton(card).getAttribute('aria-checked'),'true');assert.equal(accountNoteNode(card).textContent,'账户已启用。');
+});
+
+test('status API failures are translated without leaking text, and auth failures return to sign-in',async()=>{
+  for(const [status,error,want] of [[404,'auth file not found','未找到账户。'],[500,'failed to update auth: token=secret','同步失败，可手动重试。']]){
+    const d=dashboard(login(),async url=>url.endsWith('/auth-files/status')?reply({error},status):reply(actionAccounts()));
+    await d.api.load();await d.api.toggleAccount('codex-off',false);
+    const card=panel(d.elements,'codex-off');assert.equal(accountError(card).textContent,want);assert(card.className.includes('account-disabled'));assert(!/secret/.test(accountError(card).textContent));
+  }
+  const d=dashboard(login(),async url=>url.endsWith('/auth-files/status')?reply({},401):reply(actionAccounts()));
+  await d.api.load();await d.api.toggleAccount('codex-off',false);
+  assert(!panel(d.elements,'codex-off'));assert(d.elements.get('dashboard').classes.has('needs-login'));
+});
+
+test('an in-flight action locks only its own card',async()=>{
+  let release;const d=dashboard(login(),async url=>url.endsWith('consume-reset')?new Promise(r=>release=()=>r(reply({code:'nothing_to_reset'}))):url.endsWith('refresh-account')?reply({error:'account_not_found'},404):reply(actionAccounts()));
+  await d.api.load();await d.api.consumeReset('codex-a');const pending=d.api.consumeReset('codex-a');
+  const a=panel(d.elements,'codex-a'),zero=panel(d.elements,'codex-zero');
+  assert.equal(resetButton(a).disabled,true);assert.equal(resetButton(a).textContent,'正在使用…');assert.equal(toggleButton(a).disabled,true);assert.equal(refreshButton(a).disabled,true);
+  assert.equal(toggleButton(zero).disabled,false);assert.equal(refreshButton(zero).disabled,false);
+  release();await pending;assert.equal(toggleButton(panel(d.elements,'codex-a')).disabled,false);
+});
+
+test('the switch shows the requested state while busy and snaps back on failure',async()=>{
+  let release;const d=dashboard(login(),async url=>url.endsWith('/auth-files/status')?new Promise(r=>release=()=>r(reply({error:'auth file not found'},404))):reply(actionAccounts()));
+  await d.api.load();const pending=toggleButton(panel(d.elements,'codex-a')).onclick();
+  let sw=toggleButton(panel(d.elements,'codex-a'));assert.equal(sw.getAttribute('aria-checked'),'false');assert.equal(sw.getAttribute('aria-busy'),'true');assert.equal(sw.disabled,true);assert.equal(sw.title,'正在禁用…');
+  assert.equal(toggleButton(panel(d.elements,'codex-zero')).disabled,false);
+  release();await pending;sw=toggleButton(panel(d.elements,'codex-a'));
+  assert.equal(sw.getAttribute('aria-checked'),'true');assert.equal(sw.getAttribute('aria-busy'),'false');assert.equal(sw.disabled,false);assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'未找到账户。');
 });

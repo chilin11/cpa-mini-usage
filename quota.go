@@ -17,6 +17,7 @@ type AuthEntry struct {
 	ID       string
 	Name     string
 	Provider string
+	Disabled bool
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
@@ -179,39 +180,17 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.aliases[entry.Index] = entry.ID
 	e.mu.Unlock()
-	authData, err := hostRPC("host.auth.get", map[string]string{"auth_index": entry.Index})
-	if err != nil || authData == nil {
-		authData, err = hostRPC("host.auth.get", map[string]string{"AuthIndex": entry.Index})
+	headers, email, failure := providerHeaders(entry, hostRPC)
+	if email != "" {
+		entry.Name = email
 	}
-	if err != nil {
-		e.recordQuotaError(entry, "Credential could not be read")
-		return false
-	}
-	creds := findAuthJSON(authData)
-	if email := findString(creds, 0, "email", "Email"); strings.Contains(email, "@") {
-		entry.Name = accountDisplayName(email)
-	}
-	token := findString(creds, 0, "access_token", "accessToken")
-	if token == "" {
-		e.recordQuotaError(entry, "OAuth access token unavailable")
-		return false
-	}
-	if len(token) > 10000 {
-		e.recordQuotaError(entry, "Invalid OAuth token")
+	if failure != "" {
+		e.recordQuotaError(entry, failure)
 		return false
 	}
 	url := "https://api.anthropic.com/api/oauth/usage"
-	headers := http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "User-Agent": []string{"claude-code/2.1.0"}, "Anthropic-Beta": []string{"oauth-2025-04-20"}}
 	if entry.Provider == "codex" {
 		url = "https://chatgpt.com/backend-api/wham/usage"
-		headers.Set("User-Agent", "codex-cli/0.1")
-		id := findString(creds, 0, "chatgpt_account_id", "chatgptAccountId", "account_id")
-		if id == "" {
-			id = extractJWTAccountID(findString(creds, 0, "id_token", "idToken"))
-		}
-		if id != "" {
-			headers.Set("Chatgpt-Account-Id", id)
-		}
 	}
 	body, err := safeProviderGET(url, headers)
 	if err != nil {
@@ -237,7 +216,7 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, Disabled: entry.Disabled}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	if state, ok := e.accountRefresh[entry.ID]; ok {
 		state.Error = ""
@@ -247,6 +226,43 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.mu.Unlock()
 	return true
 }
+
+// providerHeaders reads one CPA credential and builds the fixed OAuth headers for its provider.
+// The access token never leaves the plugin; failures are stable, secret-free messages.
+func providerHeaders(entry AuthEntry, rpc func(string, any) (any, error)) (http.Header, string, string) {
+	authData, err := rpc("host.auth.get", map[string]string{"auth_index": entry.Index})
+	if err != nil || authData == nil {
+		authData, err = rpc("host.auth.get", map[string]string{"AuthIndex": entry.Index})
+	}
+	if err != nil {
+		return nil, "", "Credential could not be read"
+	}
+	creds := findAuthJSON(authData)
+	email := ""
+	if value := findString(creds, 0, "email", "Email"); strings.Contains(value, "@") {
+		email = accountDisplayName(value)
+	}
+	token := findString(creds, 0, "access_token", "accessToken")
+	if token == "" {
+		return nil, email, "OAuth access token unavailable"
+	}
+	if len(token) > 10000 {
+		return nil, email, "Invalid OAuth token"
+	}
+	headers := http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "User-Agent": []string{"claude-code/2.1.0"}, "Anthropic-Beta": []string{"oauth-2025-04-20"}}
+	if entry.Provider == "codex" {
+		headers.Set("User-Agent", "codex-cli/0.1")
+		id := findString(creds, 0, "chatgpt_account_id", "chatgptAccountId", "account_id")
+		if id == "" {
+			id = extractJWTAccountID(findString(creds, 0, "id_token", "idToken"))
+		}
+		if id != "" {
+			headers.Set("Chatgpt-Account-Id", id)
+		}
+	}
+	return headers, email, ""
+}
+
 func (e *Engine) quotaFailure(message string) { e.mu.Lock(); e.quotaError = message; e.mu.Unlock() }
 func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	e.mu.Lock()
@@ -255,6 +271,7 @@ func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	prior.AuthID = a.ID
 	prior.Provider = a.Provider
 	prior.Name = a.Name
+	prior.Disabled = a.Disabled
 	prior.Error = message
 	if state, ok := e.accountRefresh[a.ID]; ok && !state.Refreshing {
 		state.Error = message
@@ -304,7 +321,11 @@ func parseAuthList(v any) []AuthEntry {
 			name = shortID(id)
 		}
 		name = accountDisplayName(name)
-		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider})
+		disabled, _ := getAny(r, "disabled", "Disabled").(bool)
+		if strings.EqualFold(str(r, "status", "Status"), "disabled") {
+			disabled = true
+		}
+		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, Disabled: disabled})
 	}
 	return entries
 }
@@ -560,7 +581,8 @@ func parseManualResetRemaining(body []byte) *int64 {
 
 const codexResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 
-// GET-only details fallback used by the official Codex client. Never call /consume.
+// GET-only details fallback used by the official Codex client. Spending a credit is only
+// done by the explicit, confirmed consume-reset route in account_actions.go.
 func codexResetRemaining(usage []byte, headers http.Header, get func(string, http.Header) ([]byte, error)) *int64 {
 	if count := parseManualResetRemaining(usage); count != nil {
 		return count

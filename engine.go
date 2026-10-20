@@ -81,6 +81,7 @@ type AccountQuota struct {
 	FetchedAt            string       `json:"fetched_at"`
 	Error                string       `json:"error,omitempty"`
 	ManualResetRemaining *int64       `json:"manual_reset_remaining,omitempty"`
+	Disabled             bool         `json:"disabled,omitempty"`
 }
 
 type WindowEstimate struct {
@@ -109,6 +110,7 @@ type QuotaView struct {
 	FetchedAt            string          `json:"fetched_at,omitempty"`
 	Error                string          `json:"error,omitempty"`
 	ManualResetRemaining *int64          `json:"manual_reset_remaining,omitempty"`
+	Disabled             bool            `json:"disabled,omitempty"`
 }
 
 type ModelStat struct {
@@ -182,6 +184,7 @@ type Engine struct {
 	done                 chan struct{}
 	stopOnce             sync.Once
 	refreshMu            sync.RWMutex
+	consuming            map[string]bool
 	lastRefresh          time.Time
 }
 
@@ -193,7 +196,7 @@ func newEngine() *Engine {
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
+	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), consuming: make(map[string]bool), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
 }
 
 func (e *Engine) start() {
@@ -673,7 +676,7 @@ func (e *Engine) snapshot() Snapshot {
 		five, changedFive := e.resolveForecastLocked(q, "5h", now)
 		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
 		forecastsChanged = forecastsChanged || changedFive || changedWeek
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining})
+		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, Disabled: q.Disabled})
 	}
 	if forecastsChanged {
 		e.persistQuotasLocked()

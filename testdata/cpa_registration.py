@@ -16,7 +16,8 @@ import urllib.request
 library = Path(sys.argv[1]).resolve()
 assert library.is_file(), library
 base = "https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.22/"
-archive_name = "CLIProxyAPI_8.0.22_linux_amd64.tar.gz"
+platform = os.getenv("CPA_PLATFORM", "linux_amd64")  # e.g. darwin_aarch64 for a local run
+archive_name = f"CLIProxyAPI_8.0.22_{platform}.tar.gz"
 key = "cpa-registration-test-only"
 root = Path(tempfile.mkdtemp(prefix="cpa-registration-", dir=os.getenv("RUNNER_TEMP") or os.getenv("PI_SCRATCH_DIR")))
 process = None
@@ -34,8 +35,9 @@ try:
     assert len(executables) == 1, f"CPA executable not found: {executables}"
     executable = executables[0]
     executable.chmod(0o755)
-    (root / "plugins/linux/amd64").mkdir(parents=True)
-    shutil.copy2(library, root / "plugins/linux/amd64/cpa-mini-usage.so")
+    plugin_dir = root / "plugins" / platform.replace("aarch64", "arm64").replace("_", "/")
+    plugin_dir.mkdir(parents=True)
+    shutil.copy2(library, plugin_dir / ("cpa-mini-usage" + library.suffix))
     (root / "auth").mkdir()
     (root / "auth/test-codex.json").write_text(json.dumps({"type": "codex", "email": "test-account@example.invalid"}))
     (root / "config.yaml").write_text(f"""config-version: 8
@@ -152,6 +154,37 @@ plugins:
         assert refresh.get("error"), "Tokenless test account must report failure without making provider calls"
         assert state["quota_refresh_finished_at"] == full_finished, "Single-account refresh changed full refresh state"
         print("PASS single-account refresh: HTTP 202, observable failure completion, full scan untouched")
+        consume_url = refresh_url.rsplit("/", 1)[0] + "/consume-reset"
+        redeem = "0f8fad5b-d9cb-469f-a165-70867728950e"
+        for authenticated, payload, expected, code in [
+            (False, {"auth_id": auth_id, "redeem_request_id": redeem}, (401, 403), None),
+            (True, {"auth_id": auth_id, "redeem_request_id": "short"}, (400,), "invalid_redeem_request_id"),
+            (True, {"auth_id": "unknown", "redeem_request_id": redeem}, (404,), "account_not_found"),
+            # Tokenless test credential: rejected before any provider request is made.
+            (True, {"auth_id": auth_id, "redeem_request_id": redeem}, (502,), "OAuth access token unavailable"),
+        ]:
+            headers = {"Content-Type": "application/json"}
+            if authenticated:
+                headers["Authorization"] = "Bearer " + key
+            req = urllib.request.Request(consume_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+            try:
+                urllib.request.urlopen(req, timeout=5)
+            except urllib.error.HTTPError as error:
+                assert error.code in expected, (error.code, expected)
+                if code:
+                    assert json.loads(error.read())["error"] == code, code
+            else:
+                raise AssertionError("Reset route incorrectly accepted the request")
+        print("PASS reset route: authentication, validation and tokenless rejection without provider calls")
+        status_url = "http://127.0.0.1:18317/v0/management/auth-files/status"
+        for disabled in (True, False):
+            req = urllib.request.Request(status_url, data=json.dumps({"name": auth_id, "disabled": disabled}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="PATCH")
+            with urllib.request.urlopen(req, timeout=5) as response:
+                assert response.status == 200 and json.loads(response.read())["disabled"] is disabled
+            state = json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
+            account = next(q for q in state["quotas"] if q["auth_id"] == auth_id)
+            assert account.get("disabled", False) is disabled, account
+        print("PASS CPA status API: disable/enable reflected in the next plugin snapshot")
         assert state["persistence"]["enabled"] is True
         totals = next(credential for credential in state["credentials"] if credential["auth_id"] == "timing-only")
         assert totals["total_input"] == 900 and totals["uncached_input"] == 900 and totals["cache_write"] == 0
