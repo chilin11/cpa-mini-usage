@@ -44,7 +44,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.16"
+const pluginVersion = "0.1.17"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -169,6 +169,7 @@ func dispatch(method string, body []byte) []byte {
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh-account"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/consume-reset"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/reset-credits"},
 			},
 			"Resources": []map[string]string{
 				{"Path": "/dashboard", "Menu": "Mini Usage", "Description": "Quotas and credential usage"},
@@ -217,15 +218,32 @@ func dispatch(method string, body []byte) []byte {
 			body, _ := json.Marshal(result)
 			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
 		}
-		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/consume-reset") {
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/reset-credits") {
 			var input struct {
-				AuthID          string `json:"auth_id"`
-				RedeemRequestID string `json:"redeem_request_id"`
+				AuthID string `json:"auth_id"`
 			}
 			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil {
 				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
 			}
-			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID)
+			status, list, failure := tracker.listResetCredits(input.AuthID)
+			var body []byte
+			if failure != "" {
+				body, _ = json.Marshal(map[string]any{"error": failure})
+			} else {
+				body, _ = json.Marshal(list)
+			}
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/consume-reset") {
+			var input struct {
+				AuthID          string `json:"auth_id"`
+				RedeemRequestID string `json:"redeem_request_id"`
+				CreditID        string `json:"credit_id"`
+			}
+			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
+			}
+			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID, input.CreditID)
 			var body []byte
 			if failure != "" {
 				body, _ = json.Marshal(map[string]any{"error": failure})

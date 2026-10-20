@@ -156,26 +156,31 @@ plugins:
         print("PASS single-account refresh: HTTP 202, observable failure completion, full scan untouched")
         consume_url = refresh_url.rsplit("/", 1)[0] + "/consume-reset"
         redeem = "0f8fad5b-d9cb-469f-a165-70867728950e"
-        for authenticated, payload, expected, code in [
-            (False, {"auth_id": auth_id, "redeem_request_id": redeem}, (401, 403), None),
-            (True, {"auth_id": auth_id, "redeem_request_id": "short"}, (400,), "invalid_redeem_request_id"),
-            (True, {"auth_id": "unknown", "redeem_request_id": redeem}, (404,), "account_not_found"),
+        credits_url = refresh_url.rsplit("/", 1)[0] + "/reset-credits"
+        for url, authenticated, payload, expected, code in [
+            (consume_url, False, {"auth_id": auth_id, "redeem_request_id": redeem}, (401, 403), None),
+            (consume_url, True, {"auth_id": auth_id, "redeem_request_id": "short"}, (400,), "invalid_redeem_request_id"),
+            (consume_url, True, {"auth_id": auth_id, "redeem_request_id": redeem, "credit_id": "has space"}, (400,), "invalid_credit_id"),
+            (consume_url, True, {"auth_id": "unknown", "redeem_request_id": redeem}, (404,), "account_not_found"),
             # Tokenless test credential: rejected before any provider request is made.
-            (True, {"auth_id": auth_id, "redeem_request_id": redeem}, (502,), "OAuth access token unavailable"),
+            (consume_url, True, {"auth_id": auth_id, "redeem_request_id": redeem, "credit_id": "credit-1"}, (502,), "OAuth access token unavailable"),
+            (credits_url, False, {"auth_id": auth_id}, (401, 403), None),
+            (credits_url, True, {"auth_id": "unknown"}, (404,), "account_not_found"),
+            (credits_url, True, {"auth_id": auth_id}, (502,), "OAuth access token unavailable"),
         ]:
             headers = {"Content-Type": "application/json"}
             if authenticated:
                 headers["Authorization"] = "Bearer " + key
-            req = urllib.request.Request(consume_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+            req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
             try:
                 urllib.request.urlopen(req, timeout=5)
             except urllib.error.HTTPError as error:
-                assert error.code in expected, (error.code, expected)
+                assert error.code in expected, (url, error.code, expected)
                 if code:
-                    assert json.loads(error.read())["error"] == code, code
+                    assert json.loads(error.read())["error"] == code, (url, code)
             else:
-                raise AssertionError("Reset route incorrectly accepted the request")
-        print("PASS reset route: authentication, validation and tokenless rejection without provider calls")
+                raise AssertionError("Reset route incorrectly accepted the request: " + url)
+        print("PASS reset routes: credit list and consume authentication, validation and tokenless rejection without provider calls")
         status_url = "http://127.0.0.1:18317/v0/management/auth-files/status"
         for disabled in (True, False):
             req = urllib.request.Request(status_url, data=json.dumps({"name": auth_id, "disabled": disabled}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="PATCH")

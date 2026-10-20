@@ -49,7 +49,7 @@ func TestConsumeResetPostsOfficialRequestOnce(t *testing.T) {
 		}
 		return 200, []byte(`{"code":"reset","windows_reset":2}`), nil
 	}
-	status, result, failure := e.consumeResetWith("a", testRedeemKey, actionRPC(t, []any{codexFile("a")}), post)
+	status, result, failure := e.consumeResetWith("a", testRedeemKey, "", actionRPC(t, []any{codexFile("a")}), post)
 	if status != 200 || failure != "" || result.Code != "reset" || result.WindowsReset != 2 || posts != 1 {
 		t.Fatalf("got %d %+v %q posts=%d", status, result, failure, posts)
 	}
@@ -82,13 +82,13 @@ func TestConsumeResetRejectsUnsafeRequestsWithoutPosting(t *testing.T) {
 		{"c", testRedeemKey, "reset_unsupported", 400},
 	}
 	for _, tc := range cases {
-		status, _, failure := e.consumeResetWith(tc.id, tc.key, rpc, post)
+		status, _, failure := e.consumeResetWith(tc.id, tc.key, "", rpc, post)
 		if status != tc.status || failure != tc.code {
 			t.Errorf("%q/%q: %d %q", tc.id, tc.key, status, failure)
 		}
 	}
 	// Known locally but no longer a Codex credential in CPA.
-	status, _, failure := e.consumeResetWith("a", testRedeemKey, actionRPC(t, []any{}), post)
+	status, _, failure := e.consumeResetWith("a", testRedeemKey, "", actionRPC(t, []any{}), post)
 	if status != 404 || failure != "account_not_found" {
 		t.Fatalf("stale account %d %q", status, failure)
 	}
@@ -107,13 +107,13 @@ func TestConsumeResetAllowsOneInFlightPerAccount(t *testing.T) {
 	}
 	rpc := actionRPC(t, []any{codexFile("a"), codexFile("b")})
 	done := make(chan int)
-	go func() { status, _, _ := e.consumeResetWith("a", testRedeemKey, rpc, post); done <- status }()
+	go func() { status, _, _ := e.consumeResetWith("a", testRedeemKey, "", rpc, post); done <- status }()
 	<-started
-	if status, _, failure := e.consumeResetWith("a", testRedeemKey, rpc, post); status != 409 || failure != "reset_busy" {
+	if status, _, failure := e.consumeResetWith("a", testRedeemKey, "", rpc, post); status != 409 || failure != "reset_busy" {
 		t.Fatalf("busy %d %q", status, failure)
 	}
 	other := make(chan int)
-	go func() { status, _, _ := e.consumeResetWith("b", testRedeemKey, rpc, post); other <- status }()
+	go func() { status, _, _ := e.consumeResetWith("b", testRedeemKey, "", rpc, post); other <- status }()
 	close(release)
 	if <-done != 200 || <-other != 200 {
 		t.Fatal("consume did not finish")
@@ -144,7 +144,7 @@ func TestConsumeResetMapsProviderFailures(t *testing.T) {
 		post := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
 			return tc.status, []byte(tc.body), tc.err
 		}
-		status, _, failure := e.consumeResetWith("a", testRedeemKey, rpc, post)
+		status, _, failure := e.consumeResetWith("a", testRedeemKey, "", rpc, post)
 		if status != 502 || failure != tc.want {
 			t.Errorf("%d %s: %d %q", tc.status, tc.body, status, failure)
 		}
@@ -155,7 +155,7 @@ func TestConsumeResetMapsProviderFailures(t *testing.T) {
 	post := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
 		return 200, []byte(`{"code":"no_credit","windows_reset":0}`), nil
 	}
-	if status, result, _ := e.consumeResetWith("a", testRedeemKey, rpc, post); status != 200 || result.Code != "no_credit" || *e.quotas["a"].ManualResetRemaining != 0 {
+	if status, result, _ := e.consumeResetWith("a", testRedeemKey, "", rpc, post); status != 200 || result.Code != "no_credit" || *e.quotas["a"].ManualResetRemaining != 0 {
 		t.Fatalf("no_credit %d %+v", status, result)
 	}
 	noCount := newEngine()
@@ -163,7 +163,7 @@ func TestConsumeResetMapsProviderFailures(t *testing.T) {
 	reset := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
 		return 200, []byte(`{"code":"reset","windows_reset":1}`), nil
 	}
-	if noCount.consumeResetWith("a", testRedeemKey, rpc, reset); noCount.quotas["a"].ManualResetRemaining != nil {
+	if noCount.consumeResetWith("a", testRedeemKey, "", rpc, reset); noCount.quotas["a"].ManualResetRemaining != nil {
 		t.Fatal("unknown count must stay unknown")
 	}
 }
@@ -249,5 +249,127 @@ func TestQuotaReadKeepsDisabledFlag(t *testing.T) {
 	e.recordQuotaError(AuthEntry{ID: "a", Index: "1", Provider: "codex", Name: "A"}, "Quota endpoint unavailable")
 	if e.quotas["a"].Disabled {
 		t.Fatal("re-enabled account still disabled")
+	}
+}
+
+const sampleResetCredits = `{"available_count":3,"credits":[
+ {"id":"late","reset_type":"codex_rate_limits","status":"available","granted_at":"2026-10-01T00:00:00Z","expires_at":"2026-12-01T00:00:00Z","title":"Full reset"},
+ {"id":"forever","reset_type":"codex_rate_limits","status":"available","granted_at":"2026-10-01T00:00:00Z","expires_at":null},
+ {"id":"used","reset_type":"codex_rate_limits","status":"redeemed","granted_at":"2026-09-01T00:00:00Z","expires_at":"2026-10-22T00:00:00Z"},
+ {"id":"soon","reset_type":"codex_rate_limits","status":"available","granted_at":"2026-10-01T00:00:00Z","expires_at":"2026-10-25T08:00:00+08:00","description":"  Reset your current usage limits  "}
+]}`
+
+func TestListResetCreditsOrdersEarliestExpiryFirst(t *testing.T) {
+	e := newEngine()
+	one := int64(1)
+	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex", ManualResetRemaining: &one}
+	gets := 0
+	get := func(url string, headers http.Header) ([]byte, error) {
+		gets++
+		if url != codexResetCreditsURL || headers.Get("Authorization") != "Bearer secret-token" {
+			t.Fatalf("get %s %v", url, headers)
+		}
+		return []byte(sampleResetCredits), nil
+	}
+	status, list, failure := e.listResetCreditsWith("a", actionRPC(t, []any{codexFile("a")}), get)
+	if status != 200 || failure != "" || gets != 1 {
+		t.Fatalf("got %d %q gets=%d", status, failure, gets)
+	}
+	ids := []string{}
+	for _, c := range list.Credits {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, ",") != "soon,late,forever" || list.AvailableCount != 3 {
+		t.Fatalf("order %v count %d", ids, list.AvailableCount)
+	}
+	if list.Credits[0].ExpiresAt != "2026-10-25T00:00:00Z" || list.Credits[0].Description != "Reset your current usage limits" || list.Credits[2].ExpiresAt != "" {
+		t.Fatalf("credits %+v", list.Credits)
+	}
+	if *e.quotas["a"].ManualResetRemaining != 3 {
+		t.Fatal("fresh count must replace the cached one")
+	}
+	encoded, _ := json.Marshal(list)
+	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "used") {
+		t.Fatalf("leak or redeemed credit: %s", encoded)
+	}
+}
+
+func TestParseResetCreditsFailsClosed(t *testing.T) {
+	for _, body := range []string{
+		`{}`, `{"credits":[]}`, `{"available_count":-1,"credits":[]}`, `{"available_count":1.5}`,
+		`{"available_count":1,"credits":[{"id":"x","status":"available","expires_at":"tomorrow"}]}`,
+		`{"available_count":1,"credits":[{"id":"has space","status":"available"}]}`,
+		`{"available_count":1,"credits":[{"id":"","status":"available"}]}`,
+	} {
+		if _, ok := parseResetCredits([]byte(body)); ok {
+			t.Errorf("accepted %s", body)
+		}
+	}
+	// Count without details stays usable; the dashboard lets OpenAI choose.
+	list, ok := parseResetCredits([]byte(`{"available_count":2}`))
+	if !ok || list.AvailableCount != 2 || list.Credits == nil || len(list.Credits) != 0 {
+		t.Fatalf("%+v %v", list, ok)
+	}
+	// Never offer more credits than the official available count.
+	list, ok = parseResetCredits([]byte(strings.Replace(sampleResetCredits, `"available_count":3`, `"available_count":1`, 1)))
+	if !ok || len(list.Credits) != 1 || list.Credits[0].ID != "soon" {
+		t.Fatalf("%+v", list)
+	}
+}
+
+func TestListResetCreditsRejectsUnknownAndFailedReads(t *testing.T) {
+	e := newEngine()
+	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}
+	e.quotas["c"] = AccountQuota{AuthID: "c", Provider: "claude"}
+	never := func(string, http.Header) ([]byte, error) { t.Fatal("must not read"); return nil, nil }
+	rpc := actionRPC(t, []any{codexFile("a")})
+	for id, want := range map[string]string{"": "invalid_auth_id", "missing": "account_not_found", "c": "reset_unsupported"} {
+		if _, _, failure := e.listResetCreditsWith(id, rpc, never); failure != want {
+			t.Errorf("%q: %q", id, failure)
+		}
+	}
+	fail := func(string, http.Header) ([]byte, error) { return nil, fmt.Errorf("quota HTTP 500") }
+	if status, _, failure := e.listResetCreditsWith("a", rpc, fail); status != 502 || failure != "reset credits unavailable" {
+		t.Fatalf("%d %q", status, failure)
+	}
+	bad := func(string, http.Header) ([]byte, error) { return []byte(`{"credits":"x"}`), nil }
+	if status, _, failure := e.listResetCreditsWith("a", rpc, bad); status != 502 || failure != "reset credits invalid" {
+		t.Fatalf("%d %q", status, failure)
+	}
+}
+
+func TestConsumeResetSendsChosenCreditID(t *testing.T) {
+	e := newEngine()
+	two := int64(2)
+	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex", ManualResetRemaining: &two}
+	var sent map[string]any
+	code := "reset"
+	post := func(_ string, _ http.Header, body []byte, _ func(string, any) (any, error)) (int, []byte, error) {
+		sent = nil
+		if err := json.Unmarshal(body, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return 200, []byte(`{"code":"` + code + `","windows_reset":1}`), nil
+	}
+	rpc := actionRPC(t, []any{codexFile("a")})
+	if status, _, failure := e.consumeResetWith("a", testRedeemKey, "soon", rpc, post); status != 200 || failure != "" {
+		t.Fatalf("%d %q", status, failure)
+	}
+	if len(sent) != 2 || sent["credit_id"] != "soon" || sent["redeem_request_id"] != testRedeemKey || *e.quotas["a"].ManualResetRemaining != 1 {
+		t.Fatalf("sent %v remaining %d", sent, *e.quotas["a"].ManualResetRemaining)
+	}
+	// A chosen credit that is gone says nothing about the remaining ones.
+	code = "no_credit"
+	if _, result, _ := e.consumeResetWith("a", testRedeemKey, "soon", rpc, post); result.Code != "no_credit" || *e.quotas["a"].ManualResetRemaining != 1 {
+		t.Fatalf("%+v remaining %d", result, *e.quotas["a"].ManualResetRemaining)
+	}
+	never := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
+		t.Fatal("must not post")
+		return 0, nil, nil
+	}
+	for _, id := range []string{"has space", strings.Repeat("x", 257), "中文"} {
+		if status, _, failure := e.consumeResetWith("a", testRedeemKey, id, rpc, never); status != 400 || failure != "invalid_credit_id" {
+			t.Errorf("%q: %d %q", id, status, failure)
+		}
 	}
 }

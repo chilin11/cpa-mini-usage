@@ -145,7 +145,27 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account-switch[aria-checked=true]:hover:not(:disabled) .switch-track{border-color:var(--good)}
 .account-switch[aria-busy=true]{cursor:progress}
 .account-switch[aria-busy=true] .switch-track{border-style:dashed;opacity:.7}
-.account-action.armed:not(:disabled){color:var(--bad);border-color:var(--bad);background:var(--bad-soft);font-weight:650}
+.modal{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(6,12,22,.55)}
+.modal-card{display:flex;flex-direction:column;gap:12px;width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.28)}
+.modal-card:focus{outline:none}
+.modal-sub{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.reset-options{display:flex;flex-direction:column;gap:8px}
+.reset-option{display:grid;grid-template-columns:16px minmax(0,1fr);column-gap:10px;align-items:start;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);color:var(--ink);text-align:left}
+.reset-option:hover{border-color:var(--accent)}
+.reset-option[aria-checked=true]{border-color:var(--accent);background:var(--accent-soft)}
+.reset-radio{width:14px;height:14px;margin-top:3px;border:1.5px solid var(--edge);border-radius:50%;background:var(--panel)}
+.reset-option[aria-checked=true] .reset-radio{border:4px solid var(--accent)}
+.reset-option-main{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.reset-option-title{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13px;font-weight:600}
+.reset-badge{padding:0 6px;border:1px solid var(--warm);border-radius:4px;background:var(--warm-soft);color:var(--warm);font-size:10px;font-weight:600;line-height:1.6}
+.reset-option-detail{font-size:12px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.reset-option-desc{font-size:11px;color:var(--muted)}
+.modal-message{padding:8px 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.modal-message.error{color:var(--bad)}
+.modal-message.warn{color:var(--warm)}
+.modal-warning{font-size:11px;line-height:1.6;color:var(--muted)}
+.modal-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.modal-primary:not(:disabled),.modal-primary:hover:not(:disabled){border-color:var(--accent);background:var(--accent);color:var(--panel)}
 .empty{grid-column:1/-1;min-width:0;padding:32px 20px;border:1px dashed var(--edge);border-radius:var(--radius);background:var(--panel);text-align:center;color:var(--muted);overflow-wrap:anywhere}
 .empty-symbol{display:none}
 .empty strong{font-size:13px;font-weight:600;color:var(--ink)}
@@ -232,7 +252,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.16</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.17</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -267,6 +287,15 @@ tbody tr:focus-within>td{background:var(--hover)}
 </section>
 <footer class="foot" id="footer" data-i18n="页面每分钟同步 · 额度每 15 分钟检查">页面每分钟同步 · 额度每 15 分钟检查</footer>
 </main>
+<div id="reset-dialog" class="modal" hidden>
+  <div id="reset-card" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-subtitle" tabindex="-1">
+    <h2 id="reset-title" data-i18n="使用重置卡">使用重置卡</h2>
+    <p id="reset-subtitle" class="modal-sub"></p>
+    <div id="reset-body" class="reset-options" role="radiogroup" aria-label="选择重置卡"></div>
+    <p id="reset-warning" class="modal-warning"></p>
+    <div class="modal-actions"><button class="button" type="button" id="reset-retry" data-i18n="重新读取">重新读取</button><button class="button" type="button" id="reset-cancel" data-i18n="取消">取消</button><button class="button modal-primary" type="button" id="reset-confirm" data-i18n="确认使用">确认使用</button></div>
+  </div>
+</div>
 <script>
 (() => {
 'use strict';
@@ -277,9 +306,9 @@ const accountJobs=new Map();
 let statusKey='正在读取登录状态', alertKeys=[];
 let settingsJob=null,settingsError=null;
 const cardCache=new Map(), accountErrors=new Map();
-// Per-account write actions: in-flight jobs, 5s two-step confirmations, transient notes, and
-// redeem ids kept across an ambiguous failure so a retry is idempotent upstream.
-const actionJobs=new Map(), armed=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
+// Per-account write actions: in-flight jobs, transient notes, and the redeem id (plus chosen
+// credit) kept across an ambiguous failure so a retry is idempotent upstream.
+const actionJobs=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
 let pageSize = 20,requestJob=null,requestStatusKey='';
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
@@ -343,9 +372,17 @@ const translations={
   '只读保护':'Read-only protection','存储读取不完整，已停止写盘以保护原文件。新记录仅保留在内存；请先备份并修复数据文件或权限，再重启 CPA。':'Storage was not fully readable; disk writes are blocked to protect the originals. New records remain in memory only. Back up and repair the files or permissions, then restart CPA.',
   '数据保存在独立文件夹，插件更新后仍会保留。关闭仅停止未来请求、额度和价格的保存，不会删除已保存的历史；开启会保存当前内存数据。':'Data is saved in an independent folder and retained across plugin updates. Disabling stops future request, quota and price saves; it never deletes saved history. Enabling saves current in-memory data.',
   '数据目录：':'Data directory:',
-  '使用重置卡':'Use reset','确认使用重置卡？':'Confirm reset?','正在使用…':'Using…','为 {name} 使用一张重置卡':'Use one reset credit for {name}',
+  '使用重置卡':'Use reset','正在使用…':'Using…','为 {name} 使用一张重置卡':'Use one reset credit for {name}',
+  '选择重置卡':'Choose a reset credit','账户：{name}':'Account: {name}','可用 {n} 张':'{n} available','正在读取重置卡…':'Loading reset credits…',
+  '完整重置':'Full reset','重置当前用量额度':'Reset your current usage limits','不过期':'Does not expire','已到期':'Expired','{date} 过期':'Expires {date}','剩 {d} 天 {h} 小时':'{d}d {h}h left','剩 {h} 小时':'{h}h left','不足 1 小时':'Under 1h left',
+  '最早过期':'Expires first','由 OpenAI 自动选择':'Chosen by OpenAI','未返回卡片明细，将由 OpenAI 决定扣哪一张。':'No credit details were returned; OpenAI will choose which credit to spend.',
+  '默认选中最早过期的一张。确认后立即消耗，无法撤销。':'The credit expiring first is selected by default. Confirming spends it immediately; this cannot be undone.',
+  '确认后立即消耗一张重置卡，无法撤销。':'Confirming spends one reset credit immediately; this cannot be undone.',
+  '上次请求结果未知。确认将用同一请求重试，不会重复扣除。':'The previous request had an unknown result. Confirming retries the same request and will not charge twice.',
+  '重试同一请求':'Retry same request','确认使用':'Use this reset','取消':'Cancel','重新读取':'Reload',
+  '重置卡读取失败，请稍后重试。':'Loading reset credits failed. Please retry later.','重置卡明细格式异常。':'Invalid reset credit details.','重置卡标识无效。':'Invalid reset credit id.',
+  '这张重置卡已不可用，请重新选择。':'That reset credit is no longer available. Please choose again.',
   '已禁用':'Disabled','启用 {name}':'Enable {name}','已启用，点击禁用':'Enabled; click to disable','已禁用，点击启用':'Disabled; click to enable','正在禁用…':'Disabling…','正在启用…':'Enabling…',
-  '再次点击确认；5 秒后自动取消。':'Click again to confirm; cancels after 5 seconds.',
   '已使用重置卡，重置了 {n} 个额度窗口。':'Reset credit used; {n} quota window(s) reset.','当前没有需要重置的额度窗口。':'No quota window needs a reset.',
   '没有可用的重置卡。':'No reset credits available.','该重置请求已处理，未重复扣除。':'This reset request was already processed; nothing was charged twice.',
   '重置卡使用失败，请稍后重试。':'Using the reset credit failed. Please retry later.','重置请求无效，请重试。':'Invalid reset request. Please retry.','此账户不支持重置卡。':'This account does not support reset credits.',
@@ -365,7 +402,7 @@ function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
-  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。'};
+  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。'};
   if(text==='storage_write_failed')return '无法保存设置，请稍后重试。';
   if(known[text])return known[text];
   if(/host callback|invalid host response/.test(text))return '主机接口请求失败。';
@@ -378,7 +415,7 @@ function applyLanguage(){
   document.documentElement.lang=language==='en'?'en':'zh-CN';document.title=t('用量与额度')+' · CPA Mini Usage';$('language').value=language;
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
-  $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();
+  $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();renderResetDialog();
 }
 function setLanguage(value,persist=true){
   language=value==='en'?'en':'zh';if(persist){try{localStorage.setItem(languageStorage,language);}catch{}}
@@ -531,9 +568,9 @@ async function api(path,method='GET',body) {
 const remoteAccountBusy=()=>Object.values(data?.account_refresh||{}).some(state=>state?.refreshing);
 function syncAccountControls(){
   for(const [id,entry] of cardCache){
-    const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度'),job=actionJobs.get(id),arm=armedAction(id);
+    const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度'),job=actionJobs.get(id);
     entry.button.disabled=busy||Boolean(job);if(entry.button.textContent!==label)entry.button.textContent=label;
-    if(entry.reset)syncActionButton(entry.reset,job?.kind==='reset'?'正在使用…':arm==='reset'?'确认使用重置卡？':'使用重置卡',busy||Boolean(job),job?.kind==='reset',arm==='reset',{text:'为 {name} 使用一张重置卡',values:{name:entry.name}});
+    if(entry.reset)syncActionButton(entry.reset,job?.kind==='reset'?'正在使用…':'使用重置卡',busy||Boolean(job),job?.kind==='reset',{text:'为 {name} 使用一张重置卡',values:{name:entry.name}});
     syncSwitch(entry.toggle,job,entry.disabled,entry.name);
     const note=accountNote(id),noteText=note?message(note):'';if(entry.note.textContent!==noteText)entry.note.textContent=noteText;entry.note.hidden=!noteText;
     if(entry.button.getAttribute('aria-busy')!==String(busy))entry.button.setAttribute('aria-busy',String(busy));
@@ -556,7 +593,7 @@ function syncControls(){
   $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
-  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();armed.clear();accountNotes.clear();pendingRedeem.clear();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
+  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
   setAlert(msg);render();
@@ -639,10 +676,10 @@ async function refreshAccount(id){
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else showAccountError(id,err.ui||errorKey(err.message,'账户额度刷新失败，请稍后重试。'));
   }finally{if(accountJobs.get(id)===job){accountJobs.delete(id);syncAccountControls();}}
 }
-function syncActionButton(button,labelKey,disabled,busy,isArmed,aria){
+function syncActionButton(button,labelKey,disabled,busy,aria){
   const label=t(labelKey);if(button.textContent!==label)button.textContent=label;button.disabled=disabled;
-  if(button.getAttribute('aria-busy')!==String(busy))button.setAttribute('aria-busy',String(busy));button.classList.toggle('armed',isArmed);
-  const name=message(aria);button.setAttribute('aria-label',name);button.title=isArmed?t('再次点击确认；5 秒后自动取消。'):name;
+  if(button.getAttribute('aria-busy')!==String(busy))button.setAttribute('aria-busy',String(busy));button.setAttribute('aria-haspopup','dialog');
+  const name=message(aria);button.setAttribute('aria-label',name);button.title=name;
 }
 // The switch shows the requested state while its request runs; a failure snaps back to CPA's state.
 function syncSwitch(button,job,disabled,name){
@@ -651,8 +688,6 @@ function syncSwitch(button,job,disabled,name){
   button.setAttribute('aria-label',t('启用 {name}',{name}));
   button.title=t(pending?(job.kind==='enable'?'正在启用…':'正在禁用…'):enabled?'已启用，点击禁用':'已禁用，点击启用');
 }
-function armedAction(id){const state=armed.get(id);if(!state)return '';if(Date.now()>state.until){armed.delete(id);return '';}return state.kind;}
-function arm(id,kind){armed.set(id,{kind,until:Date.now()+5000});syncAccountControls();setTimeout(syncAccountControls,5100);}
 function accountNote(id){const note=accountNotes.get(id);if(!note)return null;if(Date.now()>note.until){accountNotes.delete(id);return null;}return note.value;}
 function showAccountNote(id,value){if(value){accountNotes.set(id,{value,until:Date.now()+20000});setTimeout(syncAccountControls,20100);}else accountNotes.delete(id);syncAccountControls();}
 function redeemID(){
@@ -661,21 +696,119 @@ function redeemID(){
   bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
   return [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})/,'$1-$2-$3-$4-');
 }
-const resetNotes={reset:n=>({text:'已使用重置卡，重置了 {n} 个额度窗口。',values:{n:fmt(n)}}),nothing_to_reset:()=>'当前没有需要重置的额度窗口。',no_credit:()=>'没有可用的重置卡。',already_redeemed:()=>'该重置请求已处理，未重复扣除。'};
-// Spend one Codex reset credit after a second click. The plugin backend holds the OAuth token.
-async function consumeReset(id){
+const resetNotes={reset:n=>({text:'已使用重置卡，重置了 {n} 个额度窗口。',values:{n:fmt(n)}}),nothing_to_reset:()=>'当前没有需要重置的额度窗口。',no_credit:(_,credit)=>credit?'这张重置卡已不可用，请重新选择。':'没有可用的重置卡。',already_redeemed:()=>'该重置请求已处理，未重复扣除。'};
+// Reset confirmation dialog. The plugin returns available credits earliest-expiry first, the same
+// order the official Codex client offers, and the first is preselected. Nothing is spent until the
+// user confirms; an unresolved earlier attempt can only be retried with its own redeem id and credit.
+let resetDialog=null,resetSerial=0,resetReturnFocus='';
+function expiryText(iso){
+  if(!iso)return t('不过期');
+  const d=new Date(iso);if(!Number.isFinite(d.getTime()))return t('未知时间');
+  const date=d.toLocaleString(locale(),{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+  const left=d.getTime()-Date.now(),hours=Math.floor(left/3600000),days=Math.floor(hours/24);
+  const rest=left<=0?t('已到期'):days>0?t('剩 {d} 天 {h} 小时',{d:days,h:hours%24}):hours>0?t('剩 {h} 小时',{h:hours}):t('不足 1 小时');
+  return t('{date} 过期',{date})+' · '+rest;
+}
+function validResetCredits(value){
+  if(!value||!Number.isSafeInteger(value.available_count)||value.available_count<0||!Array.isArray(value.credits))return null;
+  const ok=value.credits.every(c=>c&&typeof c.id==='string'&&c.id&&['undefined','string'].includes(typeof c.expires_at));
+  return ok?{count:value.available_count,credits:value.credits}:null;
+}
+function textAdd(parent,tag,cls,text){const e=add(parent,tag,cls);e.textContent=text;return e;}
+// Upstream copy is shown as-is, except the official client's default strings, which are localized.
+const upstreamResetCopy={'full reset':'完整重置','reset your current usage limits':'重置当前用量额度'};
+const resetCopy=(text,fallback='')=>{const value=String(text||'').trim();if(!value)return fallback?t(fallback):'';const known=upstreamResetCopy[value.toLowerCase()];return known?t(known):value;};
+function resetOption(creditID,title,detail,description,first){
+  const button=el('button','reset-option'),checked=resetDialog.selected===creditID;button.type='button';
+  button.setAttribute('role','radio');button.setAttribute('aria-checked',String(checked));button.tabIndex=checked?0:-1;button.dataset.creditId=creditID??'';
+  add(button,'span','reset-radio').setAttribute('aria-hidden','true');
+  const main=add(button,'span','reset-option-main'),head=add(main,'span','reset-option-title');textAdd(head,'span','',title);
+  if(first)textAdd(head,'span','reset-badge',t('最早过期'));
+  if(detail)textAdd(main,'span','reset-option-detail',detail);
+  if(description)textAdd(main,'span','reset-option-desc',description);
+  button.onclick=()=>selectResetCredit(creditID);
+  return button;
+}
+function renderResetDialog(){
+  const root=$('reset-dialog'),state=resetDialog;root.hidden=!state;if(!state)return;
+  $('reset-subtitle').textContent=t('账户：{name}',{name:state.name})+(state.count==null?'':' · '+t('可用 {n} 张',{n:fmt(state.count)}));
+  const body=$('reset-body'),nodes=[];
+  if(state.status==='loading')nodes.push(textAdd(body,'p','modal-message',t('正在读取重置卡…')));
+  else if(state.status==='error'){const p=textAdd(body,'p','modal-message error',message(state.error));p.setAttribute('role','alert');nodes.push(p);}
+  else if(state.status==='empty')nodes.push(textAdd(body,'p','modal-message',t('没有可用的重置卡。')));
+  else if(state.status==='retry')nodes.push(textAdd(body,'p','modal-message warn',t('上次请求结果未知。确认将用同一请求重试，不会重复扣除。')));
+  else if(!state.credits.length)nodes.push(resetOption(null,t('由 OpenAI 自动选择'),t('未返回卡片明细，将由 OpenAI 决定扣哪一张。'),'',false));
+  else state.credits.forEach((c,i)=>nodes.push(resetOption(c.id,resetCopy(c.title,'完整重置'),expiryText(c.expires_at),resetCopy(c.description),i===0&&Boolean(c.expires_at)&&state.credits.length>1)));
+  body.replaceChildren(...nodes);
+  const ready=state.status==='ready'||state.status==='retry';
+  $('reset-confirm').disabled=!ready;$('reset-confirm').textContent=t(state.status==='retry'?'重试同一请求':'确认使用');
+  $('reset-retry').hidden=state.status!=='error';
+  $('reset-warning').textContent=t(state.status==='ready'&&state.credits.length?'默认选中最早过期的一张。确认后立即消耗，无法撤销。':'确认后立即消耗一张重置卡，无法撤销。');
+}
+async function loadResetCredits(){
+  const state=resetDialog;if(!state)return;const serial=state.serial;
+  Object.assign(state,{status:'loading',error:null});renderResetDialog();
+  try{
+    const parsed=validResetCredits(await api('reset-credits','POST',{auth_id:state.id}));
+    if(resetDialog?.serial!==serial)return;
+    if(!parsed)Object.assign(state,{status:'error',error:'重置卡明细格式异常。'});
+    else if(parsed.count===0)Object.assign(state,{status:'empty',count:0});
+    else Object.assign(state,{status:'ready',count:parsed.count,credits:parsed.credits,selected:parsed.credits[0]?.id??null});
+  }catch(err){
+    if(resetDialog?.serial!==serial)return;
+    if(err.auth){closeReset();++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
+    Object.assign(state,{status:'error',error:err.ui||'重置卡读取失败，请稍后重试。'});
+  }
+  renderResetDialog();
+  if(state.status==='ready'&&document.activeElement?.id==='reset-card')focusSelectedReset();
+}
+function focusSelectedReset(){$('reset-body').querySelector?.('[aria-checked="true"]')?.focus();}
+async function openReset(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
+  if(actionJobs.has(id)||resetDialog)return;
+  showAccountError(id,null);showAccountNote(id,null);
+  const pending=pendingRedeem.get(id);resetReturnFocus=document.activeElement?.id||'';
+  resetDialog={id,name:cardCache.get(id)?.name||id,serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
+  renderResetDialog();$('reset-card').focus();
+  if(!pending)await loadResetCredits();
+}
+function selectResetCredit(creditID){
+  if(resetDialog?.status!=='ready'||!resetDialog.credits.some(c=>c.id===creditID))return;
+  resetDialog.selected=creditID;renderResetDialog();focusSelectedReset();
+}
+function closeReset(){
+  if(!resetDialog)return;resetDialog=null;resetSerial++;renderResetDialog();
+  const back=resetReturnFocus;resetReturnFocus='';if(back&&document.getElementById(back))restoreFocus(back);
+}
+async function confirmReset(){
+  const state=resetDialog;if(!state||(state.status!=='ready'&&state.status!=='retry'))return;
+  closeReset();await runReset(state.id,state.selected);
+}
+function resetDialogKey(e){
+  if(!resetDialog)return;
+  if(e.key==='Escape'){e.preventDefault();closeReset();return;}
+  if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)&&resetDialog.status==='ready'&&resetDialog.credits.length>1&&e.target?.getAttribute?.('role')==='radio'){
+    e.preventDefault();const ids=resetDialog.credits.map(c=>c.id),step=e.key==='ArrowDown'||e.key==='ArrowRight'?1:ids.length-1;
+    selectResetCredit(ids[(ids.indexOf(resetDialog.selected)+step)%ids.length]);return;
+  }
+  if(e.key==='Tab'){ // Keep focus inside the modal.
+    const items=[...($('reset-card').querySelectorAll?.('button:not([disabled]):not([hidden]),[tabindex="0"]')||[])].filter(n=>!n.closest?.('[hidden]')&&n.tabIndex>=0);if(!items.length)return;
+    const first=items[0],last=items.at(-1),active=document.activeElement;
+    if(e.shiftKey&&(active===first||!items.includes(active))){e.preventDefault();last.focus();}else if(!e.shiftKey&&(active===last||!items.includes(active))){e.preventDefault();first.focus();}
+  }
+}
+// Spend one Codex reset credit. The plugin backend holds the OAuth token.
+async function runReset(id,credit){
   if(actionJobs.has(id))return;
-  if(armedAction(id)!=='reset'){showAccountError(id,null);showAccountNote(id,null);arm(id,'reset');return;}
-  armed.delete(id);
-  const redeem=pendingRedeem.get(id)||redeemID();pendingRedeem.set(id,redeem);
+  const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null};pendingRedeem.set(id,pending);
   const job={kind:'reset',key};actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
   let refresh=false;
   try{
-    const result=await api('consume-reset','POST',{auth_id:id,redeem_request_id:redeem});if(actionJobs.get(id)!==job)return;
+    const body={auth_id:id,redeem_request_id:pending.redeem};if(pending.credit)body.credit_id=pending.credit;
+    const result=await api('consume-reset','POST',body);if(actionJobs.get(id)!==job)return;
     pendingRedeem.delete(id);
-    const note=resetNotes[result?.code];showAccountNote(id,note?note(result.windows_reset):'重置接口响应格式异常。');refresh=Boolean(note);
+    const note=resetNotes[result?.code];showAccountNote(id,note?note(result.windows_reset,pending.credit):'重置接口响应格式异常。');refresh=Boolean(note);
   }catch(err){
     if(actionJobs.get(id)!==job)return;
     if(err.status&&err.status<500)pendingRedeem.delete(id); // Definitive rejection; ambiguous failures keep the id.
@@ -689,7 +822,6 @@ async function toggleAccount(id,disabled){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
   if(actionJobs.has(id))return;
-  armed.delete(id);
   const job={kind:disabled?'disable':'enable',key};actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
   let changed=false;
   try{
@@ -762,7 +894,7 @@ function renderQuotas(){
         const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));if(item.disabled)add(text,'span','account-state','已禁用');
         const actions=add(head,'div','account-actions');
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
-        let reset=null;if(item.provider==='codex'&&!item.disabled&&Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0){reset=add(actions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>consumeReset(item.auth_id);}
+        let reset=null;if(item.provider==='codex'&&!item.disabled&&Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0){reset=add(actions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
         const toggle=add(actions,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
         const button=add(actions,'button','button account-refresh','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
@@ -871,6 +1003,9 @@ $('recent-size').value=String(pageSize);$('recent-size').onchange=e=>{const size
 $('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
+$('reset-cancel').onclick=closeReset;$('reset-confirm').onclick=confirmReset;$('reset-retry').onclick=loadResetCredits;
+$('reset-dialog').onclick=e=>{if(e.target===$('reset-dialog'))closeReset();};
+window.addEventListener('keydown',resetDialogKey);
 window.addEventListener('storage',e=>{if(e.key===languageStorage){setLanguage(initialLanguage(),false);return;}load();});
 window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});
 applyLanguage();
