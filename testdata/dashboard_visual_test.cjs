@@ -152,9 +152,9 @@ if (process.argv[2] === '--serve') {
       assert(contrast(theme[fg], theme[bg]) >= 4.5, `${i ? 'dark' : 'light'} ${fg} on ${bg}: ${contrast(theme[fg], theme[bg]).toFixed(2)}`);
   });
   test('CSS preserves metric hierarchy, cold-blue forecasts, orange mismatch and no motion or external assets', () => {
-    assert.match(css, /\.percent\{font-size:26px/);
-    for (const name of ['observed-cost', 'estimate-cost']) assert.match(css, new RegExp('\\.' + name + '\\{[^}]*font-size:17px'));
-    for (const name of ['observed-value', 'estimate-value']) assert.match(css, new RegExp('\\.' + name + '\\{font-size:14px'));
+    assert.match(css, /\.percent\{font-size:22px/);
+    for (const name of ['observed-cost', 'estimate-cost']) assert.match(css, new RegExp('\\.' + name + '\\{[^}]*font-size:15px'));
+    for (const name of ['observed-value', 'estimate-value']) assert.match(css, new RegExp('\\.' + name + '\\{font-size:12px'));
     assert.match(css, /\.model-badge\.different\{color:var\(--warm\);background:var\(--warm-soft\)/);
     for (const theme of themes) {
       const rgb = theme['--forecast'].slice(1).match(/../g).map(x => parseInt(x, 16));
@@ -212,7 +212,7 @@ if (process.argv[2] === '--serve') {
             assert.equal(measured.animations, 0);assert.equal(measured.network, 0);assert.equal(measured.timers, 2);
             if (tab === 'quota') {
               assert.equal(measured.cards, 3);
-              assert.deepEqual(Object.values(measured.type), ['26px', '17px', '17px', '14px', '14px']);
+              assert.deepEqual(Object.values(measured.type), ['22px', '15px', '15px', '12px', '12px']);
               if (width === 1480) for (const [first, second] of measured.resets) assert(Math.abs(first - second) < 1, 'reset footers stay aligned when one window wraps');
             } else {
               assert.equal(measured.tables.length, 2);

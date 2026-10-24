@@ -114,7 +114,7 @@ for(const language of ['zh','en'])test(`${language}: Antigravity renders one 5h/
   api.renderSample({quotas});
   const sections=elements.get('quota-cards').children;assert.deepEqual(sections.map(s=>s.dataset.provider),['antigravity','codex']);
   const card=descendants(sections[0]);
-  assert.deepEqual(card.filter(n=>n.className?.startsWith('window-group')).map(n=>n.children[0].textContent),language==='en'?['Gemini models','Claude / GPT models','Imagen Models']:['Gemini 模型','Claude / GPT 模型','Imagen Models']);
+  assert.deepEqual(card.filter(n=>n.className==='window-group').map(n=>n.children[0].textContent),language==='en'?['Gemini models','Claude / GPT models','Imagen Models']:['Gemini 模型','Claude / GPT 模型','Imagen Models']);
   assert.equal(card.filter(n=>n.className==='windows').length,3);
   assert(card.some(n=>n.className==='account-icon antigravity'&&n.textContent==='A'));
   assert.deepEqual(card.filter(n=>n.className==='percent').map(n=>n.children.length?n._text:n.textContent),['70.0','45.0','—','0.0','—','—']);
@@ -380,7 +380,7 @@ test('names resembling translations or placeholders remain literal; no OAuth fie
 
 test('cadence keeps minute snapshot and 30-second countdown timers without browser quota POST scheduling',()=>{
   const d=dashboard();assert.deepEqual(d.intervals.map(i=>i.ms),[60000,30000]);assert.match(d.elements.get('footer').textContent,/每 15 分钟/);
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.percent\{font-size:26px/);assert.match(css,/\.estimate-cost\{[^}]*font-size:17px/);assert.match(css,/\.estimate-value\{font-size:14px/);assert.match(css,/\.manual-reset strong\{font-size:18px/);assert.match(css,/\.masthead\{[^}]*flex-wrap:wrap/);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.percent\{font-size:22px/);assert.match(css,/\.estimate-cost\{[^}]*font-size:15px/);assert.match(css,/\.estimate-value\{font-size:12px/);assert.match(css,/\.manual-reset strong\{font-size:18px/);assert.match(css,/\.masthead\{[^}]*flex-wrap:wrap/);
 });
 
 test('successful later refresh clears a prior local account error without replacing siblings',async()=>{
@@ -517,7 +517,7 @@ for(const change of ['logout','key-change']){
 }
 
 test('request-only compact CSS widens main without changing quota layout',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/main\{max-width:1180px/);assert.match(css,/main\.request-view\{max-width:1480px\}/);assert.match(css,/\.request-view #page-requests th,\.request-view #page-requests td\{padding:7px 8px\}/);assert.match(css,/\.tablewrap\{overflow-x:auto/);assert(!html.includes('\u8bcd\u5143'));
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/main\{max-width:1360px/);assert.match(css,/main\.request-view\{max-width:1480px\}/);assert.match(css,/\.request-view #page-requests th,\.request-view #page-requests td\{padding:7px 8px\}/);assert.match(css,/\.tablewrap\{overflow-x:auto/);assert(!html.includes('\u8bcd\u5143'));
 });
 
 test('pending requests keep explicit feedback across tab/language switches without quota loading changes',async()=>{
@@ -576,7 +576,7 @@ for(const language of ['zh','en']){
   });
 }
 test('quota used and estimate rows retain readable sizing and stack windows on narrow screens',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:17px/);assert.match(css,/\.observed-value\{font-size:14px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:15px/);assert.match(css,/\.observed-value\{font-size:12px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
 });
 test('refresh and language controls live below tabs, outside CPA top-right overlay area',()=>{
   const d=dashboard(),root=d.elements.get('dashboard'),header=root.children.find(n=>n.tag==='header'),toolbar=root.children.find(n=>n.getAttribute('class')==='toolbar');

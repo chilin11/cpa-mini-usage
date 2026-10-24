@@ -172,6 +172,10 @@ Manage accounts from each quota card: an enable switch (one click, via CPA's off
 
 Google **Antigravity** OAuth accounts get their own quota section: one 5-hour / weekly pair per shared-quota group (Gemini models, Claude / GPT models) from the read-only `retrieveUserQuotaSummary` endpoint, with group-scoped observed usage and forecasts. Antigravity requests are valued with sub2api's rules (ordinary input = prompt − cached, output = candidates + thoughts, thinking-tier suffixes priced as the base model) using models.dev's Google/Anthropic/OpenAI catalogs. Existing Claude/Codex accounting is unchanged.
 
+### v0.1.19
+
+Denser quota cards for multi-provider setups: the quota page widens to 1360px and cards flow in a responsive grid (minimum 400px, so three per row on wide screens, two on medium and one on phones). Percentages, amounts, tokens and spacing are smaller (22/15/12px). Antigravity cards span the row with their quota groups side by side instead of stacked. About 40% less height at 1480px and 37% at 1024px for the same accounts. Accounting and quota logic are unchanged.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
