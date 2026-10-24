@@ -44,7 +44,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.17"
+const pluginVersion = "0.1.18"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once

@@ -76,7 +76,7 @@ func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, 
 			return
 		}
 		for _, entry := range parseAuthList(raw) {
-			if entry.ID != authID || (entry.Provider != "claude" && entry.Provider != "codex") {
+			if entry.ID != authID || !quotaProvider(entry.Provider) {
 				continue
 			}
 			if !read(entry) {
@@ -138,7 +138,7 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 	e.mu.Unlock()
 	jobs := make(chan AuthEntry, len(auths))
 	for _, entry := range auths {
-		if entry.Provider == "claude" || entry.Provider == "codex" {
+		if quotaProvider(entry.Provider) {
 			jobs <- entry
 		}
 	}
@@ -169,24 +169,29 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 		}
 	}
 	if attempted == 0 {
-		e.quotaFailure("No Claude or Codex OAuth credentials were found")
+		e.quotaFailure("No Claude, Codex or Antigravity OAuth credentials were found")
 	} else if successful == 0 {
 		e.quotaFailure("All OAuth quota reads failed; check the individual account messages")
 	}
 }
+
+func quotaProvider(p string) bool { return p == "claude" || p == "codex" || p == "antigravity" }
 
 func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	e.mu.Lock()
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.aliases[entry.Index] = entry.ID
 	e.mu.Unlock()
-	headers, email, failure := providerHeaders(entry, hostRPC)
+	headers, creds, email, failure := providerCredential(entry, hostRPC)
 	if email != "" {
 		entry.Name = email
 	}
 	if failure != "" {
 		e.recordQuotaError(entry, failure)
 		return false
+	}
+	if entry.Provider == "antigravity" {
+		return e.refreshAntigravityQuota(entry, headers, creds, antigravityPOST)
 	}
 	url := "https://api.anthropic.com/api/oauth/usage"
 	if entry.Provider == "codex" {
@@ -227,15 +232,47 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	return true
 }
 
+func (e *Engine) refreshAntigravityQuota(entry AuthEntry, headers http.Header, creds map[string]any, post func(string, http.Header, []byte) (int, []byte, error)) bool {
+	projectID := antigravityProjectID(creds)
+	if projectID == "" {
+		e.recordQuotaError(entry, "Antigravity project ID unavailable")
+		return false
+	}
+	groups, failure := fetchAntigravityQuota(headers, projectID, post)
+	if failure != "" {
+		e.recordQuotaError(entry, failure)
+		return false
+	}
+	observedAt := time.Now().UTC()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.quotaUpdated = observedAt
+	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
+	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Groups: groups, FetchedAt: observedAt.Format(time.RFC3339Nano), Disabled: entry.Disabled}
+	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
+	if state, ok := e.accountRefresh[entry.ID]; ok {
+		state.Error = ""
+		e.accountRefresh[entry.ID] = state
+	}
+	e.persistQuotasLocked()
+	return true
+}
+
 // providerHeaders reads one CPA credential and builds the fixed OAuth headers for its provider.
 // The access token never leaves the plugin; failures are stable, secret-free messages.
 func providerHeaders(entry AuthEntry, rpc func(string, any) (any, error)) (http.Header, string, string) {
+	headers, _, email, failure := providerCredential(entry, rpc)
+	return headers, email, failure
+}
+
+func providerCredential(entry AuthEntry, rpc func(string, any) (any, error)) (http.Header, map[string]any, string, string) {
 	authData, err := rpc("host.auth.get", map[string]string{"auth_index": entry.Index})
 	if err != nil || authData == nil {
 		authData, err = rpc("host.auth.get", map[string]string{"AuthIndex": entry.Index})
 	}
 	if err != nil {
-		return nil, "", "Credential could not be read"
+		return nil, nil, "", "Credential could not be read"
 	}
 	creds := findAuthJSON(authData)
 	email := ""
@@ -244,12 +281,15 @@ func providerHeaders(entry AuthEntry, rpc func(string, any) (any, error)) (http.
 	}
 	token := findString(creds, 0, "access_token", "accessToken")
 	if token == "" {
-		return nil, email, "OAuth access token unavailable"
+		return nil, creds, email, "OAuth access token unavailable"
 	}
 	if len(token) > 10000 {
-		return nil, email, "Invalid OAuth token"
+		return nil, creds, email, "Invalid OAuth token"
 	}
 	headers := http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "User-Agent": []string{"claude-code/2.1.0"}, "Anthropic-Beta": []string{"oauth-2025-04-20"}}
+	if entry.Provider == "antigravity" {
+		headers = http.Header{"Authorization": []string{"Bearer " + token}, "Accept": []string{"application/json"}, "Content-Type": []string{"application/json"}, "User-Agent": []string{antigravityUserAgent}}
+	}
 	if entry.Provider == "codex" {
 		headers.Set("User-Agent", "codex-cli/0.1")
 		id := findString(creds, 0, "chatgpt_account_id", "chatgptAccountId", "account_id")
@@ -260,7 +300,7 @@ func providerHeaders(entry AuthEntry, rpc func(string, any) (any, error)) (http.
 			headers.Set("Chatgpt-Account-Id", id)
 		}
 	}
-	return headers, email, ""
+	return headers, creds, email, ""
 }
 
 func (e *Engine) quotaFailure(message string) { e.mu.Lock(); e.quotaError = message; e.mu.Unlock() }

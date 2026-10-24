@@ -17,16 +17,36 @@ func forecastValue(v *float64) bool { return v != nil && finite(*v) && *v >= 0 }
 
 // Caller holds e.mu. Cache is separate from live usage and official percentages.
 func (e *Engine) resolveForecastLocked(q AccountQuota, period string, now time.Time) (*WindowEstimate, bool) {
-	win, duration := q.Five, 5*time.Hour
+	win := q.Five
 	if period == "7d" {
-		win, duration = q.Week, 7*24*time.Hour
+		win = q.Week
+	}
+	return e.resolveScopedForecastLocked(q, "", period, win, now)
+}
+
+// Antigravity groups share one account but have separate quotas, usage scopes and caches.
+func (e *Engine) resolveGroupForecastLocked(q AccountQuota, g QuotaGroup, period string, now time.Time) (*WindowEstimate, bool) {
+	win := g.Five
+	if period == "7d" {
+		win = g.Week
+	}
+	return e.resolveScopedForecastLocked(q, g.Key, period, win, now)
+}
+
+func (e *Engine) resolveScopedForecastLocked(q AccountQuota, group, period string, win *QuotaWindow, now time.Time) (*WindowEstimate, bool) {
+	duration := 5 * time.Hour
+	if period == "7d" {
+		duration = 7 * 24 * time.Hour
 	}
 	observation, _ := time.Parse(time.RFC3339Nano, q.FetchedAt)
-	out := e.windowSummaryObserved(q.AuthID, now, observation, win, duration)
+	out := e.windowSummaryScoped(q.AuthID, group, now, observation, win, duration)
 	if e.forecasts == nil {
 		e.forecasts = make(map[string]SavedForecast)
 	}
 	key := q.Provider + "/" + e.canonicalAuth(q.AuthID) + "/" + period
+	if group != "" {
+		key = q.Provider + "/" + e.canonicalAuth(q.AuthID) + "/" + group + "/" + period
+	}
 	saved, exists := e.forecasts[key]
 	if win == nil {
 		return out, false
@@ -39,7 +59,7 @@ func (e *Engine) resolveForecastLocked(q AccountQuota, period string, now time.T
 	active := err == nil && now.Before(reset) && seconds > 0 && seconds <= int64((35*24*time.Hour)/time.Second) && !reset.Add(-time.Duration(seconds)*time.Second).After(now)
 	changed := false
 	policy := ""
-	if normalizeProvider(q.Provider) == "codex" {
+	if p := normalizeProvider(q.Provider); p == "codex" || p == "antigravity" {
 		policy = "api-standard-v1"
 	}
 	if exists && (!active || !saved.ResetAt.Equal(reset) || saved.Seconds != seconds || saved.PricingPolicy != policy) {
@@ -103,4 +123,8 @@ func (e *Engine) rememberQuotaForecastsLocked(q AccountQuota, now time.Time) {
 	}
 	e.resolveForecastLocked(q, "5h", now)
 	e.resolveForecastLocked(q, "7d", now)
+	for _, g := range q.Groups {
+		e.resolveGroupForecastLocked(q, g, "5h", now)
+		e.resolveGroupForecastLocked(q, g, "7d", now)
+	}
 }

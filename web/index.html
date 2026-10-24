@@ -85,6 +85,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
 .provider-section{grid-column:1/-1;min-width:0;--provider-accent:var(--accent)}
 .provider-section[data-provider=claude]{--provider-accent:var(--warm)}
+.provider-section[data-provider=antigravity]{--provider-accent:var(--good)}
 .provider-section+.provider-section{margin-top:12px}
 .provider-section>.section-head h2{display:flex;align-items:center;gap:8px}
 .provider-section>.section-head h2::before{content:"";width:3px;height:14px;flex-shrink:0;background:var(--provider-accent);border-radius:2px}
@@ -93,6 +94,10 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .identity{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 160px}
 .account-icon{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:650;flex-shrink:0}
 .account-icon.claude{color:var(--warm);background:var(--warm-soft)}
+.account-icon.antigravity{color:var(--good);background:var(--good-soft)}
+.window-group{padding:8px 16px 0;border-top:1px solid var(--line)}
+.window-group.first{border-top:0}
+.window-group h4{margin:0;font-size:12px;font-weight:650;color:var(--muted);letter-spacing:.2px}
 .identity-text{min-width:0}
 .account{font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
 .account-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px 12px;flex-wrap:wrap;min-width:0;max-width:100%;margin-left:auto}
@@ -252,7 +257,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.17</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.18</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -268,7 +273,7 @@ tbody tr:focus-within>td{background:var(--hover)}
     <label class="language-control"><span data-i18n="语言">语言</span><select id="language" aria-label="语言"><option value="zh" data-i18n="中文">中文</option><option value="en" data-i18n="英语">英语</option></select></label>
     <div class="statusbar" role="status"><span class="dot off" id="dot" aria-hidden="true"></span><span id="status">正在读取登录状态</span></div>
   </div>
-  <div class="filter-control"><label for="provider" data-i18n="服务商">服务商</label><select id="provider" aria-label="筛选服务商"><option value="" data-i18n="全部服务商">全部服务商</option><option value="claude">Claude</option><option value="codex">Codex</option></select></div><div class="persistence-control" id="persistence-control"><label class="persistence-label" for="persistence-enabled"><input id="persistence-enabled" type="checkbox" aria-label="保存数据" disabled><span data-i18n="保存数据">保存数据</span></label><span id="persistence-status" role="status" aria-live="polite">—</span></div>
+  <div class="filter-control"><label for="provider" data-i18n="服务商">服务商</label><select id="provider" aria-label="筛选服务商"><option value="" data-i18n="全部服务商">全部服务商</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="antigravity">Antigravity</option></select></div><div class="persistence-control" id="persistence-control"><label class="persistence-label" for="persistence-enabled"><input id="persistence-enabled" type="checkbox" aria-label="保存数据" disabled><span data-i18n="保存数据">保存数据</span></label><span id="persistence-status" role="status" aria-live="polite">—</span></div>
 </div><span id="updated" class="results" aria-live="polite">等待同步</span></div>
 <section id="page-quota" role="tabpanel" aria-labelledby="tab-quota" tabindex="0">
   <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
@@ -348,7 +353,7 @@ const translations={
   '本 5 小时窗口尚未使用，预估总额显示为 0；不引用上一周期或缓存预估。':'No usage yet in this five-hour window; estimated totals are shown as 0, without previous-cycle or cached forecasts.',
   '本机在此额度窗口内观测的用量，不含安装前或其他客户端的请求。':'Usage observed by this CPA instance in this quota window; excludes requests before installation or from other clients.',
   '本机观测的 API 等价成本，不是官方账单或订阅扣款。':'API-equivalent cost observed by this CPA instance, not an official bill or subscription charge.',
-  '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex credentials support quota queries, or select “Refresh all”.',
+  '此服务商暂无 OAuth 额度':'No OAuth quota for this provider','还没有可用的 OAuth 额度':'No OAuth quota available yet','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。':'Check whether Claude / Codex / Antigravity credentials support quota queries, or select “Refresh all”.',
   '{n} 个账户':'{n} accounts','可重置':'Resets remaining','次':'','刷新 {name} 的额度':'Refresh quota for {name}',
   '近 7 天请求':'Requests · Last 7 days','失败':'Failed','{n} 个凭证':'{n} credentials','近 7 天暂无凭证请求':'No credential requests in the last 7 days',
   '当前筛选下还没有观测到请求事件。新请求会在下次快照同步后显示。':'No requests observed for this filter. New requests appear after the next snapshot sync.',
@@ -388,6 +393,8 @@ const translations={
   '重置卡使用失败，请稍后重试。':'Using the reset credit failed. Please retry later.','重置请求无效，请重试。':'Invalid reset request. Please retry.','此账户不支持重置卡。':'This account does not support reset credits.',
   '重置卡请求正在处理中。':'A reset request is already in progress.','重置接口不可用，请稍后重试。':'Reset endpoint unavailable. Please retry later.','重置接口响应格式异常。':'Invalid reset response.','重置接口返回 HTTP {code}。':'Reset endpoint returned HTTP {code}.',
   '凭证无法读取。':'Credential could not be read.','OAuth 访问令牌不可用。':'OAuth access token unavailable.',
+  '缺少 Antigravity 项目 ID。':'Antigravity project ID unavailable.','OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。':'OAuth access token expired; CPA refreshes it automatically. Try again shortly.',
+  'Gemini 模型':'Gemini models','Claude / GPT 模型':'Claude / GPT models','此分组按模型系列统计本机观测用量。':'Observed usage in this group counts only its model family.',
   '账户已禁用，CPA 不会再调度它。':'Account disabled; CPA will no longer route requests to it.','账户已启用。':'Account enabled.','账户状态更新失败，请稍后重试。':'Updating the account status failed. Please retry later.',
   '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.'
 };
@@ -402,7 +409,7 @@ function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
-  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。'};
+  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。'};
   if(text==='storage_write_failed')return '无法保存设置，请稍后重试。';
   if(known[text])return known[text];
   if(/host callback|invalid host response/.test(text))return '主机接口请求失败。';
@@ -448,7 +455,9 @@ const add = (t,tag,cls,text) => {const e=el(tag,cls,text);t.append(e);return e;}
 const addTokens = (target,tag,cls,value,tail=' '+t('token')) => {const e=add(target,tag,cls,tokens(value)+tail);e.title=fmt(value)+' '+t('token');return e;};
 const list = value => Array.isArray(value)?value:[];
 const active = d => !filter || d.provider===filter;
-const providerName = p => ({claude:'Claude',codex:'Codex'}[p]||p||t('未知服务商'));
+const providerName = p => ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[p]||p||t('未知服务商'));
+const groupLabels={gemini:'Gemini 模型','claude-gpt':'Claude / GPT 模型'};
+const groupName = g => groupLabels[g?.key]?t(groupLabels[g.key]):String(g?.label||g?.key||'');
 const modelName = m => typeof m==='string' && m.trim()?m:t('未知模型');
 const credentialName = s => s?.name||s?.auth_id||t('未知凭证');
 function totalInput(record,provider=record.provider){
@@ -877,7 +886,7 @@ function addWindow(parent,title,period,win){
 }
 function renderQuotas(){
   const root=$('quota-cards'),quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
-  if(!data||!quotas.length){root.replaceChildren(!data?noData():empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
+  if(!data||!quotas.length){root.replaceChildren(!data?noData():empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
   const providers=[...new Set(quotas.map(q=>q.provider))].sort((a,b)=>a.localeCompare(b)),sections=[];
   const oldSections=new Map([...root.children].map(s=>[s.dataset.provider,s]));
   const present=new Set();
@@ -890,7 +899,7 @@ function renderQuotas(){
       if(!entry||entry.stamp!==stamp){
         const panel=el('article','panel'+(item.disabled?' account-disabled':''));panel.dataset.authId=id;
         const head=add(panel,'div','accounttop'),identity=add(head,'div','identity');
-        const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':''),item.provider==='claude'?'C':'⌘');icon.setAttribute('aria-hidden','true');
+        const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':item.provider==='antigravity'?' antigravity':''),item.provider==='claude'?'C':item.provider==='antigravity'?'A':'⌘');icon.setAttribute('aria-hidden','true');
         const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));if(item.disabled)add(text,'span','account-state','已禁用');
         const actions=add(head,'div','account-actions');
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
@@ -898,7 +907,9 @@ function renderQuotas(){
         const toggle=add(actions,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
         const button=add(actions,'button','button account-refresh','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
-        const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);
+        const groups=list(item.groups);
+        if(groups.length)groups.forEach((g,i)=>{const head=add(panel,'div','window-group'+(i?'':' first'));const label=add(head,'h4','',groupName(g));label.title=t('此分组按模型系列统计本机观测用量。');const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',g.five_hour);addWindow(grid,'7 天','7d',g.seven_day);});
+        else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
         entry={panel,button,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
       panels.push(entry.panel);

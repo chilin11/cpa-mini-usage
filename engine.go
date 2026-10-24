@@ -34,6 +34,7 @@ type Event struct {
 	Output         int64     `json:"output"`
 	CacheRead      int64     `json:"cache_read"`
 	CacheWrite     int64     `json:"cache_write"`
+	Reasoning      int64     `json:"reasoning,omitempty"` // Antigravity thoughts; not part of Output.
 	Total          int64     `json:"total"`
 	Failed         bool      `json:"failed"`
 	LatencyMS      *float64  `json:"latency_ms,omitempty"`
@@ -82,6 +83,7 @@ type AccountQuota struct {
 	Error                string       `json:"error,omitempty"`
 	ManualResetRemaining *int64       `json:"manual_reset_remaining,omitempty"`
 	Disabled             bool         `json:"disabled,omitempty"`
+	Groups               []QuotaGroup `json:"groups,omitempty"` // Antigravity shared-quota groups.
 }
 
 type WindowEstimate struct {
@@ -102,15 +104,16 @@ type WindowEstimate struct {
 }
 
 type QuotaView struct {
-	Provider             string          `json:"provider"`
-	AuthID               string          `json:"auth_id"`
-	Name                 string          `json:"name"`
-	Five                 *WindowEstimate `json:"five_hour,omitempty"`
-	Week                 *WindowEstimate `json:"seven_day,omitempty"`
-	FetchedAt            string          `json:"fetched_at,omitempty"`
-	Error                string          `json:"error,omitempty"`
-	ManualResetRemaining *int64          `json:"manual_reset_remaining,omitempty"`
-	Disabled             bool            `json:"disabled,omitempty"`
+	Provider             string           `json:"provider"`
+	AuthID               string           `json:"auth_id"`
+	Name                 string           `json:"name"`
+	Five                 *WindowEstimate  `json:"five_hour,omitempty"`
+	Week                 *WindowEstimate  `json:"seven_day,omitempty"`
+	FetchedAt            string           `json:"fetched_at,omitempty"`
+	Error                string           `json:"error,omitempty"`
+	ManualResetRemaining *int64           `json:"manual_reset_remaining,omitempty"`
+	Disabled             bool             `json:"disabled,omitempty"`
+	Groups               []QuotaGroupView `json:"groups,omitempty"`
 }
 
 type ModelStat struct {
@@ -342,6 +345,8 @@ func normalizeProvider(provider string) string {
 		return "codex"
 	case strings.Contains(p, "claude") || strings.Contains(p, "anthropic"):
 		return "claude"
+	case strings.Contains(p, "antigravity"):
+		return "antigravity"
 	default:
 		return p
 	}
@@ -380,16 +385,22 @@ func (e *Engine) capture(data []byte) {
 	}
 	write := number(detail, "CacheCreationTokens", "cache_creation_tokens", "CacheWriteTokens", "cache_write_tokens")
 	total := number(detail, "TotalTokens", "total_tokens")
+	// Only Antigravity (Gemini usageMetadata) reports thoughts outside OutputTokens;
+	// Codex reasoning is already part of output and must not be added twice.
+	var reasoning int64
+	if provider == "antigravity" {
+		reasoning = number(detail, "ReasoningTokens", "reasoning_tokens")
+	}
 	if total <= 0 {
-		total = input + output
+		total = input + output + reasoning
 		if provider == "claude" {
 			total += cached + write
 		}
 	}
-	if input < 0 || output < 0 || cached < 0 || write < 0 || total < 0 {
+	if input < 0 || output < 0 || cached < 0 || write < 0 || reasoning < 0 || total < 0 {
 		return
 	}
-	evt := Event{At: when, AuthID: authID, Provider: provider, Model: str(m, "Model", "model", "Alias", "alias"), Input: input, Output: output, CacheRead: cached, CacheWrite: write, Total: total, Failed: getAny(m, "Failed", "failed") == true}
+	evt := Event{At: when, AuthID: authID, Provider: provider, Model: str(m, "Model", "model", "Alias", "alias"), Input: input, Output: output, CacheRead: cached, CacheWrite: write, Reasoning: reasoning, Total: total, Failed: getAny(m, "Failed", "failed") == true}
 	// Keep the existing usage model for pricing; observation names are diagnostic only.
 	evt.RequestedModel = observedModelName(str(m, "Alias", "alias"))
 	evt.ResponseModel = observedModelName(str(m, "ResponseModel", "response_model"))
@@ -456,8 +467,7 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 	if usageQuality(ev) != "complete" {
 		return 0, false
 	}
-	key := normalizeModel(ev.Model)
-	p, ok := e.prices[priceProvider(ev.Provider)+"/"+key]
+	p, ok := e.priceFor(ev)
 	if !ok {
 		return 0, false
 	}
@@ -485,11 +495,17 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 		}
 	}
 	cached, write, baseInput := ev.CacheRead, ev.CacheWrite, ev.Input
-	if normalizeProvider(ev.Provider) != "claude" {
+	switch normalizeProvider(ev.Provider) {
+	case "claude":
+	case "antigravity":
+		// sub2api: Gemini promptTokenCount includes cachedContentTokenCount; a blocked
+		// prompt may report only the cached count, so the difference floors at 0.
+		baseInput = max(ev.Input-cached-write, 0)
+	default:
 		// OpenAI prompt totals include cache reads AND cache writes.
 		baseInput = ev.Input - cached - write
 	}
-	cost := float64(baseInput)*p.Input/1e6 + float64(ev.Output)*p.Output/1e6
+	cost := float64(baseInput)*p.Input/1e6 + float64(billableOutput(ev))*p.Output/1e6
 	// A missing cache price is unknown, not a guessed discount or a free rate.
 	if cached > 0 {
 		if p.CacheRead == nil {
@@ -508,6 +524,19 @@ func (e *Engine) eventCost(ev Event) (float64, bool) {
 	}
 	return cost, true
 }
+func (e *Engine) priceFor(ev Event) (ModelPrice, bool) {
+	if normalizeProvider(ev.Provider) == "antigravity" {
+		for _, key := range antigravityPriceKeys(ev.Model) {
+			if p, ok := e.prices[key]; ok {
+				return p, true
+			}
+		}
+		return ModelPrice{}, false
+	}
+	p, ok := e.prices[priceProvider(ev.Provider)+"/"+normalizeModel(ev.Model)]
+	return p, ok
+}
+
 func priceProvider(p string) string {
 	if normalizeProvider(p) == "claude" {
 		return "anthropic"
@@ -542,10 +571,14 @@ type windowUsage struct {
 	first, last  time.Time
 }
 
-func (e *Engine) usageBetween(authID string, start, end, now time.Time) windowUsage {
+// scope "" counts every request; an Antigravity group key counts only its model family.
+func (e *Engine) usageBetween(authID, scope string, start, end, now time.Time) windowUsage {
 	var usage windowUsage
 	for _, ev := range e.events {
 		if e.canonicalAuth(ev.AuthID) != authID || ev.At.Before(start) || !ev.At.Before(end) || ev.At.After(now) {
+			continue
+		}
+		if scope != "" && antigravityModelGroup(ev.Model) != scope {
 			continue
 		}
 		usage.count++
@@ -571,6 +604,10 @@ func (e *Engine) windowSummary(authID string, now time.Time, win *QuotaWindow, d
 }
 
 func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time, win *QuotaWindow, duration time.Duration) *WindowEstimate {
+	return e.windowSummaryScoped(authID, "", now, observation, win, duration)
+}
+
+func (e *Engine) windowSummaryScoped(authID, scope string, now, observation time.Time, win *QuotaWindow, duration time.Duration) *WindowEstimate {
 	if win == nil {
 		return nil
 	}
@@ -596,7 +633,7 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 	if start.After(now) || reset.Before(now.Add(-5*time.Minute)) {
 		return out
 	}
-	current := e.usageBetween(e.canonicalAuth(authID), start, reset, now)
+	current := e.usageBetween(e.canonicalAuth(authID), scope, start, reset, now)
 	out.ObservedTokens, out.MissingPrice = current.tokens, current.missingPrice
 	if current.count > 0 {
 		out.PartialHistory = current.first.After(start.Add(10 * time.Minute))
@@ -617,7 +654,7 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 	}
 	basis := current
 	if !observation.IsZero() {
-		basis = e.usageBetween(e.canonicalAuth(authID), start, reset, observation)
+		basis = e.usageBetween(e.canonicalAuth(authID), scope, start, reset, observation)
 	}
 	if !observation.IsZero() && basis.count > 0 && finite(win.Used) && win.Used > 0 && win.Used <= 100 {
 		multiplier := 100 / win.Used
@@ -637,7 +674,7 @@ func (e *Engine) windowSummaryObserved(authID string, now, observation time.Time
 			return out
 		}
 	}
-	previous := e.usageBetween(e.canonicalAuth(authID), start.Add(-duration), start, now)
+	previous := e.usageBetween(e.canonicalAuth(authID), scope, start.Add(-duration), start, now)
 	// Only recorded adjacent history is evidence. Reject the entire fallback
 	// if any known component is already below current actual usage.
 	if previous.count == 0 || previous.tokens < current.tokens || (!previous.missingPrice && !current.missingPrice && previous.cost+1e-9 < current.cost) {
@@ -676,7 +713,14 @@ func (e *Engine) snapshot() Snapshot {
 		five, changedFive := e.resolveForecastLocked(q, "5h", now)
 		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
 		forecastsChanged = forecastsChanged || changedFive || changedWeek
-		result.Quotas = append(result.Quotas, QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, Disabled: q.Disabled})
+		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, Disabled: q.Disabled}
+		for _, g := range q.Groups {
+			gFive, c1 := e.resolveGroupForecastLocked(q, g, "5h", now)
+			gWeek, c2 := e.resolveGroupForecastLocked(q, g, "7d", now)
+			forecastsChanged = forecastsChanged || c1 || c2
+			view.Groups = append(view.Groups, QuotaGroupView{Key: g.Key, Label: g.Label, Five: gFive, Week: gWeek})
+		}
+		result.Quotas = append(result.Quotas, view)
 	}
 	if forecastsChanged {
 		e.persistQuotasLocked()
@@ -703,6 +747,7 @@ func (e *Engine) snapshot() Snapshot {
 		if len(result.Recent) < 60 {
 			recent := RecentEvent{Event: ev, MissingPrice: !ok, UsageQuality: usageQuality(ev), ModelStatus: modelObservationStatus(ev)}
 			recent.AuthID = e.canonicalAuth(ev.AuthID)
+			recent.Output = billableOutput(ev) // Snapshot copy only; stored events keep raw counts.
 			if ok {
 				recent.Cost = floatPtr(cost)
 			}
@@ -729,7 +774,7 @@ func (e *Engine) snapshot() Snapshot {
 		s.TotalInput += totalInput
 		s.UncachedInput += uncachedInput
 		s.CacheWrite += ev.CacheWrite
-		s.Output += ev.Output
+		s.Output += billableOutput(ev)
 		s.Cached += ev.CacheRead
 		s.Total += ev.Total
 		ms := modelStats[canonical][ev.Model]
@@ -856,7 +901,7 @@ func decodePrices(raw []byte) (map[string]ModelPrice, error) {
 		return nil, err
 	}
 	output := make(map[string]ModelPrice)
-	for _, provider := range []string{"openai", "anthropic"} {
+	for _, provider := range []string{"openai", "anthropic", "google"} {
 		for id, m := range data[provider].Models {
 			if m.Cost.Input == nil || m.Cost.Output == nil {
 				continue

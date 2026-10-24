@@ -104,6 +104,24 @@ test('providers stay in separate sections; absent manual reset stays hidden', ()
   api.renderSample({quotas},'claude');assert.equal(elements.get('quota-cards').children.length,1);
   assert.equal(elements.get('quota-cards').children[0].dataset.provider,'claude');
 });
+for(const language of ['zh','en'])test(`${language}: Antigravity renders one 5h/7d pair per quota group with translated labels`,()=>{
+  const {api,elements}=dashboard({},undefined,{language});
+  const reset=new Date(Date.now()+3600000).toISOString();
+  const quotas=[{provider:'antigravity',auth_id:'ag',name:'g@example.com',groups:[
+    {key:'gemini',label:'Gemini Models',five_hour:{used_percent:30,reset_at:reset,observed_tokens:1100000,observed_cost:1.125,estimated_total_tokens:4400000,estimated_total_cost:4.5,estimated_basis:'quota'},seven_day:{used_percent:55,reset_at:reset}},
+    {key:'claude-gpt',label:'Claude and GPT Models',seven_day:{used_percent:100,reset_at:reset}},
+    {key:'other-imagen',label:'Imagen Models'}]},{provider:'codex',auth_id:'c',name:'c@example.com',five_hour:{used_percent:10}}];
+  api.renderSample({quotas});
+  const sections=elements.get('quota-cards').children;assert.deepEqual(sections.map(s=>s.dataset.provider),['antigravity','codex']);
+  const card=descendants(sections[0]);
+  assert.deepEqual(card.filter(n=>n.className?.startsWith('window-group')).map(n=>n.children[0].textContent),language==='en'?['Gemini models','Claude / GPT models','Imagen Models']:['Gemini 模型','Claude / GPT 模型','Imagen Models']);
+  assert.equal(card.filter(n=>n.className==='windows').length,3);
+  assert(card.some(n=>n.className==='account-icon antigravity'&&n.textContent==='A'));
+  assert.deepEqual(card.filter(n=>n.className==='percent').map(n=>n.children.length?n._text:n.textContent),['70.0','45.0','—','0.0','—','—']);
+  assert(card.some(n=>n.textContent==='$4.50')&&card.some(n=>n.textContent.startsWith('4.4m ')&&n.title.startsWith('4,400,000 ')));
+  api.renderSample({quotas},'antigravity');assert.deepEqual(elements.get('quota-cards').children.map(s=>s.dataset.provider),['antigravity']);
+  assert(descendants(elements.get('provider')).some(n=>n.attributes.value==='antigravity'));
+});
 function encoded(value){
   const mask=Buffer.from('cli-proxy-api-webui::secure-storage|cpa.test|test-agent');
   return 'enc::v1::'+Buffer.from(Buffer.from(JSON.stringify(value)).map((b,i)=>b^mask[i%mask.length])).toString('base64');
