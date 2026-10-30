@@ -3,7 +3,7 @@
 A lightweight native CPA v8 plugin (Linux amd64) with **exactly two tabs**:
 
 1. **Quotas:** separate Claude / Codex / Antigravity sections showing five-hour / seven-day remaining percentages and resets. Each window displays **Used (observed)** and **Estimated total** side by side, with API-equivalent USD amounts on one row and tokens on the next. Used values include only requests observed by this CPA instance within that window, not official bills or activity from other clients.
-2. **Requests:** recent requests with explicit model names, total input/output, cache read/write, per-request estimated USD cost and timing, plus per-credential/model usage. Tokens use `k / m / b`; hover for full counts and full USD precision. No uncached-input column is shown.
+2. **Requests:** retained request history by local date, provider and model mismatch, with server-side pagination, explicit model names, host-reported reasoning effort, total input/output, cache read/write, per-request estimated USD cost and timing, plus seven-day per-credential/model usage. Tokens use `k / m / b`; hover for full counts and full USD precision. No uncached-input column is shown.
 
 No React, no Node runtime, no separate web service, no inference probes, no database process.
 
@@ -44,6 +44,10 @@ If any existing history/settings/quota/price file cannot be fully read, the plug
 Full quota refresh covers every supported account (still limited to four concurrent provider reads). Equal-usage accounts and models use stable tie-breakers so unchanged snapshots do not reorder the dashboard.
 
 ### Response model observations
+
+Request history defaults to today in the browser's local timezone. Select an inclusive start/end date to query retained history beyond the old 60-row snapshot and seven-day statistics; changing the provider, mismatch filter or page size resets pagination. The mismatch filter selects only `different`, never `variant` or `unknown`, and cannot prove model substitution. Retention is at most 35 days / 200,000 events and the UI shows the actual available range; collection is not backfilled. Pages exclude new arrivals until refreshed, expire after 15 minutes, and explicitly require requerying if retained records are removed. Request refresh remains GET-only and resets history to its first page; automatic sync keeps deeper pages stable. Credential/model statistics remain last seven days and do not follow the history date/mismatch filters.
+
+The **Received reasoning effort** column persists only CPA's explicit `UsageRecord.ReasoningEffort` (`reasoning_effort` also accepted), with `host_usage` provenance. This is host-reported request-side configuration, not proof of upstream execution or a value inferred by this plugin from model suffixes or reasoning tokens. Missing/invalid values and old records show **Not provided**. See [history API and pinned host contract](docs/request-history.md) for pagination, timezone semantics and collection limits. Upgrading the plugin cannot recover fields absent from existing records.
 
 The recent request model column shows the client-requested alias (CPA `Alias`, when supplied), the execution/usage model (`Model`, when different), and the upstream-declared response model (`ResponseModel`). CPA 8.0.22 already forwards these fields through `usage.handle`; newer builds may improve provider coverage. This plugin now retains the two observation names alongside the existing usage model in `events.jsonl`. Existing records and hosts/providers without a response declaration remain **unknown** and are not backfilled.
 
@@ -114,7 +118,7 @@ Per-account quota refresh buttons and less frequent 15-minute all-account checks
 
 Recent requests additionally show first-token time and generation-phase TPS. A server-side Save data switch persists request history/timings, quota snapshots, pricing, and its own preference in an independent directory that survives plugin replacement. Both languages use token/tokens rather than “词元”.
 
-The requests tab has its own GET-only Refresh requests button, never queries OAuth quotas, and shows 20 rows by default with 40/60-row options in a wider, compact table. First-token time is displayed in seconds. Cache accounting and explicit long-context price tiers are regression-tested against the public CodexBar/CPA contracts. CodexBar's [quota-window summaries](https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/CostUsageModels%2BQuotaWindows.swift) aggregate observed usage separately from official percentages; the remaining-token extrapolation here is not claimed to be CodexBar's official balance.
+The requests tab has its own GET-only Refresh requests button, never queries OAuth quotas, and shows 20 rows per server-side history page by default with 40/60-row options in a wider, compact table. First-token time is displayed in seconds. Cache accounting and explicit long-context price tiers are regression-tested against the public CodexBar/CPA contracts. CodexBar's [quota-window summaries](https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/CostUsageModels%2BQuotaWindows.swift) aggregate observed usage separately from official percentages; the remaining-token extrapolation here is not claimed to be CodexBar's official balance.
 
 ### v0.1.6
 
@@ -175,6 +179,10 @@ Google **Antigravity** OAuth accounts get their own quota section: one 5-hour / 
 ### v0.1.19
 
 Denser quota cards for multi-provider setups: the quota page widens to 1360px and cards flow in a responsive grid (minimum 400px, so three per row on wide screens, two on medium and one on phones). Percentages, amounts, tokens and spacing are smaller (22/15/12px). Antigravity cards span the row with their quota groups side by side instead of stacked. About 40% less height at 1480px and 37% at 1024px for the same accounts. Accounting and quota logic are unchanged.
+
+### v0.1.20
+
+Query retained request history by browser-local dates, provider and model mismatch, with signed server-side pagination beyond the old 60-row / seven-day snapshot. Retention remains at most 35 days / 200,000 events, and aggregate statistics remain last seven days. Mismatch filtering includes only `different` and is not proof of model substitution. Persist the host's explicit `ReasoningEffort` with its source; missing and older records show **Not provided**, never a level guessed from model suffixes or token counts. Includes stale-response protection, error/retry handling, bilingual accessible controls and focused regression tests. Existing history files remain compatible. Upgrade the plugin and restart CPA while preserving the data directory and Docker persistent mount; this release does not backfill missing history or verify upstream execution levels. See [API and host-contract details](docs/request-history.md).
 
 ## Optional CPA Plugin Store source
 

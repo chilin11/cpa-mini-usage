@@ -38,13 +38,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"unsafe"
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.19"
+const pluginVersion = "0.1.20"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -179,6 +180,7 @@ func dispatch(method string, body []byte) []byte {
 		var req struct {
 			Method string
 			Path   string
+			Query  url.Values
 			Body   []byte
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -194,6 +196,24 @@ func dispatch(method string, body []byte) []byte {
 				return okEnvelope(httpResponse(500, "application/json", []byte(`{"error":"snapshot_encoding_failed"}`)))
 			}
 			return okEnvelope(httpResponse(200, "application/json; charset=utf-8", data))
+		}
+		if req.Method == "GET" && strings.HasSuffix(req.Path, "/"+pluginID+"/history") {
+			query, err := parseHistoryQuery(req.Query)
+			if err != nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_history_query"}`)))
+			}
+			page, status, failure := tracker.history(query)
+			var data []byte
+			if failure != "" {
+				data, _ = json.Marshal(map[string]string{"error": failure})
+			} else {
+				data, err = json.Marshal(page)
+				if err != nil {
+					status = 500
+					data = []byte(`{"error":"history_encoding_failed"}`)
+				}
+			}
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", data))
 		}
 		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/refresh") {
 			previous, accepted := tracker.kickFullRefresh()

@@ -243,6 +243,12 @@ tbody tr:focus-within>td{background:var(--hover)}
 .request-view .summary{padding:12px 0;margin-bottom:16px}
 .request-view .request-section+.request-section{margin-top:16px}
 .request-view .table-foot,.request-view .pagination{flex-wrap:wrap}
+.history-filters{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
+.history-filters label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
+.history-filters input,.history-filters select{max-width:100%;min-height:34px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--panel);color:var(--ink);font:inherit;color-scheme:light dark}
+.history-note{font-size:12px;line-height:1.7;color:var(--muted);margin:8px 0}
+.history-error{color:var(--bad)}
+.request-reasoning{font-family:var(--mono);font-size:11px;max-width:140px;overflow-wrap:anywhere}
 .page-size-control{display:flex;align-items:center;gap:6px}
 .page-size-control select{min-height:28px;padding:3px 6px;font-family:var(--mono);font-size:11px}
 .timing-unit{display:block;font-size:10px;line-height:1.5;color:var(--muted);font-weight:400}
@@ -258,7 +264,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.19</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.20</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -282,7 +288,16 @@ tbody tr:focus-within>td{background:var(--hover)}
 <section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" class="hide">
   <div id="request-summary" class="summary" aria-label="近 7 天观测统计"></div>
   <section class="request-section" aria-labelledby="recent-title">
-    <div class="section-head"><h2 id="recent-title" data-i18n="近期请求">近期请求</h2><span class="section-label" data-i18n="最多 60 条">最多 60 条</span></div>
+    <div class="section-head"><h2 id="recent-title" data-i18n="请求历史">请求历史</h2><span class="section-label" data-i18n="统计仍为近 7 天">统计仍为近 7 天</span></div>
+    <div class="history-filters" role="group" aria-label="历史筛选">
+      <label for="history-start"><span data-i18n="开始日期（本地）">开始日期（本地）</span><input id="history-start" type="date" aria-describedby="history-retention"></label>
+      <label for="history-end"><span data-i18n="结束日期（本地，含当天）">结束日期（本地，含当天）</span><input id="history-end" type="date" aria-describedby="history-retention"></label>
+      <label for="history-model"><span data-i18n="模型名称状态">模型名称状态</span><select id="history-model"><option value="" data-i18n="全部状态">全部状态</option><option value="different" data-i18n="仅模型不一致">仅模型不一致</option></select></label>
+      <button id="history-retry" class="button" type="button" data-i18n="重新查询">重新查询</button>
+    </div>
+    <p id="history-retention" class="history-note"></p>
+    <p class="history-note" data-i18n="仅筛选 different（模型不一致），不含版本变体或未知；名称比较不能证明模型被替换。">仅筛选 different（模型不一致），不含版本变体或未知；名称比较不能证明模型被替换。</p>
+    <p id="history-message" class="history-note" role="status" aria-live="polite"></p>
     <div id="recent-table" class="tablewrap" role="region" aria-label="近期请求表，窄屏可横向滚动" tabindex="0"></div>
     <div class="table-foot"><span id="recent-caption">等待请求快照</span><nav class="pagination" aria-label="近期请求分页"><label class="page-size-control" for="recent-size"><span data-i18n="每页">每页</span><select id="recent-size" aria-label="每页请求数"><option value="20">20</option><option value="40">40</option><option value="60">60</option></select></label><button class="button" type="button" id="recent-prev" aria-label="上一页" disabled>‹</button><span id="recent-page" class="tabnum">0 / 0</span><button class="button" type="button" id="recent-next" aria-label="下一页" disabled>›</button></nav></div>
   </section>
@@ -316,11 +331,22 @@ const cardCache=new Map(), accountErrors=new Map();
 // credit) kept across an ambiguous failure so a retry is idempotent upstream.
 const actionJobs=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
 let pageSize = 20,requestJob=null,requestStatusKey='';
+let historyPage=null,historyBusy=false,historyError='',historySerial=0,historyIndex=0,historyCursors=[''],historyAbort=null;
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
 const languageStorage='cpa-mini-usage-language';
 const translations={
   '中文':'Chinese','英语':'English',
+  '请求历史':'Request history','统计仍为近 7 天':'Statistics remain last 7 days','历史筛选':'History filters','开始日期（本地）':'Start date (local)','结束日期（本地，含当天）':'End date (local, inclusive)',
+  '模型名称状态':'Model name status','全部状态':'All statuses','仅模型不一致':'Model mismatch only','重新查询':'Query again','正在查询历史…':'Loading history…','历史查询失败，请重试。':'History query failed. Please retry.',
+  '请选择有效日期，开始不得晚于结束，范围最多 37 天。':'Choose valid dates in order, spanning at most 37 days.','历史分页已过期，请重新查询。':'History pagination expired. Query again.',
+  '仅筛选 different（模型不一致），不含版本变体或未知；名称比较不能证明模型被替换。':'Mismatch filtering selects only different, not variants or unknowns. Name comparison cannot prove model substitution.',
+  '最多留存 {days} 天 / {max} 条；当前留存 {n} 条。':'Retained for up to {days} days / {max} records; currently {n} retained.',
+  '可用记录：{start} — {end}（本地时间）；安装前不回填，达到条数上限可能更早截断。':'Available records: {start} — {end} (local time); no backfill before installation, and the record cap may shorten retention.',
+  '暂无留存记录；安装前历史不会回填。':'No retained records; history before installation is not backfilled.','当前接口仅提供最近 60 条快照；升级插件后可查询留存历史。':'This endpoint only provides the latest 60-record snapshot. Upgrade the plugin to query retained history.',
+  '留存最多 35 天 / 200,000 条；日期按浏览器本地时间。':'Up to 35 days / 200,000 records retained; dates use browser local time.','当前日期和筛选无匹配历史。':'No retained history matches these dates and filters.',
+  '收到的思考等级':'Received reasoning effort','宿主用量字段':'Host usage field','宿主 ReasoningEffort：宿主报告的请求侧思考设置，不证明上游实际执行等级。插件不从模型后缀或 token 数推测。':'Host ReasoningEffort: host-reported request-side thinking setting, not proof of actual upstream execution. The plugin does not infer from model suffixes or token counts.',
+  '宿主未提供、值无效或旧记录未保存；不会推测或补全。':'Not supplied by host, invalid value, or absent in older records; never inferred or backfilled.',
   '用量与额度':'Usage & quota','语言':'Language','需要 CPA 登录':'CPA sign-in required',
   '请在同源 CPA 管理页面登录并勾选“记住密码”。插件不支持复用跨域或未保存的登录。':'Sign in on the same-origin CPA management page and select “Remember password”. Cross-origin or unsaved sign-ins cannot be reused.',
   '前往 CPA 登录 ↗':'Go to CPA sign-in ↗','剩余额度':'Remaining quota','请求明细':'Request details','服务商':'Provider','全部服务商':'All providers',
@@ -567,10 +593,10 @@ function guessKey(){
   return '';
 }
 function failure(value){const err=Error();err.ui=value;return err;}
-async function api(path,method='GET',body) {
+async function api(path,method='GET',body,signal) {
   if(!key)throw failure('请返回 CPA 管理页面登录，插件会自动复用同源保存的登录状态。');
   const headers={'Authorization':'Bearer '+key};if(body!==undefined)headers['Content-Type']='application/json';
-  const res=await fetch(path.startsWith('/v0/management/')?path:endpoint+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),cache:'no-store',credentials:'same-origin',redirect:'error'});
+  const res=await fetch(path.startsWith('/v0/management/')?path:endpoint+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),cache:'no-store',credentials:'same-origin',redirect:'error',...(signal?{signal}:{})});
   if(res.status===401 || res.status===403){const err=failure('CPA 登录已失效或远程管理未启用，请返回 CPA 管理页面重新登录。');err.auth=true;throw err;}
   if(!res.ok){let payload;try{payload=await res.json();}catch{}const err=failure(payload?.error?errorKey(payload.error):{text:'CPA 返回 HTTP {code}，请稍后重试。',values:{code:res.status}});err.status=res.status;throw err;}
   return res.json();
@@ -603,6 +629,7 @@ function syncControls(){
   $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
+  ++historySerial;historyAbort?.abort();historyAbort=null;historyPage=null;historyBusy=false;historyError='';historyIndex=0;historyCursors=[''];
   data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
@@ -630,6 +657,8 @@ async function load(force=false){
       waiting=force&&(snapshot.quota_refreshing||!snapshot.quota_refresh_finished_at||snapshot.quota_refresh_finished_at===finishedBefore);
       if(!waiting)break;setStatus('正在刷新额度');await pause();if(serial!==loadSerial)return;
     }while(Date.now()<deadline);
+    if(tab==='requests'&&supportsHistory()&&!historyBusy&&historyIndex===0)await loadHistory(true);
+    if(serial!==loadSerial)return;
     const issues=[data.storage_error&&errorKey(data.storage_error,'存储读取失败。'),data.price_error&&errorKey(data.price_error,'价格读取失败。'),data.quota_error&&errorKey(data.quota_error,'额度接口不可用。'),waiting?'额度接口响应较慢，稍后自动同步。':''].filter(Boolean);
     setStatus(data.quota_refreshing?'额度刷新中':issues.length?'部分数据异常':'已连接');setAlert(issues);
   } catch(err) {
@@ -650,9 +679,11 @@ async function refreshRequests(){
   try{
     const snapshot=await api('data');if(await authChanged())return;validSnapshot(snapshot);
     const requests=requestContent({...data,credentials:snapshot.credentials,recent:snapshot.recent});
-    data={...data,credentials:snapshot.credentials,recent:snapshot.recent,generated_at:snapshot.generated_at};
+    data={...data,credentials:snapshot.credentials,recent:snapshot.recent,generated_at:snapshot.generated_at,history_available:snapshot.history_available};
     if(requests!==requestStamp){renderRequests();requestStamp=requests;}
-    lastSyncAt=Date.now();requestStatusKey='请求已同步';
+    if(supportsHistory())await loadHistory(true);
+    if(await authChanged())return;
+    lastSyncAt=Date.now();requestStatusKey=historyError?'请求同步失败':'请求已同步';
     const issues=[snapshot.storage_error&&errorKey(snapshot.storage_error,'存储读取失败。'),snapshot.price_error&&errorKey(snapshot.price_error,'价格读取失败。')].filter(Boolean);setAlert(issues);
   }catch(err){
     if(await authChanged())return;
@@ -956,6 +987,55 @@ function renderCredentials(credentials){
     }
   });
 }
+const supportsHistory=()=>data?.history_available===true;
+function localDateValue(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');}
+function localMidnight(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+  const [y,m,d]=value.split('-').map(Number),date=new Date(y,m-1,d);
+  return Number.isFinite(date.getTime())&&localDateValue(date)===value?date:null;
+}
+function historyParams(){
+  const start=localMidnight($('history-start').value),end=localMidnight($('history-end').value);
+  if(!start||!end||start>end)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
+  end.setDate(end.getDate()+1);
+  if(end-start>37*86400000)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
+  return new URLSearchParams({start:start.toISOString(),end:end.toISOString(),provider:filter,model_status:$('history-model').value||'',limit:String(pageSize)});
+}
+async function loadHistory(reset=true){
+  if(!supportsHistory())return;
+  const serial=++historySerial,saved=key;historyAbort?.abort();historyAbort=null;
+  if(reset){historyIndex=0;historyCursors=[''];}
+  historyPage=null;historyError='';historyBusy=true;renderRecent();
+  const current=()=>serial===historySerial&&key===saved;
+  let timeout;
+  try{
+    if(!saved||guessKey()!==saved){await load();return;}
+    const params=historyParams();
+    if(historyCursors[historyIndex])params.set('cursor',historyCursors[historyIndex]);
+    const controller=new AbortController();historyAbort=controller;timeout=setTimeout(()=>controller.abort(),20000);
+    const result=await api('history?'+params.toString(),'GET',undefined,controller.signal);
+    if(!current())return;
+    if(guessKey()!==saved){await load();return;}
+    if(!result||!Array.isArray(result.events)||!Number.isInteger(result.total)||!Number.isInteger(result.offset)||result.limit!==pageSize||result.events.length>pageSize||result.offset<0||result.total<result.offset+result.events.length)throw failure('历史查询失败，请重试。');
+    historyPage=result;
+    if(typeof result.cursor==='string')historyCursors[historyIndex]=result.cursor;
+  }catch(err){
+    if(!current())return;
+    if(guessKey()!==saved){await load();return;}
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
+    historyError=err.status===409?'历史分页已过期，请重新查询。':err.ui==='请选择有效日期，开始不得晚于结束，范围最多 37 天。'?err.ui:'历史查询失败，请重试。';
+  }finally{
+    if(timeout)clearTimeout(timeout);
+    if(current()){historyBusy=false;historyAbort=null;renderRecent();syncHeader();}
+  }
+}
+function historyChanged(){recentPage=0;historyIndex=0;historyCursors=[''];if(supportsHistory())return loadHistory(true);renderRecent();}
+function addReasoning(tr,x){
+  const provided=typeof x.reasoning_effort==='string'&&x.reasoning_effort.trim()&&x.reasoning_effort_source==='host_usage';
+  const cell=addCell(tr,provided?x.reasoning_effort:t('未提供'),'request-reasoning');
+  cell.title=t(provided?'宿主 ReasoningEffort：宿主报告的请求侧思考设置，不证明上游实际执行等级。插件不从模型后缀或 token 数推测。':'宿主未提供、值无效或旧记录未保存；不会推测或补全。');
+  if(provided)add(cell,'span','cell-secondary','宿主用量字段');
+}
 function recentRequests(){
   const credentials=list(data?.credentials),quotas=list(data?.quotas);
   return list(data?.recent).slice(0,60).filter(x=>active({provider:x.provider||credentials.find(s=>s.auth_id===x.auth_id)?.provider||quotas.find(s=>s.auth_id===x.auth_id)?.provider}));
@@ -976,17 +1056,24 @@ function addRequestModel(tr,x){
   line.setAttribute('aria-label',t('响应模型')+': '+(response||t('未提供')));const badge=add(line,'span','model-badge '+status,labels[status]);badge.title=cell.title;
 }
 function renderRecent(){
-  const root=$('recent-table');root.replaceChildren();const recent=recentRequests();const pages=Math.ceil(recent.length/pageSize);recentPage=Math.max(0,Math.min(recentPage,pages-1));
-  const start=recentPage*pageSize, shown=recent.slice(start,start+pageSize);
-  $('recent-prev').disabled=!data||recentPage===0;$('recent-next').disabled=!data||recentPage>=pages-1;$('recent-page').textContent=(pages?recentPage+1:0)+' / '+pages;
-  $('recent-caption').textContent=data?(recent.length?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:recent.length}):t('暂无近期记录')):t('等待请求快照');
+  const root=$('recent-table');root.replaceChildren();const remote=supportsHistory(),recent=remote?list(historyPage?.events):recentRequests(),total=remote?(historyPage?.total||0):recent.length,pages=Math.ceil(total/pageSize);
+  if(!remote)recentPage=Math.max(0,Math.min(recentPage,pages-1));
+  const start=remote?(historyPage?.offset||0):recentPage*pageSize,shown=remote?recent:recent.slice(start,start+pageSize),index=remote?historyIndex:recentPage;
+  $('recent-prev').disabled=!data||historyBusy||Boolean(historyError)||index===0;$('recent-next').disabled=!data||historyBusy||Boolean(historyError)||(remote?!historyPage?.next_cursor:recentPage>=pages-1);$('recent-page').textContent=(pages?index+1:0)+' / '+pages;
+  $('recent-caption').textContent=data?(total?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:total}):t('暂无近期记录')):t('等待请求快照');
+  for(const id of ['history-start','history-end','history-model'])$(id).disabled=!remote;
+  $('history-retry').disabled=!remote||historyBusy;root.setAttribute('aria-busy',String(historyBusy));
+  const retention=historyPage?.retention;
+  $('history-retention').textContent=remote?(retention?t('最多留存 {days} 天 / {max} 条；当前留存 {n} 条。',{days:retention.days,max:fmt(retention.max_records),n:fmt(retention.retained_records)})+' '+(retention.oldest_at?t('可用记录：{start} — {end}（本地时间）；安装前不回填，达到条数上限可能更早截断。',{start:when(retention.oldest_at),end:when(retention.newest_at)}):t('暂无留存记录；安装前历史不会回填。')):t('留存最多 35 天 / 200,000 条；日期按浏览器本地时间。')):data?t('当前接口仅提供最近 60 条快照；升级插件后可查询留存历史。'):t('留存最多 35 天 / 200,000 条；日期按浏览器本地时间。');
+  $('history-message').textContent=t(historyBusy?'正在查询历史…':historyError);$('history-message').classList.toggle('history-error',Boolean(historyError));
   if(!data){root.append(noData());return;}
-  if(!recent.length){root.append(empty('暂无近期请求','当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
-  const tbody=makeTable(root,'最近最多 60 条请求快照', [['请求时间','',11],['凭证','',13],['模型','',14],['总输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['金额','num',9],['时间','num',10],['TPS','num',8],['状态','',6]]);
+  if(remote&&(historyBusy||historyError||!historyPage)){root.append(empty(historyBusy?'正在查询历史…':historyError||'等待请求快照'));return;}
+  if(!recent.length){root.append(empty('暂无近期请求',remote?'当前日期和筛选无匹配历史。':'当前快照最多包含最近 60 条；当前筛选无匹配记录，不代表没有历史请求。'));return;}
+  const tbody=makeTable(root,remote?'请求历史':'最近最多 60 条请求快照', [['请求时间','',11],['凭证','',13],['模型','',14],['收到的思考等级','',9],['总输入','num',8],['输出','num',7],['缓存 读 / 写','num',10],['总 token','num',8],['金额','num',9],['时间','num',10],['TPS','num',8],['状态','',6]]);
   shown.forEach(x=>{
     const tr=add(tbody,'tr','');const timecell=addCell(tr,'','timestamp');const time=add(timecell,'time','',clock(x.at));if(x.at)time.dateTime=x.at;time.title=when(x.at);const date=new Date(x.at);add(timecell,'span','cell-secondary',Number.isFinite(date.getTime())?date.toLocaleDateString(locale()):'未知日期');
-    const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id};
-    const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addRequestModel(tr,x);
+    const credential=list(data.credentials).find(s=>s.auth_id===x.auth_id)||list(data.quotas).find(s=>s.auth_id===x.auth_id)||{auth_id:x.auth_id,name:x.credential_name};
+    const label=addCell(tr,credentialName(credential),'credential-name');add(label,'span','cell-secondary',providerName(x.provider||credential.provider));addRequestModel(tr,x);addReasoning(tr,x);
     addInputCell(tr,x,x.provider||credential.provider);addTokens(tr,'td','num',x.output,'');addCacheCell(tr,x.cache_read,x.cache_write);
     addTokens(tr,'td','num',x.total,'');const costValue=x.missing_price?null:validEstimate(x.cost),costCell=addCell(tr,requestMoney(costValue),'num usd-value request-cost');costCell.title=costValue==null?t(x.usage_quality==='unclassified'||x.usage_quality==='inconsistent'?'用量分桶不完整或不一致，金额暂不可用':'缺少模型单价，金额暂不可用'):'$'+String(costValue)+' USD\n'+t('按当前模型单价计算的 API 等价金额，不是订阅扣款。')+'\n'+t('按标准 API 价格比较，包含适用的长上下文档位；不是订阅扣款。');
     addRequestTiming(tr,x);const state=addCell(tr,'');add(state,'span','request-state'+(x.failed?' failed':''),x.failed?'失败':'成功');
@@ -1004,14 +1091,19 @@ function setTab(selected){
   tab=selected==='requests'?'requests':'quota';
   ['quota','requests'].forEach(name=>{const selected=tab===name;$('tab-'+name).setAttribute('aria-selected',String(selected));$('tab-'+name).tabIndex=selected?0:-1;$('page-'+name).classList.toggle('hide',!selected);});
   $('dashboard').classList.toggle('request-view',tab==='requests');syncHeader();updateSyncInfo();
+  if(tab==='requests'&&supportsHistory()&&!historyBusy&&!historyPage)loadHistory(true);
 }
 ['quota','requests'].forEach(name=>{
   $('tab-'+name).onclick=()=>setTab(name);
   $('tab-'+name).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setTab(e.key==='Home'?'quota':e.key==='End'?'requests':tab==='quota'?'requests':'quota');$('tab-'+tab).focus();});
 });
-$('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render();};
-$('recent-prev').onclick=()=>{recentPage--;renderRecent();};$('recent-next').onclick=()=>{recentPage++;renderRecent();};
-$('recent-size').value=String(pageSize);$('recent-size').onchange=e=>{const size=Number(e.target.value);pageSize=[20,40,60].includes(size)?size:20;$('recent-size').value=String(pageSize);recentPage=0;renderRecent();};
+$('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render();return historyChanged();};
+$('recent-prev').onclick=()=>{if(supportsHistory()){if(historyIndex>0){historyIndex--;return loadHistory(false);}}else{recentPage--;renderRecent();}};
+$('recent-next').onclick=()=>{if(supportsHistory()){if(historyPage?.next_cursor){historyCursors[++historyIndex]=historyPage.next_cursor;return loadHistory(false);}}else{recentPage++;renderRecent();}};
+$('recent-size').value=String(pageSize);$('recent-size').onchange=e=>{const size=Number(e.target.value);pageSize=[20,40,60].includes(size)?size:20;$('recent-size').value=String(pageSize);return historyChanged();};
+const today=localDateValue(new Date());$('history-start').value=today;$('history-end').value=today;
+for(const id of ['history-start','history-end','history-model'])$(id).onchange=historyChanged;
+$('history-retry').onclick=()=>loadHistory(true);
 $('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);

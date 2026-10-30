@@ -61,6 +61,7 @@ function sample() {
       requested_model: i === 2 ? 'demo-client-alias-with-a-long-model-name' : '',
       response_model: i % 4 === 3 ? '' : i % 4 === 2 ? 'different-demo-model' : i % 4 === 1 ? 'gpt-demo-20261009' : 'claude-sonnet-demo',
       model_status: ['same', 'variant', 'different', 'unknown'][i % 4],
+      reasoning_effort: i % 3 ? 'high' : '', reasoning_effort_source: i % 3 ? 'host_usage' : '',
       input: 24000, output: 1200, cache_read: 4000, cache_write: 200,
       total: 29400, cost: i === 3 ? null : .0028, missing_price: i === 3,
       ttft_ms: 420, latency_ms: 12400, failed: i === 4,
@@ -93,6 +94,13 @@ window.visualFixture = {
     render();syncControls();
     if(state==='login')clearSnapshot(true,'');
     document.body.dataset.fixtureState=state;
+  },
+  showHistory() {
+    data.history_available=true;
+    historyPage={events:data.recent.slice(0,20),total:124,offset:0,limit:20,next_cursor:'demo-only',generated_at:data.generated_at,
+      retention:{days:35,max_records:200000,retained_records:148,oldest_at:'2026-09-10T10:24:00Z',newest_at:data.generated_at}};
+    $('history-start').value='2026-09-20';$('history-end').value='2026-10-09';
+    setTab('requests');renderRecent();
   }
 };
 const params=new URLSearchParams(location.search);

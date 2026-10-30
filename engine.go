@@ -24,30 +24,34 @@ const (
 )
 
 type Event struct {
-	At             time.Time `json:"at"`
-	AuthID         string    `json:"auth_id"`
-	Provider       string    `json:"provider"`
-	Model          string    `json:"model"`
-	RequestedModel string    `json:"requested_model,omitempty"`
-	ResponseModel  string    `json:"response_model,omitempty"`
-	Input          int64     `json:"input"`
-	Output         int64     `json:"output"`
-	CacheRead      int64     `json:"cache_read"`
-	CacheWrite     int64     `json:"cache_write"`
-	Reasoning      int64     `json:"reasoning,omitempty"` // Antigravity thoughts; not part of Output.
-	Total          int64     `json:"total"`
-	Failed         bool      `json:"failed"`
-	LatencyMS      *float64  `json:"latency_ms,omitempty"`
-	TTFTMS         *float64  `json:"ttft_ms,omitempty"`
+	sequence              uint64    // Process-local pagination identity; never persisted.
+	At                    time.Time `json:"at"`
+	AuthID                string    `json:"auth_id"`
+	Provider              string    `json:"provider"`
+	Model                 string    `json:"model"`
+	RequestedModel        string    `json:"requested_model,omitempty"`
+	ResponseModel         string    `json:"response_model,omitempty"`
+	ReasoningEffort       string    `json:"reasoning_effort,omitempty"`
+	ReasoningEffortSource string    `json:"reasoning_effort_source,omitempty"`
+	Input                 int64     `json:"input"`
+	Output                int64     `json:"output"`
+	CacheRead             int64     `json:"cache_read"`
+	CacheWrite            int64     `json:"cache_write"`
+	Reasoning             int64     `json:"reasoning,omitempty"` // Antigravity thoughts; not part of Output.
+	Total                 int64     `json:"total"`
+	Failed                bool      `json:"failed"`
+	LatencyMS             *float64  `json:"latency_ms,omitempty"`
+	TTFTMS                *float64  `json:"ttft_ms,omitempty"`
 }
 
 // RecentEvent adds snapshot-only valuation without changing stored usage records.
 type RecentEvent struct {
 	Event
-	Cost         *float64 `json:"cost,omitempty"`
-	MissingPrice bool     `json:"missing_price"`
-	ModelStatus  string   `json:"model_status"`
-	UsageQuality string   `json:"usage_quality"`
+	Cost           *float64 `json:"cost,omitempty"`
+	MissingPrice   bool     `json:"missing_price"`
+	ModelStatus    string   `json:"model_status"`
+	UsageQuality   string   `json:"usage_quality"`
+	CredentialName string   `json:"credential_name,omitempty"`
 }
 
 type PriceTier struct {
@@ -153,6 +157,7 @@ type Snapshot struct {
 	Credentials            []CredentialView               `json:"credentials"`
 	Recent                 []RecentEvent                  `json:"recent"`
 	TotalRequests          int                            `json:"total_requests"`
+	HistoryAvailable       bool                           `json:"history_available"`
 	PriceUpdatedAt         string                         `json:"price_updated_at,omitempty"`
 	QuotaUpdatedAt         string                         `json:"quota_updated_at,omitempty"`
 	QuotaRefreshing        bool                           `json:"quota_refreshing"`
@@ -168,6 +173,11 @@ type Snapshot struct {
 type Engine struct {
 	mu                   sync.RWMutex
 	events               []Event
+	eventSequence        uint64
+	historyRevision      uint64
+	historyKey           [32]byte
+	historyKeyOnce       sync.Once
+	historyKeyErr        error
 	quotas               map[string]AccountQuota
 	forecasts            map[string]SavedForecast
 	names                map[string]string
@@ -264,6 +274,8 @@ func (e *Engine) load() {
 				continue
 			}
 			if !x.At.Before(cutoff) {
+				e.eventSequence++
+				x.sequence = e.eventSequence
 				e.events = append(e.events, x)
 			}
 		}
@@ -300,8 +312,11 @@ func (e *Engine) compact() {
 		}
 	}
 	// Limit in-memory storage for a long-lived, very busy CPA instance.
-	if len(kept) > 200000 {
-		kept = kept[len(kept)-200000:]
+	if len(kept) > maxHistoryRecords {
+		kept = kept[len(kept)-maxHistoryRecords:]
+	}
+	if len(kept) != len(e.events) {
+		e.historyRevision++
 	}
 	e.events = kept
 	if !e.persistence.Enabled || e.storageReadFailed {
@@ -404,6 +419,12 @@ func (e *Engine) capture(data []byte) {
 	// Keep the existing usage model for pricing; observation names are diagnostic only.
 	evt.RequestedModel = observedModelName(str(m, "Alias", "alias"))
 	evt.ResponseModel = observedModelName(str(m, "ResponseModel", "response_model"))
+	// CPA UsageRecord.ReasoningEffort is host-reported translated request metadata,
+	// not reasoning token usage or proof of the upstream's actual execution.
+	evt.ReasoningEffort = observedReasoningEffort(str(m, "ReasoningEffort", "reasoning_effort"))
+	if evt.ReasoningEffort != "" {
+		evt.ReasoningEffortSource = "host_usage"
+	}
 	evt.LatencyMS = durationMilliseconds(m, "Latency", "latency")
 	// CPA sends zero TTFT for requests without a measured streaming first token.
 	if streamed, present := getAny(m, "Stream", "stream").(bool); !present || streamed {
@@ -411,9 +432,12 @@ func (e *Engine) capture(data []byte) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.eventSequence++
+	evt.sequence = e.eventSequence
 	e.events = append(e.events, evt)
-	if len(e.events) > 200000 {
-		e.events = e.events[len(e.events)-200000:]
+	if len(e.events) > maxHistoryRecords {
+		e.events = e.events[len(e.events)-maxHistoryRecords:]
+		e.historyRevision++
 	}
 	if !e.persistence.Enabled || e.storageReadFailed {
 		return
@@ -692,7 +716,7 @@ func (e *Engine) snapshot() Snapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := time.Now().UTC()
-	result := Snapshot{Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []RecentEvent{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
+	result := Snapshot{HistoryAvailable: true, Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []RecentEvent{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
 	result.QuotaRefreshing = e.quotaRefreshing
 	result.Persistence = e.persistence
 	if !e.quotaRefreshFinished.IsZero() {
@@ -745,13 +769,7 @@ func (e *Engine) snapshot() Snapshot {
 		result.TotalRequests++
 		cost, ok := e.eventCost(ev)
 		if len(result.Recent) < 60 {
-			recent := RecentEvent{Event: ev, MissingPrice: !ok, UsageQuality: usageQuality(ev), ModelStatus: modelObservationStatus(ev)}
-			recent.AuthID = e.canonicalAuth(ev.AuthID)
-			recent.Output = billableOutput(ev) // Snapshot copy only; stored events keep raw counts.
-			if ok {
-				recent.Cost = floatPtr(cost)
-			}
-			result.Recent = append(result.Recent, recent)
+			result.Recent = append(result.Recent, e.recentEventLocked(ev, cost, ok))
 		}
 		canonical := e.canonicalAuth(ev.AuthID)
 		s := stats[canonical]
