@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.21"
+const pluginVersion = "0.1.22"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -166,6 +166,7 @@ func dispatch(method string, body []byte) []byte {
 		return okEnvelope(map[string]any{
 			"Routes": []map[string]string{
 				{"Method": "GET", "Path": "/plugins/" + pluginID + "/data"},
+				{"Method": "GET", "Path": "/plugins/" + pluginID + "/history"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/refresh-account"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},

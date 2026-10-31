@@ -188,6 +188,10 @@ Query retained request history by browser-local dates, provider and model mismat
 
 Recognize the CPA management UI's `enc::v2::` saved login format as well as the legacy `v1` format, fixing a possible sign-in prompt when a same-origin login is already saved. Credentials are still sent only to the same-origin management API. Upgrade the plugin and restart CPA, preserving the existing data directory. Cross-origin or unsaved logins remain unsupported.
 
+### v0.1.22
+
+Register the history GET route with CPA so the request history page can query retained events. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

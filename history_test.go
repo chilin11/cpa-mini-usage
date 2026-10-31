@@ -274,6 +274,25 @@ func TestReasoningEffortCapturePersistenceAndLegacy(t *testing.T) {
 }
 
 func TestHistoryManagementContract(t *testing.T) {
+	var registration struct {
+		OK     bool
+		Result struct {
+			Routes []struct{ Method, Path string }
+		}
+	}
+	if err := json.Unmarshal(dispatch("management.register", []byte(`{}`)), &registration); err != nil {
+		t.Fatal(err)
+	}
+	registered := false
+	for _, route := range registration.Result.Routes {
+		if route.Method == "GET" && route.Path == "/plugins/"+pluginID+"/history" {
+			registered = true
+		}
+	}
+	if !registration.OK || !registered {
+		t.Fatal("history GET route is not registered with CPA")
+	}
+
 	old := tracker
 	tracker = newEngine()
 	tracker.persistence.Enabled = false

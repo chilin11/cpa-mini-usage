@@ -11,6 +11,7 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 library = Path(sys.argv[1]).resolve()
@@ -95,6 +96,21 @@ plugins:
         print("PASS dashboard resource: HTTP 200 HTML")
         json.loads(request("/v0/management/plugins/cpa-mini-usage/data"))
         print("PASS authenticated data endpoint: HTTP 200 JSON")
+        query = urllib.parse.urlencode({
+            "start": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 86400)),
+            "end": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400)),
+            "limit": "20",
+        })
+        history_path = "/v0/management/plugins/cpa-mini-usage/history?" + query
+        history = json.loads(request(history_path))
+        assert history["total"] >= 1 and any(event.get("model") == "test" for event in history["events"]), history
+        try:
+            request(history_path, False)
+        except urllib.error.HTTPError as error:
+            assert error.code in (401, 403), error.code
+        else:
+            raise AssertionError("History endpoint allowed unauthenticated access")
+        print("PASS history endpoint: retained event and authentication")
         try:
             request("/v0/management/plugins/cpa-mini-usage/data", False)
         except urllib.error.HTTPError as error:
