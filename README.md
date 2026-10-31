@@ -31,7 +31,7 @@ Restart CPA, then open **Mini Usage** in the plugin menu or:
 
 `http://YOUR_CPA_HOST:8317/v0/resource/plugins/cpa-mini-usage/dashboard`
 
-The dashboard automatically reuses the saved login from the **same-origin CPA management UI** (including its encoded `cli-proxy-auth` storage). Log in there with “Remember password” selected. The plugin has no address/key inputs, never persists a key, and sends credentials only to the same-origin CPA Management API. Cross-origin management pages and memory-only logins cannot be reused without a host credential bridge.
+The dashboard automatically reuses the saved login from the **same-origin CPA management UI** (including its `enc::v1::` and `enc::v2::` encoded `cli-proxy-auth` storage). Log in there with “Remember password” selected. The plugin has no address/key inputs, never persists a key, and sends credentials only to the same-origin CPA Management API. Cross-origin management pages and memory-only logins cannot be reused without a host credential bridge.
 
 ### Data and persistence
 
@@ -183,6 +183,10 @@ Denser quota cards for multi-provider setups: the quota page widens to 1360px an
 ### v0.1.20
 
 Query retained request history by browser-local dates, provider and model mismatch, with signed server-side pagination beyond the old 60-row / seven-day snapshot. Retention remains at most 35 days / 200,000 events, and aggregate statistics remain last seven days. Mismatch filtering includes only `different` and is not proof of model substitution. Persist the host's explicit `ReasoningEffort` with its source; missing and older records show **Not provided**, never a level guessed from model suffixes or token counts. Includes stale-response protection, error/retry handling, bilingual accessible controls and focused regression tests. Existing history files remain compatible. Upgrade the plugin and restart CPA while preserving the data directory and Docker persistent mount; this release does not backfill missing history or verify upstream execution levels. See [API and host-contract details](docs/request-history.md).
+
+### v0.1.21
+
+Recognize the CPA management UI's `enc::v2::` saved login format as well as the legacy `v1` format, fixing a possible sign-in prompt when a same-origin login is already saved. Credentials are still sent only to the same-origin management API. Upgrade the plugin and restart CPA, preserving the existing data directory. Cross-origin or unsaved logins remain unsupported.
 
 ## Optional CPA Plugin Store source
 

@@ -122,13 +122,13 @@ for(const language of ['zh','en'])test(`${language}: Antigravity renders one 5h/
   api.renderSample({quotas},'antigravity');assert.deepEqual(elements.get('quota-cards').children.map(s=>s.dataset.provider),['antigravity']);
   assert(descendants(elements.get('provider')).some(n=>n.attributes.value==='antigravity'));
 });
-function encoded(value){
-  const mask=Buffer.from('cli-proxy-api-webui::secure-storage|cpa.test|test-agent');
-  return 'enc::v1::'+Buffer.from(Buffer.from(JSON.stringify(value)).map((b,i)=>b^mask[i%mask.length])).toString('base64');
+function encoded(value,version=1){
+  const mask=Buffer.from('cli-proxy-api-webui::secure-storage|cpa.test'+(version===1?'|test-agent':''));
+  return `enc::v${version}::`+Buffer.from(Buffer.from(JSON.stringify(value)).map((b,i)=>b^mask[i%mask.length])).toString('base64');
 }
-test('reuse CPA encoded login without inputs, persistence or query credentials', async () => {
+for(const version of [1,2]) test(`reuse CPA v${version} encoded login without inputs, persistence or query credentials`, async () => {
   const requests=[];
-  const stored={'cli-proxy-auth':encoded({state:{apiBase:'https://cpa.test',managementKey:'test-only-key'}})};
+  const stored={'cli-proxy-auth':encoded({state:{apiBase:'https://cpa.test',managementKey:'test-only-key'}},version)};
   const {api,writes}=dashboard(stored,async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>({credentials:[],quotas:[]})};});
   assert.equal(api.guessKey(),'test-only-key');await api.load();
   assert.equal(requests[0].url,'/v0/management/plugins/cpa-mini-usage/data');
@@ -137,8 +137,11 @@ test('reuse CPA encoded login without inputs, persistence or query credentials',
   assert.equal((html.match(/<input\b/g)||[]).length,3);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="(?:password|text)"/.test(html));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
 });
 test('cross-origin or corrupt CPA credentials are not reused', () => {
-  assert.equal(dashboard({'cli-proxy-auth':encoded({state:{apiBase:'https://other.test',managementKey:'wrong-key'}})}).api.guessKey(),'');
-  assert.equal(dashboard({'cli-proxy-auth':'enc::v1::invalid'}).api.guessKey(),'');
+  for(const version of [1,2]){
+    assert.equal(dashboard({'cli-proxy-auth':encoded({state:{apiBase:'https://other.test',managementKey:'wrong-key'}},version)}).api.guessKey(),'');
+    assert.equal(dashboard({'cli-proxy-auth':`enc::v${version}::invalid`}).api.guessKey(),'');
+  }
+  assert.equal(dashboard({'cli-proxy-auth':'enc::v3::unknown'}).api.guessKey(),'');
   assert.equal(dashboard({managementKey:JSON.stringify('legacy-key')}).api.guessKey(),'legacy-key');
 });
 test('manual refresh polls until provider fetch finishes and keeps model visible', async () => {

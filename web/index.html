@@ -264,7 +264,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.20</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.21</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -570,9 +570,9 @@ function setAlert(messages){alertKeys=Array.isArray(messages)?messages:messages?
 function readCPAStorage(storage,name){
   try {
     let raw=storage.getItem(name);if(!raw)return null;
-    const encoded=raw.startsWith('enc::v1::');
+    const v1=raw.startsWith('enc::v1::'),v2=raw.startsWith('enc::v2::'),encoded=v1||v2;
     if(encoded){
-      const mask=new TextEncoder().encode('cli-proxy-api-webui::secure-storage|'+location.host+'|'+navigator.userAgent);
+      const mask=new TextEncoder().encode('cli-proxy-api-webui::secure-storage|'+location.host+(v1?'|'+navigator.userAgent:''));
       const bytes=Uint8Array.from(atob(raw.slice(9)),c=>c.charCodeAt(0));
       raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes.map((byte,i)=>byte^mask[i%mask.length]));
     }
