@@ -7,8 +7,9 @@
 <style>
 /* Compact telemetry console: official quota in cyan, forecasts in cool blue,
    observed cost in slate, Claude identity in amber. System fonts; no motion.
-   Surface rhythm: 4/8/12/16/24px; 8px controls, 12px cards. Keep metrics primary,
-   quiet chrome, visible focus, internal table scrolling and immediate feedback. */
+   Density reference: https://preview.tabler.io/ (https://github.com/tabler/tabler):
+   small metric groups, quiet separators, named icon actions; no external assets.
+   Keep metric typography intact; compact the chrome, not the quota information. */
 :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;--bg:#eef3f9;--panel:#ffffff;--subtle:#f5f8fc;--ink:#18283e;--muted:#53677f;--line:#d8e2ed;--edge:#b9ccde;--accent:#086f98;--accent-blue:#286ad6;--accent-soft:#e7f3fc;--forecast:#285cb0;--forecast-soft:#eaf1fc;--cost:#354a63;--track:#dce6f0;--good:#16745b;--good-soft:#e6f5ef;--bad:#b33546;--bad-soft:#fff0f2;--warm:#92550d;--warm-soft:#fff1dd;--hover:#f0f6fc;--grid:rgba(41,81,128,.04);--glow:rgba(61,140,228,.09);--shadow:0 2px 8px rgba(26,52,84,.035),0 12px 32px rgba(26,52,84,.025);--radius:12px}
 @media(prefers-color-scheme:dark){:root{--bg:#0a111c;--panel:#111d2c;--subtle:#0e1826;--ink:#e6eefb;--muted:#9cacc2;--line:#293b50;--edge:#3b536e;--accent:#62d5f3;--accent-blue:#6096ff;--accent-soft:#142e43;--forecast:#93baff;--forecast-soft:#192b45;--cost:#c7d4e6;--track:#25364a;--good:#78dbb5;--good-soft:#152f2c;--bad:#ffa0ac;--bad-soft:#34202c;--warm:#efba75;--warm-soft:#30271f;--hover:#18283b;--grid:rgba(123,160,201,.035);--glow:rgba(39,108,191,.12);--shadow:0 2px 8px rgba(0,0,0,.12),0 16px 36px rgba(0,0,0,.08)}}
 *{box-sizing:border-box}
@@ -27,7 +28,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,[t
 .muted{color:var(--muted)}
 .tabnum{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .sr-only{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
-main{max-width:1360px;margin:auto;padding:24px}
+main{max-width:1600px;margin:auto;padding:16px 20px}
 main.request-view{max-width:1480px}
 .masthead{display:flex;align-items:center;justify-content:flex-start;gap:16px;flex-wrap:wrap;padding:0 0 0 12px;border-left:3px solid var(--accent)}
 .masthead>div{min-width:0;overflow-wrap:anywhere}
@@ -54,14 +55,14 @@ main.request-view{max-width:1480px}
 .gate a:hover{border-color:var(--accent)}
 .gate a:active{background:var(--track)}
 .alert{margin-top:16px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--bad);background:var(--bad-soft);border-radius:8px;font-size:12px;color:var(--bad);overflow-wrap:anywhere}
-.tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-top:20px}
-.tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 14px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;margin-bottom:-1px;color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-top:12px}
+.tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:6px 12px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;margin-bottom:-1px;color:var(--muted);font-size:13px}
 .tabs button:hover{color:var(--ink);background:var(--subtle)}
 .tabs button:active{background:var(--track)}
 .tabs button[aria-selected=true]{color:var(--accent);background:var(--accent-soft);border-bottom-color:var(--accent);font-weight:650;box-shadow:inset 0 1px 0 var(--panel)}
 .tab-count{display:inline-block;min-width:24px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--muted);font-variant-numeric:tabular-nums}
 .tabs button[aria-selected=true] .tab-count{color:var(--accent);border-color:var(--edge)}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0 20px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--subtle);box-shadow:inset 0 1px 0 var(--panel)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:6px 10px;flex-wrap:wrap;margin:8px 0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--subtle)}
 .toolbar-options{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;max-width:100%}
 .toolbar .header-actions{flex-wrap:wrap;justify-content:flex-start;width:auto;gap:10px}
 .toolbar .toolbar-options{gap:12px}
@@ -82,44 +83,48 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .section-head h2{min-width:0;overflow-wrap:anywhere}
 .section-label{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:12px;align-items:start}
-.account-browser{position:sticky;top:8px;z-index:2;margin-bottom:16px;padding:12px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow)}
-.browse-fields{display:flex;align-items:end;flex-wrap:wrap;gap:10px}
-.browse-fields label{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:11px;color:var(--muted)}
-.browse-fields .account-search{flex:1 1 240px}
-.browse-fields input{width:100%;min-height:34px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
-.browse-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
-.browse-summary .pagination{flex-wrap:wrap}
-.account-bottom{justify-content:flex-end;margin-top:16px}
-.account-id{font:10px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
-@media(max-width:760px){.account-browser{position:static}.browse-fields label:not(.account-search){flex:1 1 130px}.browse-fields select{width:100%}.browse-summary .pagination{width:100%;justify-content:space-between}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:8px;align-items:start}
+.account-browser{margin-bottom:10px}
+.browse-fields{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;align-items:center;gap:6px}
+.browse-fields label{display:flex;align-items:center;min-width:0;font-size:11px;color:var(--muted)}
+.browse-fields input{width:100%;min-height:32px;min-width:0;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-size:12px}
+.browse-fields .button{min-height:32px;padding:4px 8px}
+.browse-fields select{width:100%}
+.browse-summary{display:flex;align-items:center;justify-content:space-between;gap:4px 8px;flex-wrap:wrap;margin-top:4px}
+.browse-summary .pagination{flex-wrap:wrap;gap:6px}
+.browse-summary .button{min-height:28px;padding:3px 8px}
+.account-bottom{justify-content:flex-end;margin-top:10px}
+.account-id{font:10px/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:760px){.browse-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.browse-fields .account-search{grid-column:1;grid-row:1}.browse-fields label[for=account-state]{grid-column:1;grid-row:2}.browse-fields label[for=account-sort]{grid-column:2;grid-row:2}#account-clear{grid-column:2;grid-row:1;justify-self:end}.browse-summary .pagination{margin-left:auto}}
 .provider-section{grid-column:1/-1;min-width:0;--provider-accent:var(--accent)}
 .provider-section[data-provider=claude]{--provider-accent:var(--warm)}
 .provider-section[data-provider=antigravity]{--provider-accent:var(--good)}
-.provider-section+.provider-section{margin-top:12px}
+.provider-section+.provider-section{margin-top:4px}
+.provider-section>.section-head{margin-bottom:6px}
 .provider-section>.section-head h2{display:flex;align-items:center;gap:8px}
 .provider-section>.section-head h2::before{content:"";width:3px;height:14px;flex-shrink:0;background:var(--provider-accent);border-radius:2px}
 .panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
-.accounttop{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:linear-gradient(110deg,var(--subtle),var(--panel));box-shadow:inset 0 2px 0 var(--provider-accent)}
-.identity{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 160px}
-.account-icon{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:650;flex-shrink:0}
+.accounttop{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px 6px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
+.identity{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 160px}
+.account-icon{display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--line);border-radius:6px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:650;flex-shrink:0}
 .account-icon.claude{color:var(--warm);background:var(--warm-soft)}
 .account-icon.antigravity{color:var(--good);background:var(--good-soft)}
-.panel.has-groups{grid-column:1/-1}
-.group-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}
-.group{min-width:0;box-shadow:-1px 0 0 var(--line),0 -1px 0 var(--line)}
-.window-group{padding:8px 12px 0}
+.group-grid{display:grid;grid-template-columns:minmax(0,1fr)}
+.group{min-width:0}
+.group+.group{border-top:1px solid var(--line)}
+.window-group{padding:4px 8px 0}
 .window-group h4{margin:0;font-size:12px;font-weight:650;color:var(--muted);letter-spacing:.2px}
 .identity-text{min-width:0}
 .account{font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
-.account-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px 12px;flex-wrap:wrap;min-width:0;max-width:100%;margin-left:auto}
+.account-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px 6px;flex-wrap:wrap;min-width:0;max-width:100%;margin-left:auto}
 .manual-reset{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .manual-reset strong{font-size:18px;font-weight:750;line-height:1.2;color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.account-refresh{padding:4px 8px;min-height:28px;font-size:11px;font-weight:500;border-color:var(--line)}
+.account-refresh{width:28px;min-height:28px;padding:0;flex-shrink:0;border-color:var(--line)}
+.refresh-icon{font:22px/1 var(--mono)}
 .button[aria-busy=true]{cursor:progress;border-style:dashed;box-shadow:none}
 .button:disabled{box-shadow:none}
 .windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
-.window{display:flex;flex-direction:column;padding:10px;min-width:0}
+.window{display:flex;flex-direction:column;padding:6px 8px;min-width:0}
 .window+.window{border-left:1px solid var(--line)}
 .windowhead h3{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.2px}
 .quota-value{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}
@@ -127,11 +132,11 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .percent-unit{font-size:12px;font-weight:500;letter-spacing:0;margin-left:2px}
 .remaining-label{font-size:11px;color:var(--muted)}
 .low .percent{color:var(--bad)}
-.track{height:4px;flex-shrink:0;border-radius:3px;background:var(--track);margin:6px 0 8px}
+.track{height:4px;flex-shrink:0;border-radius:3px;background:var(--track);margin:4px 0}
 .fill{height:100%;background:linear-gradient(90deg,var(--accent-blue),var(--accent));border-radius:3px}
 .low .fill{background:var(--bad)}
 .unknown .percent{color:var(--muted)}
-.windowstats{margin:0 0 8px;padding:6px 0;border:0;border-radius:6px;background:linear-gradient(90deg,transparent calc(50% + 3px),var(--forecast-soft) calc(50% + 3px));min-width:0}
+.windowstats{margin:0 0 4px;padding:4px 0;border:0;border-radius:6px;background:linear-gradient(90deg,transparent calc(50% + 3px),var(--forecast-soft) calc(50% + 3px));min-width:0}
 .usage-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:baseline}
 .usage-row>*{min-width:0}
 .usage-row>:nth-child(2){padding-left:6px;padding-right:2px}
@@ -143,7 +148,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .usage-row .estimate-cost{display:block;overflow-wrap:anywhere}
 .observed-value{font-size:12px;color:var(--muted);margin-top:1px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
 .estimate-value{font-size:12px;color:var(--forecast);margin-top:1px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
-.reset{font-size:11px;color:var(--muted);margin-top:auto;padding-top:6px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.reset{font-size:11px;color:var(--muted);margin-top:auto;padding-top:4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .account-error{margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--bad);border-radius:4px;background:var(--bad-soft);font-size:11px;color:var(--bad);overflow-wrap:anywhere}
 .account-error:empty{display:none}
 .account-note{margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--good);border-radius:4px;background:var(--good-soft);font-size:11px;color:var(--good);overflow-wrap:anywhere}
@@ -264,9 +269,9 @@ tbody tr:focus-within>td{background:var(--hover)}
 .timing-unit{display:block;font-size:10px;line-height:1.5;color:var(--muted);font-weight:400}
 .request-timing .timing-line{display:block;font-size:11px;line-height:1.5}
 .request-timing .timing-label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;color:var(--muted);margin-right:5px;letter-spacing:0}
-@media(max-width:760px){main{padding:20px 16px}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.toolbar{margin-bottom:16px}.results{font-size:10px;text-align:left;flex-basis:100%}.accounttop{padding:10px 12px;flex-wrap:wrap}.window{padding:10px}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}}
-@media(max-width:480px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}main{padding:16px 12px}h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:10px}.toolbar-options{width:100%}.identity{flex-basis:100%}.account-actions{width:100%;justify-content:flex-start;margin-left:0}.manual-reset{margin-right:auto}.account-error,.account-note{margin-left:14px;margin-right:14px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
-@media(max-width:380px){.window{padding:12px}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.account-actions{flex-wrap:wrap}.toolbar{padding:10px}.tabs button{padding:10px 8px}}
+@media(max-width:760px){main{padding:12px}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:36px}.account-refresh{width:36px}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
+@media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{margin-right:auto}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
+@media(max-width:350px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.tabs button{padding:6px 8px}}
 .needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login .statusbar,.needs-login #updated{display:none}
 </style>
 </head>
@@ -274,7 +279,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.23</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.24</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -295,13 +300,12 @@ tbody tr:focus-within>td{background:var(--hover)}
 <section id="page-quota" role="tabpanel" aria-labelledby="tab-quota" tabindex="0">
   <section class="account-browser" aria-label="账户浏览">
     <div class="browse-fields">
-      <label class="account-search" for="account-search"><span data-i18n="搜索账户（名称、邮箱或 ID）">搜索账户（名称、邮箱或 ID）</span><input id="account-search" type="search" autocomplete="off" aria-controls="quota-cards"></label>
-      <label for="account-state"><span data-i18n="账户状态">账户状态</span><select id="account-state"><option value="" data-i18n="全部账户">全部账户</option><option value="enabled" data-i18n="仅已启用">仅已启用</option><option value="disabled" data-i18n="仅已禁用">仅已禁用</option></select></label>
-      <label for="account-sort"><span data-i18n="排序">排序</span><select id="account-sort"><option value="default" data-i18n="默认顺序">默认顺序</option><option value="name" data-i18n="账户名称">账户名称</option><option value="remaining" data-i18n="剩余额度从低到高">剩余额度从低到高</option></select></label>
-      <label for="account-size"><span data-i18n="每页账户数">每页账户数</span><select id="account-size"><option value="12">12</option><option value="24">24</option><option value="48">48</option></select></label>
+      <label class="account-search" for="account-search"><span class="sr-only" data-i18n="搜索账户（名称、邮箱或 ID）">搜索账户（名称、邮箱或 ID）</span><input id="account-search" type="search" autocomplete="off" aria-controls="quota-cards" placeholder="搜索账户（名称、邮箱或 ID）"></label>
+      <label for="account-state"><span class="sr-only" data-i18n="账户状态">账户状态</span><select id="account-state"><option value="" data-i18n="全部账户">全部账户</option><option value="enabled" data-i18n="仅已启用">仅已启用</option><option value="disabled" data-i18n="仅已禁用">仅已禁用</option></select></label>
+      <label for="account-sort"><span class="sr-only" data-i18n="排序">排序</span><select id="account-sort"><option value="default" data-i18n="默认顺序">默认顺序</option><option value="name" data-i18n="账户名称">账户名称</option><option value="remaining" data-i18n="剩余额度从低到高">剩余额度从低到高</option></select></label>
       <button id="account-clear" class="button" type="button" data-i18n="清除账户筛选">清除账户筛选</button>
     </div>
-    <div class="browse-summary"><span id="account-results" class="results" role="status" aria-live="polite"></span><nav class="pagination" aria-label="账户分页"><button id="account-prev" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page" class="tabnum">0 / 0</span><button id="account-next" class="button" type="button" data-i18n="下一页">下一页</button></nav></div>
+    <div class="browse-summary"><span id="account-results" class="results" role="status" aria-live="polite"></span><nav class="pagination" aria-label="账户分页"><label class="page-size-control" for="account-size"><span data-i18n="每页">每页</span><select id="account-size" aria-label="每页账户数"><option value="12">12</option><option value="24">24</option><option value="48">48</option></select></label><button id="account-prev" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page" class="tabnum">0 / 0</span><button id="account-next" class="button" type="button" data-i18n="下一页">下一页</button></nav></div>
   </section>
   <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
   <nav id="account-bottom" class="pagination account-bottom" aria-label="账户分页（底部）"><button id="account-prev-bottom" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page-bottom" class="tabnum">0 / 0</span><button id="account-next-bottom" class="button" type="button" data-i18n="下一页">下一页</button></nav>
@@ -478,6 +482,7 @@ function applyLanguage(){
   document.documentElement.lang=language==='en'?'en':'zh-CN';document.title=t('用量与额度')+' · CPA Mini Usage';$('language').value=language;
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
+  $('account-search').placeholder=t('搜索账户（名称、邮箱或 ID）');
   $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();renderResetDialog();
 }
 function setLanguage(value,persist=true){
@@ -634,7 +639,9 @@ const remoteAccountBusy=()=>Object.values(data?.account_refresh||{}).some(state=
 function syncAccountControls(){
   for(const [id,entry] of cardCache){
     const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度'),job=actionJobs.get(id);
-    entry.button.disabled=busy||Boolean(job);if(entry.button.textContent!==label)entry.button.textContent=label;
+    entry.button.disabled=busy||Boolean(job);if(entry.refreshLabel.textContent!==label)entry.refreshLabel.textContent=label;
+    entry.refreshIcon.textContent=busy?'…':'↻';
+    const refreshName=t('刷新 {name} 的额度',{name:entry.name});entry.button.title=busy?label+' · '+refreshName:refreshName;entry.button.setAttribute('aria-label',entry.button.title);
     if(entry.reset)syncActionButton(entry.reset,job?.kind==='reset'?'正在使用…':'使用重置卡',busy||Boolean(job),job?.kind==='reset',{text:'为 {name} 使用一张重置卡',values:{name:entry.name}});
     syncSwitch(entry.toggle,job,entry.disabled,entry.name);
     const note=accountNote(id),noteText=note?message(note):'';if(entry.note.textContent!==noteText)entry.note.textContent=noteText;entry.note.hidden=!noteText;
@@ -986,11 +993,11 @@ function renderQuotas(){
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
         let reset=null;if(item.provider==='codex'&&!item.disabled&&Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0){reset=add(actions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
         const toggle=add(actions,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
-        const button=add(actions,'button','button account-refresh','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
+        const button=add(actions,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','sr-only','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
         if(groups.length){const holder=add(panel,'div','group-grid');groups.forEach(g=>{const box=add(holder,'div','group');const head=add(box,'div','window-group');const label=add(head,'h4','',groupName(g));label.title=t('此分组按模型系列统计本机观测用量。');const grid=add(box,'div','windows');addWindow(grid,'5 小时','5h',g.five_hour);addWindow(grid,'7 天','7d',g.seven_day);});}
         else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
-        entry={panel,button,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
+        entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
       panels.push(entry.panel);
     });

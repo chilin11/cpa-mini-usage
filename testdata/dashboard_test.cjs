@@ -277,6 +277,8 @@ for(const language of ['zh','en']){
     const reset=descendants(panel(elements,'other')).find(n=>n.className==='manual-reset');assert.deepEqual(reset.children.map(n=>n.textContent),language==='en'?['Resets remaining','2']:['可重置','2','次']);
     assert.equal(refreshButton(panel(elements,'account')).getAttribute('aria-label'),language==='en'?'Refresh quota for alice@example.com':'刷新 alice@example.com 的额度');
     assert.equal(elements.get('provider').getAttribute('aria-label'),language==='en'?'Filter by provider':'筛选服务商');
+    assert.equal(elements.get('account-search').placeholder,language==='en'?'Search accounts (name, email or ID)':'搜索账户（名称、邮箱或 ID）');
+    const refresh=refreshButton(panel(elements,'account'));assert.equal(refresh.title,refresh.getAttribute('aria-label'));assert.equal(refresh.children[0].getAttribute('aria-hidden'),'true');assert.equal(refresh.children[1].textContent,language==='en'?'Refresh quota':'刷新额度');
     assert.match(elements.get('footer').textContent,/15/);assert.equal(document.title,language==='en'?'Usage & quota · CPA Mini Usage':'用量与额度 · CPA Mini Usage');
     assert.equal(api.resetCountdown(new Date(Date.now()+20*60000).toISOString()),language==='en'?'Resets in 20m':'还有 20 分钟重置');
     const nodes=[...elements.values()].flatMap(descendants);assert(nodes.some(n=>n.textContent===(language==='en'?'Total tokens':'总 token')));assert(nodes.some(n=>n.textContent==='gpt-test'));
@@ -293,6 +295,7 @@ for(const language of ['zh','en']){
     },{language});
     await d.api.load();const other=panel(d.elements,'other'),first=panel(d.elements,'account'),table=d.elements.get('recent-table').children[0],status=d.elements.get('status').textContent;
     const pending=refreshButton(first).onclick();assert.equal(refreshButton(first).disabled,true);assert.equal(refreshButton(other).disabled,false);assert.equal(d.elements.get('refresh').disabled,true);assert.equal(d.elements.get('status').textContent,status);assert.equal(d.elements.get('page-quota').getAttribute('aria-busy'),'false');
+    assert.equal(refreshButton(first).children[0].textContent,'…');assert.equal(refreshButton(first).children[1].textContent,language==='en'?'Refreshing…':'正在刷新…');assert.match(refreshButton(first).getAttribute('aria-label'),language==='en'?/Refreshing…/:/正在刷新…/);
     assert.equal(requests.at(-1).options.method,'POST');assert.equal(requests.at(-1).options.headers['Content-Type'],'application/json');assert.deepEqual(JSON.parse(requests.at(-1).options.body),{auth_id:'account'});
     release();await pending;assert.equal(reads,3);assert.equal(panel(d.elements,'other'),other);assert.notEqual(panel(d.elements,'account'),first);assert.equal(d.elements.get('recent-table').children[0],table);assert.equal(refreshButton(panel(d.elements,'account')).disabled,false);assert.equal(d.elements.get('refresh').disabled,false);
   });
@@ -519,8 +522,8 @@ for(const change of ['logout','key-change']){
   });
 }
 
-test('request-only compact CSS widens main without changing quota layout',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/main\{max-width:1360px/);assert.match(css,/main\.request-view\{max-width:1480px\}/);assert.match(css,/\.request-view #page-requests th,\.request-view #page-requests td\{padding:7px 8px\}/);assert.match(css,/\.tablewrap\{overflow-x:auto/);assert(!html.includes('\u8bcd\u5143'));
+test('request table CSS retains its independent width and internal scrolling',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/main\{max-width:1600px/);assert.match(css,/main\.request-view\{max-width:1480px\}/);assert.match(css,/\.request-view #page-requests th,\.request-view #page-requests td\{padding:7px 8px\}/);assert.match(css,/\.tablewrap\{overflow-x:auto/);assert(!html.includes('\u8bcd\u5143'));
 });
 
 test('pending requests keep explicit feedback across tab/language switches without quota loading changes',async()=>{
@@ -578,8 +581,8 @@ for(const language of ['zh','en']){
     assert(stats.some(s=>s.children[1].children.every(n=>n.textContent==='—')&&s.children[2].children.every(n=>n.textContent==='— '+suffix)));
   });
 }
-test('quota used and estimate rows retain readable sizing and stack windows on narrow screens',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:15px/);assert.match(css,/\.observed-value\{font-size:12px/);assert.match(css,/@media\(max-width:480px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);
+test('quota metrics retain readable sizing; compact cards stack windows only below 350px',()=>{
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:15px/);assert.match(css,/\.observed-value\{font-size:12px/);assert.match(css,/@media\(max-width:350px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);assert.match(css,/minmax\(min\(100%,300px\),1fr\)/);assert(!/\.account-browser\{[^}]*position:sticky/.test(css));assert(!/\.panel\.has-groups\{grid-column:1\/-1/.test(css));
 });
 test('refresh and language controls live below tabs, outside CPA top-right overlay area',()=>{
   const d=dashboard(),root=d.elements.get('dashboard'),header=root.children.find(n=>n.tag==='header'),toolbar=root.children.find(n=>n.getAttribute('class')==='toolbar');

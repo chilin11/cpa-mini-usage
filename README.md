@@ -196,6 +196,10 @@ Register the history GET route with CPA so the request history page can query re
 
 Browse large account collections with search, status filters, sorting and pagination while retaining per-account actions. Request history now defaults to a rolling last 24 hours with empty date fields; selecting both dates still queries local calendar days. Pagination keeps a stable time anchor, and refresh starts a new one. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
 
+### v0.1.24
+
+Make account cards and the filter bar more compact, showing more accounts at once without hiding quota windows or account actions. Multi-group accounts no longer occupy a full row, and mobile layouts retain accessible controls. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

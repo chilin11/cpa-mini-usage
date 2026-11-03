@@ -84,6 +84,7 @@ window.visualFixture = {
     $('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');setAlert('');
     data=${JSON.stringify(sample())};
     if(state==='many')data.quotas=Array.from({length:137},(_,i)=>({...data.quotas[i%3],auth_id:'demo-credential-'+i,name:'demo-team-'+String(i).padStart(3,'0')+'@example.test',disabled:i%9===0,manual_reset_remaining:i%3===1?2:undefined}));
+    if(state==='groups')data.quotas=Array.from({length:3},(_,i)=>({provider:'antigravity',auth_id:'demo-group-'+i,name:'demo-group-'+i+'@example.test',groups:['gemini','claude'].map(label=>({key:label,label:label+' demo',five_hour:data.quotas[0].five_hour,seven_day:data.quotas[0].seven_day}))}));
     if(state==='empty'){data.quotas=[];data.credentials=[];data.recent=[];}
     if(state==='loading'){data=null;loading=true;headerLoading=true;phase='loading';}
     if(state==='error'){data=null;phase='error';setAlert('无法连接 CPA。');}
@@ -293,6 +294,52 @@ if (process.argv[2] === '--serve') {
           }
           await layout('quota');
           await page.locator('#tab-requests').click();await layout('requests');
+          // Reuse the existing two viewport contexts, without adding a matrix.
+          if (lang === 'zh' && theme === 'light') {
+            await page.locator('#tab-quota').click();
+            await page.evaluate(() => visualFixture.show('many'));
+            const density = await page.evaluate(() => {
+              const rect = el => {const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
+              const cards=[...document.querySelectorAll('#quota-cards .panel')];
+              return {viewport:innerWidth,pageWidth:document.documentElement.scrollWidth,cards:cards.length,
+                columns:getComputedStyle(document.querySelector('.provider-section>.grid')).gridTemplateColumns.split(' ').length,
+                fullyVisible:cards.filter(el=>{const r=rect(el);return r.y>=0&&r.bottom<=innerHeight;}).length,
+                card:rect(cards.find(el=>!el.classList.contains('account-disabled'))),
+                browser:rect(document.querySelector('.account-browser')),
+                toolbar:rect(document.querySelector('.toolbar')),
+                invalid:cards.filter(el=>el.scrollWidth>el.clientWidth+1).map(el=>el.dataset.authId),
+                windows:cards.map(el=>el.querySelectorAll('.window').length)};
+            });
+            assert.equal(density.cards,12);assert.equal(density.pageWidth,width);assert.deepEqual(density.invalid,[]);
+            assert(density.windows.every(n=>n===2),'both quota windows remain directly visible');
+            assert(density.card.width>0&&density.card.height>0&&density.card.height<280,'normal account is visible and compact without reducing metric type');
+            if (width === 1480) {
+              assert.equal(density.columns,4);assert(density.fullyVisible>=8,'eight complete accounts fit the first 1000px screen');
+              assert(density.browser.height<=72,'desktop browsing controls stay within two short lines');
+              await page.screenshot({path:path.join(directory,'1480-compact-many.png'),fullPage:false});
+            } else {
+              assert.equal(density.columns,1);assert(density.browser.height<=150,'mobile filters stay compact');
+              assert(await page.locator('.account-refresh').first().evaluate(el=>el.getBoundingClientRect().height>=36));
+            }
+            report.push({key,tab:'many',...density});
+            await page.locator('#account-search').fill('demo-credential-133');
+            assert.equal(await page.locator('#quota-cards .panel').count(),1);
+            assert.equal(await page.locator('#account-page').textContent(),'1 / 1');
+            assert(await page.locator('.account-reset').isVisible());
+            await page.locator('#account-clear').click();await page.locator('#account-next').click();
+            assert.equal(await page.locator('#account-page').textContent(),'2 / 12');
+            await page.locator('#account-size').selectOption('24');
+            assert.equal(await page.locator('#quota-cards .panel').count(),24);
+            await page.locator('#account-state').selectOption('disabled');
+            assert.equal(await page.locator('#quota-cards .panel.account-disabled').count(),16);
+            await page.locator('#account-sort').selectOption('remaining');
+            assert.equal(await page.locator('#account-page').textContent(),'1 / 1');
+            await page.locator('#account-clear').click();
+            await page.evaluate(() => visualFixture.show('groups'));
+            const groups=await page.locator('.has-groups').evaluateAll(cards=>cards.map(el=>({width:el.getBoundingClientRect().width,windows:el.querySelectorAll('.window').length,overflow:el.scrollWidth>el.clientWidth+1,folds:el.querySelectorAll('details').length})));
+            assert.equal(groups.length,3);assert(groups.every(el=>el.windows===4&&!el.overflow&&!el.folds));
+            if(width===1480)assert(groups.every(el=>el.width<370),'multi-model accounts no longer occupy a whole desktop row');
+          }
           await page.evaluate(() => visualFixture.show('ready'));
           await page.emulateMedia({reducedMotion: 'no-preference'});
           assert.equal(await page.evaluate(() => document.getAnimations().length), 0);
