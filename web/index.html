@@ -83,6 +83,16 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .section-head h2{min-width:0;overflow-wrap:anywhere}
 .section-label{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:12px;align-items:start}
+.account-browser{position:sticky;top:8px;z-index:2;margin-bottom:16px;padding:12px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow)}
+.browse-fields{display:flex;align-items:end;flex-wrap:wrap;gap:10px}
+.browse-fields label{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:11px;color:var(--muted)}
+.browse-fields .account-search{flex:1 1 240px}
+.browse-fields input{width:100%;min-height:34px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+.browse-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
+.browse-summary .pagination{flex-wrap:wrap}
+.account-bottom{justify-content:flex-end;margin-top:16px}
+.account-id{font:10px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:760px){.account-browser{position:static}.browse-fields label:not(.account-search){flex:1 1 130px}.browse-fields select{width:100%}.browse-summary .pagination{width:100%;justify-content:space-between}}
 .provider-section{grid-column:1/-1;min-width:0;--provider-accent:var(--accent)}
 .provider-section[data-provider=claude]{--provider-accent:var(--warm)}
 .provider-section[data-provider=antigravity]{--provider-accent:var(--good)}
@@ -264,7 +274,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.22</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.23</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -283,7 +293,18 @@ tbody tr:focus-within>td{background:var(--hover)}
   <div class="filter-control"><label for="provider" data-i18n="服务商">服务商</label><select id="provider" aria-label="筛选服务商"><option value="" data-i18n="全部服务商">全部服务商</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="antigravity">Antigravity</option></select></div><div class="persistence-control" id="persistence-control"><label class="persistence-label" for="persistence-enabled"><input id="persistence-enabled" type="checkbox" aria-label="保存数据" disabled><span data-i18n="保存数据">保存数据</span></label><span id="persistence-status" role="status" aria-live="polite">—</span></div>
 </div><span id="updated" class="results" aria-live="polite">等待同步</span></div>
 <section id="page-quota" role="tabpanel" aria-labelledby="tab-quota" tabindex="0">
+  <section class="account-browser" aria-label="账户浏览">
+    <div class="browse-fields">
+      <label class="account-search" for="account-search"><span data-i18n="搜索账户（名称、邮箱或 ID）">搜索账户（名称、邮箱或 ID）</span><input id="account-search" type="search" autocomplete="off" aria-controls="quota-cards"></label>
+      <label for="account-state"><span data-i18n="账户状态">账户状态</span><select id="account-state"><option value="" data-i18n="全部账户">全部账户</option><option value="enabled" data-i18n="仅已启用">仅已启用</option><option value="disabled" data-i18n="仅已禁用">仅已禁用</option></select></label>
+      <label for="account-sort"><span data-i18n="排序">排序</span><select id="account-sort"><option value="default" data-i18n="默认顺序">默认顺序</option><option value="name" data-i18n="账户名称">账户名称</option><option value="remaining" data-i18n="剩余额度从低到高">剩余额度从低到高</option></select></label>
+      <label for="account-size"><span data-i18n="每页账户数">每页账户数</span><select id="account-size"><option value="12">12</option><option value="24">24</option><option value="48">48</option></select></label>
+      <button id="account-clear" class="button" type="button" data-i18n="清除账户筛选">清除账户筛选</button>
+    </div>
+    <div class="browse-summary"><span id="account-results" class="results" role="status" aria-live="polite"></span><nav class="pagination" aria-label="账户分页"><button id="account-prev" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page" class="tabnum">0 / 0</span><button id="account-next" class="button" type="button" data-i18n="下一页">下一页</button></nav></div>
+  </section>
   <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
+  <nav id="account-bottom" class="pagination account-bottom" aria-label="账户分页（底部）"><button id="account-prev-bottom" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page-bottom" class="tabnum">0 / 0</span><button id="account-next-bottom" class="button" type="button" data-i18n="下一页">下一页</button></nav>
 </section>
 <section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" class="hide">
   <div id="request-summary" class="summary" aria-label="近 7 天观测统计"></div>
@@ -294,7 +315,10 @@ tbody tr:focus-within>td{background:var(--hover)}
       <label for="history-end"><span data-i18n="结束日期（本地，含当天）">结束日期（本地，含当天）</span><input id="history-end" type="date" aria-describedby="history-retention"></label>
       <label for="history-model"><span data-i18n="模型名称状态">模型名称状态</span><select id="history-model"><option value="" data-i18n="全部状态">全部状态</option><option value="different" data-i18n="仅模型不一致">仅模型不一致</option></select></label>
       <button id="history-retry" class="button" type="button" data-i18n="重新查询">重新查询</button>
+      <button id="history-rolling" class="button" type="button" data-i18n="最近 24 小时">最近 24 小时</button>
     </div>
+    <p class="history-note" data-i18n="日期留空时查询滚动最近 24 小时；手选日期需同时填写起止，包含结束当天。">日期留空时查询滚动最近 24 小时；手选日期需同时填写起止，包含结束当天。</p>
+    <p id="history-range" class="history-note" role="status" aria-live="polite"></p>
     <p id="history-retention" class="history-note"></p>
     <p class="history-note" data-i18n="仅筛选 different（模型不一致），不含版本变体或未知；名称比较不能证明模型被替换。">仅筛选 different（模型不一致），不含版本变体或未知；名称比较不能证明模型被替换。</p>
     <p id="history-message" class="history-note" role="status" aria-live="polite"></p>
@@ -331,12 +355,17 @@ const cardCache=new Map(), accountErrors=new Map();
 // credit) kept across an ambiguous failure so a retry is idempotent upstream.
 const actionJobs=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
 let pageSize = 20,requestJob=null,requestStatusKey='';
-let historyPage=null,historyBusy=false,historyError='',historySerial=0,historyIndex=0,historyCursors=[''],historyAbort=null;
+let accountSearch='',accountState='',accountSort='default',accountPage=0,accountSize=12;
+// The full signed-query inputs, not just the cursor, belong to one history snapshot.
+let historyPage=null,historyBusy=false,historyError='',historySerial=0,historyIndex=0,historyCursors=[''],historyAbort=null,historyQuery=null;
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
 const languageStorage='cpa-mini-usage-language';
 const translations={
   '中文':'Chinese','英语':'English',
+  '账户浏览':'Browse accounts','搜索账户（名称、邮箱或 ID）':'Search accounts (name, email or ID)','账户状态':'Account status','全部账户':'All accounts','仅已启用':'Enabled only','仅已禁用':'Disabled only','排序':'Sort','默认顺序':'Default order','账户名称':'Account name','剩余额度从低到高':'Lowest remaining quota first','每页账户数':'Accounts per page','清除账户筛选':'Clear account filters','账户分页':'Account pagination','账户分页（底部）':'Account pagination (bottom)',
+  '显示 {start}–{end} / 匹配 {n} 个，共 {total} 个账户':'Showing {start}–{end} / {n} matching, {total} accounts total','当前账户筛选无匹配结果':'No accounts match these filters','请更改搜索、账户状态或服务商筛选。':'Change the search, account status or provider filter.','本页 {n} / 匹配 {total} 个账户':'{n} on this page / {total} matching accounts','凭证 ID：{id}':'Credential ID: {id}',
+  '最近 24 小时':'Last 24 hours','日期留空时查询滚动最近 24 小时；手选日期需同时填写起止，包含结束当天。':'Leave both dates empty for the rolling last 24 hours; custom dates require both fields and include the end day.','滚动 24 小时：{start} — {end}（本地时间）':'Rolling 24 hours: {start} — {end} (local time)','所选日期：{start} — {end}（本地时间，结束不含）':'Selected dates: {start} — {end} (local time, exclusive end)',
   '请求历史':'Request history','统计仍为近 7 天':'Statistics remain last 7 days','历史筛选':'History filters','开始日期（本地）':'Start date (local)','结束日期（本地，含当天）':'End date (local, inclusive)',
   '模型名称状态':'Model name status','全部状态':'All statuses','仅模型不一致':'Model mismatch only','重新查询':'Query again','正在查询历史…':'Loading history…','历史查询失败，请重试。':'History query failed. Please retry.',
   '请选择有效日期，开始不得晚于结束，范围最多 37 天。':'Choose valid dates in order, spanning at most 37 days.','历史分页已过期，请重新查询。':'History pagination expired. Query again.',
@@ -629,7 +658,8 @@ function syncControls(){
   $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
-  ++historySerial;historyAbort?.abort();historyAbort=null;historyPage=null;historyBusy=false;historyError='';historyIndex=0;historyCursors=[''];
+  ++historySerial;historyAbort?.abort();historyAbort=null;historyPage=null;historyBusy=false;historyError='';historyIndex=0;historyCursors=[''];historyQuery=null;
+  accountPage=0;accountSearch='';accountState='';$('account-search').value='';$('account-state').value='';
   data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
@@ -916,16 +946,32 @@ function addWindow(parent,title,period,win){
   const reset=add(section,'div','reset',resetCountdown(win?.reset_at));reset.title=when(win?.reset_at);if(win?.reset_at)reset.dataset.resetAt=win.reset_at;
   if(validEstimate(win?.observed_cost)==null&&win?.missing_price)observedAmount.title=t('缺少模型单价，金额暂不可用');if(cost==null&&win?.missing_price)amount.title=t('缺少模型单价，金额暂不可用');
 }
+function accountRemaining(item){
+  const windows=list(item.groups).length?list(item.groups).flatMap(g=>[g.five_hour,g.seven_day]):[item.five_hour,item.seven_day];
+  const values=windows.map(remainingPercent).filter(n=>n!=null);return values.length?Math.min(...values):Infinity;
+}
 function renderQuotas(){
-  const root=$('quota-cards'),quotas=list(data?.quotas).filter(active);$('quota-count').textContent=data?fmt(quotas.length):'—';
-  if(!data||!quotas.length){root.replaceChildren(!data?noData():empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
+  const root=$('quota-cards'),all=list(data?.quotas),providerQuotas=all.filter(active),query=accountSearch.trim().toLowerCase();
+  const matches=providerQuotas.filter(q=>(!query||[q.name,q.auth_id].some(value=>String(value||'').toLowerCase().includes(query)))&&(!accountState||Boolean(q.disabled)===(accountState==='disabled')));
+  if(accountSort==='name')matches.sort((a,b)=>credentialName(a).localeCompare(credentialName(b),locale(),{numeric:true})||String(a.auth_id).localeCompare(String(b.auth_id)));
+  if(accountSort==='remaining')matches.sort((a,b)=>accountRemaining(a)-accountRemaining(b)||credentialName(a).localeCompare(credentialName(b)));
+  const pages=Math.ceil(matches.length/accountSize);accountPage=Math.max(0,Math.min(accountPage,pages-1));
+  const start=accountPage*accountSize,quotas=matches.slice(start,start+accountSize);
+  $('quota-count').textContent=data?fmt(providerQuotas.length):'—';
+  $('account-results').textContent=data?t('显示 {start}–{end} / 匹配 {n} 个，共 {total} 个账户',{start:matches.length?start+1:0,end:start+quotas.length,n:fmt(matches.length),total:fmt(all.length)}):t('等待同步');
+  for(const suffix of ['','-bottom']){
+    $('account-page'+suffix).textContent=(pages?accountPage+1:0)+' / '+pages;
+    $('account-prev'+suffix).disabled=!data||accountPage===0;$('account-next'+suffix).disabled=!data||accountPage>=pages-1;
+  }
+  $('account-bottom').hidden=pages<=1;
+  if(!data||!quotas.length){root.replaceChildren(!data?noData():providerQuotas.length?empty('当前账户筛选无匹配结果','请更改搜索、账户状态或服务商筛选。'):empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
   const providers=[...new Set(quotas.map(q=>q.provider))].sort((a,b)=>a.localeCompare(b)),sections=[];
   const oldSections=new Map([...root.children].map(s=>[s.dataset.provider,s]));
   const present=new Set();
   providers.forEach(provider=>{
     const accounts=quotas.filter(q=>q.provider===provider);let section=oldSections.get(provider);
     if(!section){section=el('section','provider-section');section.dataset.provider=provider;const heading=add(section,'div','section-head');add(heading,'h2','',providerName(provider));add(heading,'span','section-label','');add(section,'div','grid');}
-    section.children[0].children[1].textContent=t('{n} 个账户',{n:fmt(accounts.length)});const cards=section.children[1],panels=[];
+    section.children[0].children[1].textContent=t('本页 {n} / 匹配 {total} 个账户',{n:fmt(accounts.length),total:fmt(matches.filter(q=>q.provider===provider).length)});const cards=section.children[1],panels=[];
     accounts.forEach((item,i)=>{
       const id=item.auth_id??provider+':'+i,stamp=accountContent(item);present.add(id);let entry=cardCache.get(id);
       if(!entry||entry.stamp!==stamp){
@@ -933,7 +979,9 @@ function renderQuotas(){
         const panel=el('article','panel'+(groups.length?' has-groups':'')+(item.disabled?' account-disabled':''));panel.dataset.authId=id;
         const head=add(panel,'div','accounttop'),identity=add(head,'div','identity');
         const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':item.provider==='antigravity'?' antigravity':''),item.provider==='claude'?'C':item.provider==='antigravity'?'A':'⌘');icon.setAttribute('aria-hidden','true');
-        const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));if(item.disabled)add(text,'span','account-state','已禁用');
+        const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));
+        if(item.auth_id&&item.auth_id!==credentialName(item)){const idLabel=add(text,'div','account-id',String(item.auth_id));idLabel.title=t('凭证 ID：{id}',{id:item.auth_id});}
+        if(item.disabled)add(text,'span','account-state','已禁用');
         const actions=add(head,'div','account-actions');
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
         let reset=null;if(item.provider==='codex'&&!item.disabled&&Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0){reset=add(actions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
@@ -995,22 +1043,28 @@ function localMidnight(value){
   return Number.isFinite(date.getTime())&&localDateValue(date)===value?date:null;
 }
 function historyParams(){
-  const start=localMidnight($('history-start').value),end=localMidnight($('history-end').value);
-  if(!start||!end||start>end)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
-  end.setDate(end.getDate()+1);
-  if(end-start>37*86400000)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
+  const from=$('history-start').value,to=$('history-end').value;
+  let start,end;
+  if(!from&&!to){const anchor=Date.now();start=new Date(anchor-86400000);end=new Date(anchor);}
+  else{
+    start=localMidnight(from);end=localMidnight(to);
+    if(!start||!end||start>end)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
+    end.setDate(end.getDate()+1);
+    if(end-start>37*86400000)throw failure('请选择有效日期，开始不得晚于结束，范围最多 37 天。');
+  }
   return new URLSearchParams({start:start.toISOString(),end:end.toISOString(),provider:filter,model_status:$('history-model').value||'',limit:String(pageSize)});
 }
 async function loadHistory(reset=true){
   if(!supportsHistory())return;
   const serial=++historySerial,saved=key;historyAbort?.abort();historyAbort=null;
-  if(reset){historyIndex=0;historyCursors=[''];}
+  if(reset){historyIndex=0;historyCursors=[''];historyQuery=null;}
   historyPage=null;historyError='';historyBusy=true;renderRecent();
   const current=()=>serial===historySerial&&key===saved;
   let timeout;
   try{
     if(!saved||guessKey()!==saved){await load();return;}
-    const params=historyParams();
+    if(!historyQuery)historyQuery=historyParams().toString();
+    const params=new URLSearchParams(historyQuery);
     if(historyCursors[historyIndex])params.set('cursor',historyCursors[historyIndex]);
     const controller=new AbortController();historyAbort=controller;timeout=setTimeout(()=>controller.abort(),20000);
     const result=await api('history?'+params.toString(),'GET',undefined,controller.signal);
@@ -1062,7 +1116,9 @@ function renderRecent(){
   $('recent-prev').disabled=!data||historyBusy||Boolean(historyError)||index===0;$('recent-next').disabled=!data||historyBusy||Boolean(historyError)||(remote?!historyPage?.next_cursor:recentPage>=pages-1);$('recent-page').textContent=(pages?index+1:0)+' / '+pages;
   $('recent-caption').textContent=data?(total?t('显示 {start}–{end} / {n} 条',{start:start+1,end:start+shown.length,n:total}):t('暂无近期记录')):t('等待请求快照');
   for(const id of ['history-start','history-end','history-model'])$(id).disabled=!remote;
-  $('history-retry').disabled=!remote||historyBusy;root.setAttribute('aria-busy',String(historyBusy));
+  $('history-retry').disabled=!remote||historyBusy;$('history-rolling').disabled=!remote;root.setAttribute('aria-busy',String(historyBusy));
+  const range=historyQuery?new URLSearchParams(historyQuery):null;
+  $('history-range').textContent=remote&&range?t(!$('history-start').value&&!$('history-end').value?'滚动 24 小时：{start} — {end}（本地时间）':'所选日期：{start} — {end}（本地时间，结束不含）',{start:when(range.get('start')),end:when(range.get('end'))}):'';
   const retention=historyPage?.retention;
   $('history-retention').textContent=remote?(retention?t('最多留存 {days} 天 / {max} 条；当前留存 {n} 条。',{days:retention.days,max:fmt(retention.max_records),n:fmt(retention.retained_records)})+' '+(retention.oldest_at?t('可用记录：{start} — {end}（本地时间）；安装前不回填，达到条数上限可能更早截断。',{start:when(retention.oldest_at),end:when(retention.newest_at)}):t('暂无留存记录；安装前历史不会回填。')):t('留存最多 35 天 / 200,000 条；日期按浏览器本地时间。')):data?t('当前接口仅提供最近 60 条快照；升级插件后可查询留存历史。'):t('留存最多 35 天 / 200,000 条；日期按浏览器本地时间。');
   $('history-message').textContent=t(historyBusy?'正在查询历史…':historyError);$('history-message').classList.toggle('history-error',Boolean(historyError));
@@ -1097,11 +1153,23 @@ function setTab(selected){
   $('tab-'+name).onclick=()=>setTab(name);
   $('tab-'+name).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setTab(e.key==='Home'?'quota':e.key==='End'?'requests':tab==='quota'?'requests':'quota');$('tab-'+tab).focus();});
 });
-$('provider').onchange=e=>{filter=e.target.value;recentPage=0;expanded='';render();return historyChanged();};
+function accountChanged(){accountPage=0;renderQuotas();}
+$('account-search').value='';$('account-state').value='';$('account-sort').value=accountSort;$('account-size').value=String(accountSize);
+$('account-search').oninput=e=>{accountSearch=e.target.value;accountChanged();};
+$('account-state').onchange=e=>{accountState=e.target.value;accountChanged();};
+$('account-sort').onchange=e=>{accountSort=e.target.value;accountChanged();};
+$('account-size').onchange=e=>{const size=Number(e.target.value);accountSize=[12,24,48].includes(size)?size:12;$('account-size').value=String(accountSize);accountChanged();};
+$('account-clear').onclick=()=>{accountSearch='';accountState='';filter='';$('account-search').value='';$('account-state').value='';$('provider').value='';accountPage=0;render();return historyChanged();};
+for(const suffix of ['','-bottom']){
+  $('account-prev'+suffix).onclick=()=>{if(accountPage>0){accountPage--;renderQuotas();$('account-search').focus({preventScroll:true});$('page-quota').scrollIntoView?.({block:'start'});}};
+  $('account-next'+suffix).onclick=()=>{accountPage++;renderQuotas();$('account-search').focus({preventScroll:true});$('page-quota').scrollIntoView?.({block:'start'});};
+}
+$('provider').onchange=e=>{filter=e.target.value;recentPage=0;accountPage=0;expanded='';render();return historyChanged();};
 $('recent-prev').onclick=()=>{if(supportsHistory()){if(historyIndex>0){historyIndex--;return loadHistory(false);}}else{recentPage--;renderRecent();}};
 $('recent-next').onclick=()=>{if(supportsHistory()){if(historyPage?.next_cursor){historyCursors[++historyIndex]=historyPage.next_cursor;return loadHistory(false);}}else{recentPage++;renderRecent();}};
 $('recent-size').value=String(pageSize);$('recent-size').onchange=e=>{const size=Number(e.target.value);pageSize=[20,40,60].includes(size)?size:20;$('recent-size').value=String(pageSize);return historyChanged();};
-const today=localDateValue(new Date());$('history-start').value=today;$('history-end').value=today;
+$('history-start').value='';$('history-end').value='';
+$('history-rolling').onclick=()=>{$('history-start').value='';$('history-end').value='';return historyChanged();};
 for(const id of ['history-start','history-end','history-model'])$(id).onchange=historyChanged;
 $('history-retry').onclick=()=>loadHistory(true);
 $('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);

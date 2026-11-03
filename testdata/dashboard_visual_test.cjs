@@ -77,8 +77,13 @@ window.visualFixture = {
     accountJobs.clear();accountErrors.clear();cardCache.clear();
     settingsJob=null;settingsError=null;requestJob=null;loading=false;headerLoading=false;
     filter='';$('provider').value='';phase='ready';key='';expanded='';recentPage=0;
+    accountSearch='';accountState='';accountSort='default';accountPage=0;accountSize=12;
+    $('account-search').value='';$('account-state').value='';$('account-sort').value='default';$('account-size').value='12';
+    historyQuery=null;historyPage=null;historyError='';historyBusy=false;historyIndex=0;historyCursors=[''];
+    $('history-start').value='';$('history-end').value='';
     $('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');setAlert('');
     data=${JSON.stringify(sample())};
+    if(state==='many')data.quotas=Array.from({length:137},(_,i)=>({...data.quotas[i%3],auth_id:'demo-credential-'+i,name:'demo-team-'+String(i).padStart(3,'0')+'@example.test',disabled:i%9===0,manual_reset_remaining:i%3===1?2:undefined}));
     if(state==='empty'){data.quotas=[];data.credentials=[];data.recent=[];}
     if(state==='loading'){data=null;loading=true;headerLoading=true;phase='loading';}
     if(state==='error'){data=null;phase='error';setAlert('无法连接 CPA。');}
@@ -99,7 +104,7 @@ window.visualFixture = {
     data.history_available=true;
     historyPage={events:data.recent.slice(0,20),total:124,offset:0,limit:20,next_cursor:'demo-only',generated_at:data.generated_at,
       retention:{days:35,max_records:200000,retained_records:148,oldest_at:'2026-09-10T10:24:00Z',newest_at:data.generated_at}};
-    $('history-start').value='2026-09-20';$('history-end').value='2026-10-09';
+    $('history-start').value='';$('history-end').value='';historyQuery=historyParams().toString();
     setTab('requests');renderRecent();
   }
 };

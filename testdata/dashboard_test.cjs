@@ -35,7 +35,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     }else if(token.trim())stack.at(-1)._text+=token.trim();
   }
   const storage = {getItem(name){ return stored[name] ?? null; },setItem(name,value){writes.push([name,value]);stored[name]=value;}};
-  let fakeNow=Date.now();const FakeDate=class extends Date {constructor(...args){super(...(args.length?args:[fakeNow]));}static now(){return fakeNow;}};
+  let fakeNow=options.now??Date.now();const FakeDate=class extends Date {constructor(...args){super(...(args.length?args:[fakeNow]));}static now(){return fakeNow;}};
   const document={
     documentElement:descendants(root).find(n=>n.tag==='html'),hidden:false,
     getElementById(id) { const found=descendants(root).find(n=>n.id===id);if(found)return found;if(!elements.has(id))elements.set(id,new Element('div'));return elements.get(id); },
@@ -51,7 +51,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
   context.window=context;
   const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
-  return {api: context.dashboardTest, elements, writes, document, intervals, events};
+  return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){fakeNow+=ms;}};
 }
 const cases = [
   [0, '0'], [12, '12'], [999, '999'], [1000, '1k'], [1234, '1.23k'],
@@ -134,7 +134,7 @@ for(const version of [1,2]) test(`reuse CPA v${version} encoded login without in
   assert.equal(requests[0].url,'/v0/management/plugins/cpa-mini-usage/data');
   assert.equal(requests[0].options.headers.Authorization,'Bearer test-only-key');
   assert.equal(requests[0].options.redirect,'error');
-  assert.equal((html.match(/<input\b/g)||[]).length,3);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="(?:password|text)"/.test(html));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
+  assert.equal((html.match(/<input\b/g)||[]).length,4);assert.match(html,/<input id="account-search" type="search"/);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="(?:password|text)"/.test(html));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
 });
 test('cross-origin or corrupt CPA credentials are not reused', () => {
   for(const version of [1,2]){
@@ -468,7 +468,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);const version=JSON.parse(fs.readFileSync(path.join(__dirname,'../registry.json'),'utf8')).plugins[0].version;assert(html.includes('v'+version));
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.23<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -1011,6 +1011,72 @@ test('reasoning is literal host metadata, never inferred from suffixes, tokens o
   const cells=()=>descendants(d.elements.get('recent-table')).filter(n=>n.className==='request-reasoning');
   assert.deepEqual(cells().map(n=>n.textContent),['high','未提供','未提供',attack]);assert(!descendants(d.elements.get('recent-table')).some(n=>n.tag==='img'));
   d.api.setLanguage('en');assert.deepEqual(cells().map(n=>n.textContent),['high','Not provided','Not provided',attack]);assert.match(cells()[1].title,/never inferred or backfilled/);
+});
+
+test('rolling history keeps empty dates and exact 24-hour signed parameters across paging, sync and refresh',async()=>{
+  const requested=[],anchor=Date.parse('2026-03-09T13:45:12.345Z');
+  const d=dashboard(login(),async url=>{
+    if(!url.includes('/history?'))return reply(historySnapshot());
+    const params=new URL(url,'https://cpa.test').searchParams;requested.push(params);
+    return reply(historyReply(params,Array.from({length:20},()=>({model:'rolling'})),80,'next-token'));
+  },{fakeClock:true,now:anchor});
+  await d.api.load();d.api.setTab('requests');await waitForTest(()=>historyRows(d).length===20);
+  assert.equal(d.elements.get('history-start').value,'');assert.equal(d.elements.get('history-end').value,'');
+  const first=requested.at(-1),sameQuery=p=>{for(const name of ['start','end','provider','model_status','limit'])assert.equal(p.get(name),first.get(name));};
+  assert.equal(first.get('end'),new Date(anchor).toISOString());assert.equal(Date.parse(first.get('end'))-Date.parse(first.get('start')),86400000);
+  assert.match(d.elements.get('history-range').textContent,/滚动 24 小时/);
+  d.advanceTime(120000);await d.elements.get('recent-next').onclick();sameQuery(requested.at(-1));assert.equal(requested.at(-1).get('cursor'),'next-token');
+  const count=requested.length;await d.api.load();assert.equal(requested.length,count,'the minute-sync load path cannot replace a deeper page');
+  d.advanceTime(60000);await d.elements.get('recent-prev').onclick();sameQuery(requested.at(-1));assert.equal(requested.at(-1).get('cursor'),'first-cursor');
+  await d.api.load();assert.equal(requested.at(-1).get('end'),new Date(anchor+180000).toISOString());assert(!requested.at(-1).has('cursor'));
+  d.advanceTime(60000);await d.elements.get('refresh').onclick();assert.equal(requested.at(-1).get('end'),new Date(anchor+240000).toISOString());assert(!requested.at(-1).has('cursor'));
+  for(const change of [()=>d.elements.get('provider').onchange({target:{value:'codex'}}),()=>d.elements.get('history-model').onchange(),()=>d.elements.get('recent-size').onchange({target:{value:'40'}})]){
+    d.advanceTime(1000);await change();assert(!requested.at(-1).has('cursor'));assert.equal(Date.parse(requested.at(-1).get('end'))-Date.parse(requested.at(-1).get('start')),86400000);
+  }
+  d.elements.get('history-start').value='2026-03-08';d.elements.get('history-end').value='2026-03-08';await d.elements.get('history-retry').onclick();
+  assert.match(d.elements.get('history-range').textContent,/所选日期/);
+  await d.elements.get('history-rolling').onclick();assert.equal(d.elements.get('history-start').value,'');assert.equal(d.elements.get('history-end').value,'');assert(!requested.at(-1).has('cursor'));
+  assert.equal(Date.parse(requested.at(-1).get('end'))-Date.parse(requested.at(-1).get('start')),86400000);
+});
+
+test('half-filled, reversed and malformed custom dates do not silently become rolling history',async()=>{
+  let requests=0;const d=dashboard(login(),async url=>{if(!url.includes('/history?'))return reply(historySnapshot());requests++;return reply(historyReply(new URL(url,'https://cpa.test').searchParams,[]));});
+  await d.api.load();
+  for(const [start,end] of [['2026-10-09',''],['','2026-10-09'],['2026-10-10','2026-10-09'],['2026-02-30','2026-03-01']]){
+    d.elements.get('history-start').value=start;d.elements.get('history-end').value=end;await d.elements.get('history-retry').onclick();
+    assert.equal(requests,0);assert.match(d.elements.get('history-message').textContent,/有效日期/);assert.equal(d.elements.get('history-range').textContent,'');
+  }
+});
+
+const visibleAccounts=d=>descendants(d.elements.get('quota-cards')).filter(n=>n.dataset.authId);
+const manyAccounts=()=>({...twoAccounts(),quotas:Array.from({length:137},(_,i)=>({auth_id:'credential-'+i,name:'team-'+String(i).padStart(3,'0')+'@example.test',provider:['codex','claude','antigravity'][i%3],disabled:i%5===0,manual_reset_remaining:2,five_hour:{used_percent:i%100},seven_day:{used_percent:20}}))});
+for(const language of ['zh','en'])test(`${language}: many accounts have bounded cards, searchable IDs, status/provider filters, sorting and page sizes`,async()=>{
+  const sample=manyAccounts(),d=dashboard({},undefined,{language});d.api.renderSample(sample);
+  assert.equal(visibleAccounts(d).length,12);assert.equal(d.elements.get('account-page').textContent,'1 / 12');assert.equal(d.elements.get('account-prev').disabled,true);
+  await d.elements.get('account-next').onclick();assert.equal(d.elements.get('account-page').textContent,'2 / 12');assert(visibleAccounts(d).some(n=>n.dataset.authId==='credential-12'));
+  d.api.acceptSnapshot({...sample,generated_at:'next'});assert.equal(d.elements.get('account-page').textContent,'2 / 12');
+  d.elements.get('account-search').oninput({target:{value:'  CREDENTIAL-132  '}});assert.deepEqual(visibleAccounts(d).map(n=>n.dataset.authId),['credential-132']);assert.equal(d.elements.get('account-page').textContent,'1 / 1');
+  const card=visibleAccounts(d)[0];assert(refreshButton(card));assert(toggleButton(card));assert(resetButton(card));assert(descendants(card).some(n=>n.className==='account-id'&&n.textContent==='credential-132'));
+  await d.elements.get('account-clear').onclick();d.elements.get('account-search').oninput({target:{value:'TEAM-01'}});assert.equal(visibleAccounts(d).length,10);
+  d.elements.get('account-state').onchange({target:{value:'disabled'}});assert.equal(visibleAccounts(d).length,2);assert(visibleAccounts(d).every(n=>n.className.includes('account-disabled')));
+  await d.elements.get('provider').onchange({target:{value:'codex'}});assert.equal(visibleAccounts(d).length,1);assert.equal(visibleAccounts(d)[0].dataset.authId,'credential-15');
+  d.api.setLanguage(language==='zh'?'en':'zh');assert.equal(visibleAccounts(d).length,1,'language switching preserves search and filters');
+  d.elements.get('account-search').oninput({target:{value:'<img src=x onerror=alert(1)>'}});assert.equal(visibleAccounts(d).length,0);assert.equal(d.elements.get('account-next').disabled,true);assert(!descendants(d.elements.get('quota-cards')).some(n=>n.tag==='img'));
+  await d.elements.get('account-clear').onclick();d.elements.get('account-size').onchange({target:{value:'48'}});assert.equal(visibleAccounts(d).length,48);assert.equal(d.elements.get('account-page-bottom').textContent,'1 / 3');
+  await d.elements.get('account-next-bottom').onclick();await d.elements.get('account-next-bottom').onclick();assert.equal(visibleAccounts(d).length,41);assert.equal(d.elements.get('account-next-bottom').disabled,true);
+  d.api.acceptSnapshot({...sample,quotas:sample.quotas.slice(0,3)});assert.equal(d.elements.get('account-page').textContent,'1 / 1');assert.equal(visibleAccounts(d).length,3);
+  d.api.renderSample(sample);d.elements.get('account-size').onchange({target:{value:'12'}});d.elements.get('account-sort').onchange({target:{value:'remaining'}});
+  const remaining=visibleAccounts(d).map(n=>sample.quotas.find(q=>q.auth_id===n.dataset.authId).five_hour.used_percent);assert(remaining.every(n=>n>=88),'lowest remaining quota is selected before paging');
+  d.elements.get('account-sort').onchange({target:{value:'name'}});assert(visibleAccounts(d).every(n=>Number(n.dataset.authId.split('-')[1])<12));
+});
+
+test('account paging preserves pending jobs, errors and actions without retaining off-page cards',async()=>{
+  let release;const sample=manyAccounts(),d=dashboard(login(),async url=>url.endsWith('refresh-account')?new Promise(resolve=>release=()=>resolve(reply({error:'account_not_found'},404))):reply(sample));
+  await d.api.load();const job=d.api.refreshAccount('credential-3');assert.equal(refreshButton(panel(d.elements,'credential-3')).disabled,true);
+  await d.elements.get('account-next').onclick();assert(!panel(d.elements,'credential-3'));assert.equal(visibleAccounts(d).length,12);
+  await d.elements.get('account-prev').onclick();assert.equal(refreshButton(panel(d.elements,'credential-3')).disabled,true);
+  await d.elements.get('account-next').onclick();release();await job;await d.elements.get('account-prev').onclick();
+  const card=panel(d.elements,'credential-3');assert.equal(refreshButton(card).disabled,false);assert.equal(accountError(card).textContent,'未找到账户。');assert(toggleButton(card));assert(resetButton(card));
 });
 
 test('browser local midnight uses calendar boundaries across DST rather than adding 24 hours',()=>{
