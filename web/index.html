@@ -94,15 +94,11 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .browse-summary .pagination{flex-wrap:wrap;gap:6px}
 .browse-summary .button{min-height:28px;padding:3px 8px}
 .account-bottom{justify-content:flex-end;margin-top:10px}
-.account-id{font:10px/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.account-provider{font-size:10px;font-weight:600;line-height:1.4;color:var(--provider-accent);overflow-wrap:anywhere}
 @media(max-width:760px){.browse-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.browse-fields .account-search{grid-column:1;grid-row:1}.browse-fields label[for=account-state]{grid-column:1;grid-row:2}.browse-fields label[for=account-sort]{grid-column:2;grid-row:2}#account-clear{grid-column:2;grid-row:1;justify-self:end}.browse-summary .pagination{margin-left:auto}}
-.provider-section{grid-column:1/-1;min-width:0;--provider-accent:var(--accent)}
-.provider-section[data-provider=claude]{--provider-accent:var(--warm)}
-.provider-section[data-provider=antigravity]{--provider-accent:var(--good)}
-.provider-section+.provider-section{margin-top:4px}
-.provider-section>.section-head{margin-bottom:6px}
-.provider-section>.section-head h2{display:flex;align-items:center;gap:8px}
-.provider-section>.section-head h2::before{content:"";width:3px;height:14px;flex-shrink:0;background:var(--provider-accent);border-radius:2px}
+.account-card{--provider-accent:var(--accent)}
+.account-card[data-provider=claude]{--provider-accent:var(--warm)}
+.account-card[data-provider=antigravity]{--provider-accent:var(--good)}
 .panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
 .accounttop{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px 6px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
 .identity{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 160px}
@@ -279,7 +275,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.25</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.26</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -368,7 +364,7 @@ const languageStorage='cpa-mini-usage-language';
 const translations={
   '中文':'Chinese','英语':'English',
   '账户浏览':'Browse accounts','搜索账户（名称、邮箱或 ID）':'Search accounts (name, email or ID)','账户状态':'Account status','全部账户':'All accounts','仅已启用':'Enabled only','仅已禁用':'Disabled only','排序':'Sort','默认顺序':'Default order','账户名称':'Account name','剩余额度从低到高':'Lowest remaining quota first','每页账户数':'Accounts per page','清除账户筛选':'Clear account filters','账户分页':'Account pagination','账户分页（底部）':'Account pagination (bottom)',
-  '显示 {start}–{end} / 匹配 {n} 个，共 {total} 个账户':'Showing {start}–{end} / {n} matching, {total} accounts total','当前账户筛选无匹配结果':'No accounts match these filters','请更改搜索、账户状态或服务商筛选。':'Change the search, account status or provider filter.','本页 {n} / 匹配 {total} 个账户':'{n} on this page / {total} matching accounts','凭证 ID：{id}':'Credential ID: {id}',
+  '显示 {start}–{end} / 匹配 {n} 个，共 {total} 个账户':'Showing {start}–{end} / {n} matching, {total} accounts total','当前账户筛选无匹配结果':'No accounts match these filters','请更改搜索、账户状态或服务商筛选。':'Change the search, account status or provider filter.','账户 {code}':'Account {code}',
   '最近 24 小时':'Last 24 hours','日期留空时查询滚动最近 24 小时；手选日期需同时填写起止，包含结束当天。':'Leave both dates empty for the rolling last 24 hours; custom dates require both fields and include the end day.','滚动 24 小时：{start} — {end}（本地时间）':'Rolling 24 hours: {start} — {end} (local time)','所选日期：{start} — {end}（本地时间，结束不含）':'Selected dates: {start} — {end} (local time, exclusive end)',
   '请求历史':'Request history','统计仍为近 7 天':'Statistics remain last 7 days','历史筛选':'History filters','开始日期（本地）':'Start date (local)','结束日期（本地，含当天）':'End date (local, inclusive)',
   '模型名称状态':'Model name status','全部状态':'All statuses','仅模型不一致':'Model mismatch only','重新查询':'Query again','正在查询历史…':'Loading history…','历史查询失败，请重试。':'History query failed. Please retry.',
@@ -520,7 +516,15 @@ const providerName = p => ({claude:'Claude',codex:'Codex',antigravity:'Antigravi
 const groupLabels={gemini:'Gemini 模型','claude-gpt':'Claude / GPT 模型'};
 const groupName = g => groupLabels[g?.key]?t(groupLabels[g.key]):String(g?.label||g?.key||'');
 const modelName = m => typeof m==='string' && m.trim()?m:t('未知模型');
-const credentialName = s => s?.name||s?.auth_id||t('未知凭证');
+function credentialName(s){
+  const name=typeof s?.name==='string'?s.name.trim():'';
+  // Filenames and paths are internal identifiers, never labels (including tooltips/ARIA).
+  if(name&&!/\.json\b|[\\/]/i.test(name))return name;
+  const seed=String(s?.auth_id||name||'');if(!seed)return t('未知凭证');
+  // A stable display-only fingerprint distinguishes unnamed accounts without echoing the ID.
+  let hash=2166136261;for(let i=0;i<seed.length;i++)hash=Math.imul(hash^seed.charCodeAt(i),16777619);
+  return t('账户 {code}',{code:(hash>>>0).toString(36).toUpperCase().padStart(7,'0')});
+}
 function totalInput(record,provider=record.provider){
   const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
   if(valid(record.total_input))return record.total_input;
@@ -847,7 +851,7 @@ async function openReset(id){
   if(actionJobs.has(id)||resetDialog)return;
   showAccountError(id,null);showAccountNote(id,null);
   const pending=pendingRedeem.get(id);resetReturnFocus=document.activeElement?.id||'';
-  resetDialog={id,name:cardCache.get(id)?.name||id,serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
+  resetDialog={id,name:cardCache.get(id)?.name||credentialName(list(data?.quotas).find(q=>q.auth_id===id)||{auth_id:id}),serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
   renderResetDialog();$('reset-card').focus();
   if(!pending)await loadResetCredits();
 }
@@ -959,7 +963,7 @@ function accountRemaining(item){
 }
 function renderQuotas(){
   const root=$('quota-cards'),all=list(data?.quotas),providerQuotas=all.filter(active),query=accountSearch.trim().toLowerCase();
-  const matches=providerQuotas.filter(q=>(!query||[q.name,q.auth_id].some(value=>String(value||'').toLowerCase().includes(query)))&&(!accountState||Boolean(q.disabled)===(accountState==='disabled')));
+  const matches=providerQuotas.filter(q=>(!query||[credentialName(q),q.name,q.auth_id].some(value=>String(value||'').toLowerCase().includes(query)))&&(!accountState||Boolean(q.disabled)===(accountState==='disabled')));
   if(accountSort==='name')matches.sort((a,b)=>credentialName(a).localeCompare(credentialName(b),locale(),{numeric:true})||String(a.auth_id).localeCompare(String(b.auth_id)));
   if(accountSort==='remaining')matches.sort((a,b)=>accountRemaining(a)-accountRemaining(b)||credentialName(a).localeCompare(credentialName(b)));
   const pages=Math.ceil(matches.length/accountSize);accountPage=Math.max(0,Math.min(accountPage,pages-1));
@@ -972,22 +976,16 @@ function renderQuotas(){
   }
   $('account-bottom').hidden=pages<=1;
   if(!data||!quotas.length){root.replaceChildren(!data?noData():providerQuotas.length?empty('当前账户筛选无匹配结果','请更改搜索、账户状态或服务商筛选。'):empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
-  const providers=[...new Set(quotas.map(q=>q.provider))].sort((a,b)=>a.localeCompare(b)),sections=[];
-  const oldSections=new Map([...root.children].map(s=>[s.dataset.provider,s]));
-  const present=new Set();
-  providers.forEach(provider=>{
-    const accounts=quotas.filter(q=>q.provider===provider);let section=oldSections.get(provider);
-    if(!section){section=el('section','provider-section');section.dataset.provider=provider;const heading=add(section,'div','section-head');add(heading,'h2','',providerName(provider));add(heading,'span','section-label','');add(section,'div','grid');}
-    section.children[0].children[1].textContent=t('本页 {n} / 匹配 {total} 个账户',{n:fmt(accounts.length),total:fmt(matches.filter(q=>q.provider===provider).length)});const cards=section.children[1],panels=[];
-    accounts.forEach((item,i)=>{
-      const id=item.auth_id??provider+':'+i,stamp=accountContent(item);present.add(id);let entry=cardCache.get(id);
+  const panels=[],present=new Set();
+  quotas.forEach((item,i)=>{
+      const id=item.auth_id??item.provider+':'+(start+i),stamp=accountContent(item);present.add(id);let entry=cardCache.get(id);
       if(!entry||entry.stamp!==stamp){
         const groups=list(item.groups);
-        const panel=el('article','panel'+(groups.length?' has-groups':'')+(item.disabled?' account-disabled':''));panel.dataset.authId=id;
+        const panel=el('article','panel account-card'+(groups.length?' has-groups':'')+(item.disabled?' account-disabled':''));panel.dataset.authId=id;panel.dataset.provider=item.provider||'';
         const head=add(panel,'div','accounttop'),identity=add(head,'div','identity');
         const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':item.provider==='antigravity'?' antigravity':''),item.provider==='claude'?'C':item.provider==='antigravity'?'A':'⌘');icon.setAttribute('aria-hidden','true');
         const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));
-        if(item.auth_id&&item.auth_id!==credentialName(item)){const idLabel=add(text,'div','account-id',String(item.auth_id));idLabel.title=t('凭证 ID：{id}',{id:item.auth_id});}
+        add(text,'div','account-provider',providerName(item.provider));
         if(item.disabled)add(text,'span','account-state','已禁用');
         const actions=add(head,'div','account-actions');
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
@@ -1000,12 +998,10 @@ function renderQuotas(){
         entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
       panels.push(entry.panel);
-    });
-    if(panels.length===cards.children.length&&panels.every((panel,i)=>panel.dataset.authId===cards.children[i].dataset.authId)){panels.forEach((panel,i)=>{if(panel!==cards.children[i])cards.children[i].replaceWith(panel);});}else cards.replaceChildren(...panels);
-    sections.push(section);
   });
   for(const id of cardCache.keys())if(!present.has(id))cardCache.delete(id);
-  if(sections.length!==root.children.length||sections.some((section,i)=>section!==root.children[i]))root.replaceChildren(...sections);
+  // Patch changed cards in place when order is stable; retain sibling nodes and focus.
+  if(panels.length===root.children.length&&panels.every((panel,i)=>panel.dataset.authId===root.children[i].dataset.authId)){panels.forEach((panel,i)=>{if(panel!==root.children[i])root.children[i].replaceWith(panel);});}else root.replaceChildren(...panels);
   syncAccountControls();
 }
 function addCell(tr,what,align){return add(tr,'td',align||'',what);}

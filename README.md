@@ -200,6 +200,10 @@ Browse large account collections with search, status filters, sorting and pagina
 
 Make account cards and the filter bar more compact, showing more accounts at once without hiding quota windows or account actions. Multi-group accounts no longer occupy a full row, and mobile layouts retain accessible controls. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
 
+### v0.1.26
+
+Arrange accounts from all providers in a shared responsive grid to avoid empty rows. Hide internal credential JSON filenames in account and request displays while retaining the original IDs for account operations. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

@@ -69,6 +69,22 @@ function sample() {
   };
 }
 
+function mixedSample() {
+  const data=sample(),base=data.quotas[1];
+  data.quotas=[
+    {...base,auth_id:'codex-a1b2-demo-primary@example.test-team.json',name:'demo-primary@example.test',manual_reset_remaining:2},
+    {...base,auth_id:'codex-b2c3-demo-secondary@example.test-team.json',name:'codex-b2c3-demo-secondary@example.test-team.json'},
+    {...base,auth_id:'codex-c3d4-demo-unnamed@example.test-team.json',name:''},
+    {...base,auth_id:'codex-d4e5-demo-lab@example.test-plus.json',name:'demo-lab@example.test'},
+    {...data.quotas[0],auth_id:'claude-e5f6-demo@example.test.json',name:'demo-claude@example.test'},
+    {provider:'antigravity',auth_id:'antigravity-f6a7-demo@example.test.json',name:'demo-google@example.test',
+      groups:['gemini','claude-gpt'].map(key=>({key,five_hour:base.five_hour,seven_day:base.seven_day}))},
+  ];
+  data.credentials=data.quotas.map(q=>({...data.credentials[1],provider:q.provider,auth_id:q.auth_id,name:q.name}));
+  data.recent=data.quotas.map(q=>({...data.recent[1],provider:q.provider,auth_id:q.auth_id}));
+  return data;
+}
+
 function fixture() {
   assert.match(source, /^load\(\);$/m, 'fixture must suppress initial live load');
   const boot = `
@@ -83,6 +99,7 @@ window.visualFixture = {
     $('history-start').value='';$('history-end').value='';
     $('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');setAlert('');
     data=${JSON.stringify(sample())};
+    if(state==='mixed')data=${JSON.stringify(mixedSample())};
     if(state==='many')data.quotas=Array.from({length:137},(_,i)=>({...data.quotas[i%3],auth_id:'demo-credential-'+i,name:'demo-team-'+String(i).padStart(3,'0')+'@example.test',disabled:i%9===0,manual_reset_remaining:i%3===1?2:undefined}));
     if(state==='groups')data.quotas=Array.from({length:3},(_,i)=>({provider:'antigravity',auth_id:'demo-group-'+i,name:'demo-group-'+i+'@example.test',groups:['gemini','claude'].map(label=>({key:label,label:label+' demo',five_hour:data.quotas[0].five_hour,seven_day:data.quotas[0].seven_day}))}));
     if(state==='empty'){data.quotas=[];data.credentials=[];data.recent=[];}
@@ -297,12 +314,43 @@ if (process.argv[2] === '--serve') {
           // Reuse the existing two viewport contexts, without adding a matrix.
           if (lang === 'zh' && theme === 'light') {
             await page.locator('#tab-quota').click();
+            await page.evaluate(() => visualFixture.show('mixed'));
+            const mixed=await page.evaluate(()=>{
+              const root=document.querySelector('#quota-cards'),cards=[...root.children];
+              const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,bottom:r.bottom};};
+              return {columns:getComputedStyle(root).gridTemplateColumns.split(' ').length,
+                pageWidth:document.documentElement.scrollWidth,rects:cards.map(rect),
+                providers:cards.map(el=>el.querySelector('.account-provider')?.textContent),
+                articles:cards.every(el=>el.tagName==='ARTICLE'),
+                invalid:cards.filter(el=>el.scrollWidth>el.clientWidth+1||el.getBoundingClientRect().right>innerWidth).length,
+                labels:[...document.querySelectorAll('#quota-cards *')].flatMap(el=>[el.textContent,el.title,el.getAttribute('aria-label')]).filter(Boolean)};
+            });
+            assert.equal(mixed.rects.length,6);assert(mixed.articles,'all six accounts are direct grid items');
+            assert.deepEqual(mixed.providers,['Codex','Codex','Codex','Codex','Claude','Antigravity']);
+            assert.equal(mixed.pageWidth,width);assert.equal(mixed.invalid,0);
+            assert(mixed.labels.every(text=>!text.includes('.json')),'no filename in visible text, titles or accessible names');
+            if(width===1480){
+              assert.equal(mixed.columns,4);
+              assert(mixed.rects.every(r=>r.width>=300&&r.width<370),'cards have a sensible shared desktop width');
+              assert(mixed.rects.slice(0,4).every(r=>Math.abs(r.y-mixed.rects[0].y)<1),'first row fills all four columns');
+              assert(Math.abs(mixed.rects[4].y-mixed.rects[5].y)<1,'Claude and Google share the second row');
+              assert(Math.abs(mixed.rects[4].y-Math.max(...mixed.rects.slice(0,4).map(r=>r.bottom))-8)<1,'no empty provider rows');
+              assert(mixed.rects[5].x>mixed.rects[4].x,'different providers fill adjacent columns');
+            }else{
+              assert.equal(mixed.columns,1);assert(mixed.rects.every(r=>r.width>=300&&r.width<=390));
+            }
+            await page.screenshot({path:path.join(directory,`${width}-mixed-accounts.png`),fullPage:true});
+            report.push({key,tab:'mixed',...mixed,labels:undefined});
+            await page.locator('#tab-requests').click();
+            const requestIdentity=await page.locator('#credential-table,#recent-table').evaluateAll(roots=>roots.flatMap(root=>[...root.querySelectorAll('*')].flatMap(el=>[el.textContent,el.title,el.getAttribute('aria-label')]).filter(Boolean)));
+            assert(requestIdentity.every(text=>!text.includes('.json')),'request-page identities also hide filenames');
+            await page.locator('#tab-quota').click();
             await page.evaluate(() => visualFixture.show('many'));
             const density = await page.evaluate(() => {
               const rect = el => {const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
               const cards=[...document.querySelectorAll('#quota-cards .panel')];
               return {viewport:innerWidth,pageWidth:document.documentElement.scrollWidth,cards:cards.length,
-                columns:getComputedStyle(document.querySelector('.provider-section>.grid')).gridTemplateColumns.split(' ').length,
+                columns:getComputedStyle(document.querySelector('#quota-cards')).gridTemplateColumns.split(' ').length,
                 fullyVisible:cards.filter(el=>{const r=rect(el);return r.y>=0&&r.bottom<=innerHeight;}).length,
                 card:rect(cards.find(el=>!el.classList.contains('account-disabled'))),
                 browser:rect(document.querySelector('.account-browser')),
