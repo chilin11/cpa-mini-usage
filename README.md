@@ -114,7 +114,7 @@ Simplified, shorter cards remove duplicate totals, badges, and explanatory parag
 
 ### v0.1.5
 
-Per-account quota refresh buttons and less frequent 15-minute all-account checks. Only the changed account card updates; other cards keep their nodes. Refresh completion and failures are tracked independently for the selected credential. A Chinese/English selector defaults to the browser language and remembers only the language preference. Labels, tables, alerts, accessibility text, and countdowns switch together. Reset counts use “可重置” / “Resets remaining”, with no Reset bank or Manual reset UI labels.
+Per-account quota refresh buttons and less frequent 15-minute all-account checks. Only the changed account card updates; other cards keep their nodes. Refresh completion and failures are tracked independently for the selected credential. A Chinese/English selector initially follows the same-origin CPA management language when available, otherwise the browser language; an explicit plugin choice takes precedence and is remembered. CPA languages other than Chinese and English use English in the plugin. Labels, tables, alerts, accessibility text, and countdowns switch together. Reset counts use “可重置” / “Resets remaining”, with no Reset bank or Manual reset UI labels.
 
 Recent requests additionally show first-token time and generation-phase TPS. A server-side Save data switch persists request history/timings, quota snapshots, pricing, and its own preference in an independent directory that survives plugin replacement. Both languages use token/tokens rather than “词元”.
 
@@ -207,6 +207,10 @@ Arrange accounts from all providers in a shared responsive grid to avoid empty r
 ### v0.1.27
 
 Group accounts into compact provider-specific vertical stacks, displayed side by side when space permits. Keep account names on one line with accessible full names, and preserve account actions and quota details. Sorting applies within each provider before shared pagination. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
+### v0.1.28
+
+When no plugin language has been explicitly selected, follow the same-origin CPA management language and respond to its changes; fall back to the browser language when CPA settings are unavailable. The plugin supports Chinese and English; other CPA languages use English. A manually chosen plugin language remains in effect. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
 
 ## Optional CPA Plugin Store source
 

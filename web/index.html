@@ -284,7 +284,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.27</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.28</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -370,7 +370,7 @@ let accountSearch='',accountState='',accountSort='default',accountPage=0,account
 let historyPage=null,historyBusy=false,historyError='',historySerial=0,historyIndex=0,historyCursors=[''],historyAbort=null,historyQuery=null;
 const $ = id => document.getElementById(id);
 const endpoint = '/v0/management/plugins/cpa-mini-usage/';
-const languageStorage='cpa-mini-usage-language';
+const languageStorage='cpa-mini-usage-language',cpaLanguageStorage='cli-proxy-language';
 const translations={
   '中文':'Chinese','英语':'English',
   '按供应商分组；排序仅在组内生效，然后统一分页。':'Grouped by provider; sort within each group before shared pagination.','显示 {shown} / {total} 个匹配账户':'Showing {shown} / {total} matching accounts',
@@ -466,8 +466,20 @@ const translations={
   '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.'
 };
 function initialLanguage(){
-  try{const saved=localStorage.getItem(languageStorage);if(saved==='zh'||saved==='en')return saved;}catch{}
-  const browser=(navigator.languages?.[0]||navigator.language||'').toLowerCase();return browser.startsWith('en')?'en':'zh';
+  try{
+    const saved=localStorage.getItem(languageStorage);if(saved==='zh'||saved==='en')return saved;
+    const raw=localStorage.getItem(cpaLanguageStorage);
+    if(raw){
+      let parsed;try{parsed=JSON.parse(raw);}catch{parsed=raw;}
+      const cpa=typeof parsed==='string'?parsed:parsed?.state?.language??parsed?.language;
+      if(typeof cpa==='string'){
+        const value=cpa.toLowerCase();
+        if(['zh-cn','zh-tw','zh'].includes(value))return 'zh';
+        if(['en','ru','vi','ko','tr'].includes(value))return 'en';
+      }
+    }
+  }catch{}
+  const browser=(navigator.languages?.[0]||navigator.language||'zh-CN').toLowerCase();return browser.startsWith('zh')?'zh':'en';
 }
 let language=initialLanguage();
 const locale=()=>language==='en'?'en-US':'zh-CN';
@@ -1216,7 +1228,7 @@ $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 $('reset-cancel').onclick=closeReset;$('reset-confirm').onclick=confirmReset;$('reset-retry').onclick=loadResetCredits;
 $('reset-dialog').onclick=e=>{if(e.target===$('reset-dialog'))closeReset();};
 window.addEventListener('keydown',resetDialogKey);
-window.addEventListener('storage',e=>{if(e.key===languageStorage){setLanguage(initialLanguage(),false);return;}load();});
+window.addEventListener('storage',e=>{if(e.key===languageStorage||e.key===cpaLanguageStorage){setLanguage(initialLanguage(),false);return;}load();});
 window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});
 applyLanguage();
 load();

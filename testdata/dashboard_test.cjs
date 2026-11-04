@@ -265,12 +265,30 @@ const panel=(elements,id)=>descendants(elements.get('quota-cards')).find(n=>n.ta
 const refreshButton=card=>descendants(card).find(n=>n.className==='button account-refresh');
 const accountError=card=>descendants(card).find(n=>n.className==='account-error');
 
-test('language defaults follow browser, unsupported browsers fall back to zh, and only language persists',()=>{
-  for(const [browser,stored,want] of [['en-GB',{},'en'],['zh-TW',{},'zh'],['fr-FR',{},'zh'],['en-US',{'cpa-mini-usage-language':'zh'},'zh'],['zh-CN',{'cpa-mini-usage-language':'en'},'en'],['en-US',{'cpa-mini-usage-language':'invalid'},'en']]){
+test('language follows explicit plugin choice, CPA setting, then browser; manual changes persist',()=>{
+  for(const [browser,stored,want] of [
+    ['en-GB',{},'en'],['zh-TW',{},'zh'],['fr-FR',{},'en'],
+    ['en-US',{'cpa-mini-usage-language':'zh'},'zh'],['zh-CN',{'cpa-mini-usage-language':'en'},'en'],
+    ['zh-CN',{'cli-proxy-language':'{"state":{"language":"en"},"version":0}'},'en'],
+    ['en-US',{'cli-proxy-language':'{"state":{"language":"zh-TW"},"version":0}'},'zh'],
+    ['zh-CN',{'cli-proxy-language':'{"language":"en"}'},'en'],['zh-CN',{'cli-proxy-language':'"en"'},'en'],
+    ['en-US',{'cli-proxy-language':'zh-CN'},'zh'],['zh-CN',{'cli-proxy-language':'ru'},'en'],
+    ['en-US',{'cli-proxy-language':'bad-json{'},'en'],
+    ['zh-CN',{'cpa-mini-usage-language':'zh','cli-proxy-language':'en'},'zh'],
+    ['en-US',{'cpa-mini-usage-language':'invalid','cli-proxy-language':'zh-CN'},'zh']
+  ]){
     const d=dashboard(stored,undefined,{language:browser});assert.equal(d.elements.get('language').value,want);assert.equal(d.document.documentElement.lang,want==='en'?'en':'zh-CN');assert.deepEqual(d.writes,[]);
     d.api.setLanguage(want==='en'?'zh':'en');assert.deepEqual(d.writes,[['cpa-mini-usage-language',want==='en'?'zh':'en']]);
   }
   assert.equal(dashboard({},undefined,{languages:['en-AU','zh-CN']}).elements.get('language').value,'en');
+});
+test('CPA language changes update the plugin until the user selects an override',()=>{
+  const stored={'cli-proxy-language':'en'},d=dashboard(stored,undefined,{language:'zh-CN'});
+  assert.equal(d.elements.get('language').value,'en');
+  stored['cli-proxy-language']='{"state":{"language":"zh-CN"}}';d.events.storage({key:'cli-proxy-language'});
+  assert.equal(d.elements.get('language').value,'zh');assert.deepEqual(d.writes,[]);
+  d.api.setLanguage('en');stored['cli-proxy-language']='zh-CN';d.events.storage({key:'cli-proxy-language'});
+  assert.equal(d.elements.get('language').value,'en');assert.deepEqual(d.writes,[['cpa-mini-usage-language','en']]);
 });
 
 for(const language of ['zh','en']){
@@ -476,7 +494,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.27<\/span>/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.28<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
