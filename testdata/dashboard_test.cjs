@@ -93,14 +93,17 @@ test('remaining percentage clamps safely and unknown data stays unknown', () => 
   assert.equal(api.validEstimate(4000000),4000000);
   for(const value of [null,undefined,Infinity,NaN,-1,'4000000','',true])assert.equal(api.validEstimate(value),null);
 });
-test('providers share one grid in input order with a label on every card; absent manual reset stays hidden', () => {
+test('providers have independent named stacks with vertically ordered cards; absent manual reset stays hidden', () => {
   const {api,elements}=dashboard();
   const quotas=[{provider:'claude',name:'alice@example.com',manual_reset_remaining:2},{provider:'codex',name:'bob@example.com'},{provider:'codex',name:'carol@example.com',manual_reset_remaining:0}];
   api.renderSample({quotas});
-  const cards=elements.get('quota-cards').children;
-  assert(cards.every(card=>card.tag==='article'));
-  assert.deepEqual(cards.map(s=>s.dataset.provider),['claude','codex','codex']);
-  assert.deepEqual(cards.map(card=>descendants(card).find(n=>n.className==='account-provider').textContent),['Claude','Codex','Codex']);
+  const stacks=elements.get('quota-cards').children,cards=visibleAccounts({elements});
+  assert(stacks.every(stack=>stack.tag==='section'&&stack.className==='provider-stack'));
+  assert.deepEqual(stacks.map(s=>s.dataset.provider),['claude','codex']);
+  assert.deepEqual(stacks.map(s=>s.children[0].children[0].textContent),['Claude','Codex']);
+  assert.deepEqual(stacks.map(s=>s.children[1].children.length),[1,2]);
+  assert(cards.every(card=>card.tag==='article'));assert.deepEqual(cards.map(s=>s.dataset.provider),['claude','codex','codex']);
+  assert.equal(stacks[1].children[0].children[1].getAttribute('aria-label'),'显示 2 / 2 个匹配账户');
   const resets=descendants(elements.get('quota-cards')).filter(n=>n.className==='manual-reset');
   assert.deepEqual(resets.map(n=>n.children.map(c=>c.textContent)),[['可重置','2','次'],['可重置','0','次']]);
   api.renderSample({quotas},'claude');assert.equal(elements.get('quota-cards').children.length,1);
@@ -118,7 +121,7 @@ for(const language of ['zh','en'])test(`${language}: Antigravity renders one 5h/
   const card=descendants(sections[0]);
   assert.deepEqual(card.filter(n=>n.className==='window-group').map(n=>n.children[0].textContent),language==='en'?['Gemini models','Claude / GPT models','Imagen Models']:['Gemini 模型','Claude / GPT 模型','Imagen Models']);
   assert.equal(card.filter(n=>n.className==='windows').length,3);
-  assert(card.some(n=>n.className==='account-icon antigravity'&&n.textContent==='A'));
+  assert.equal(sections[0].children[0].children[0].textContent,'Antigravity'); // Identity is shared by the provider stack, not repeated in every card.
   assert.deepEqual(card.filter(n=>n.className==='percent').map(n=>n.children.length?n._text:n.textContent),['70.0','45.0','—','0.0','—','—']);
   assert(card.some(n=>n.textContent==='$4.50')&&card.some(n=>n.textContent.startsWith('4.4m ')&&n.title.startsWith('4,400,000 ')));
   api.renderSample({quotas},'antigravity');assert.deepEqual(elements.get('quota-cards').children.map(s=>s.dataset.provider),['antigravity']);
@@ -208,20 +211,20 @@ test('reset countdown retains full date in tooltip', () => {
 function sampleSnapshot(){return {generated_at:'2026-10-09T00:00:00Z',quotas:[{auth_id:'account',provider:'codex',name:'alice@example.com',fetched_at:'old',five_hour:{used_percent:25,reset_at:new Date(Date.now()+7200000).toISOString(),estimated_total_cost:120,estimated_total_tokens:4000000}}],credentials:[],recent:[]};}
 test('unchanged and timestamp-only snapshots preserve all content nodes',()=>{
   const {api,elements}=dashboard();const sample=sampleSnapshot();api.renderSample(sample);
-  const quota=elements.get('quota-cards').children[0],requests=elements.get('recent-table').children[0];
+  const quota=panel(elements,'account'),requests=elements.get('recent-table').children[0];
   api.acceptSnapshot(JSON.parse(JSON.stringify(sample)));
   api.acceptSnapshot({...sample,generated_at:'new',quota_updated_at:'2026-10-09T01:00:00Z',quotas:sample.quotas.map(q=>({...q,fetched_at:'new'}))});
-  assert.equal(elements.get('quota-cards').children[0],quota);assert.equal(elements.get('recent-table').children[0],requests);
+  assert.equal(panel(elements,'account'),quota);assert.equal(elements.get('recent-table').children[0],requests);
 });
 test('request-only changes preserve quota nodes; quota-only changes preserve requests',()=>{
   const {api,elements}=dashboard();let sample=sampleSnapshot();api.renderSample(sample);
-  const quota=elements.get('quota-cards').children[0];
+  const quota=panel(elements,'account');
   sample={...sample,recent:[{auth_id:'account',model:'gpt-test',total:1000}]};api.acceptSnapshot(sample);
-  assert.equal(elements.get('quota-cards').children[0],quota);
+  assert.equal(panel(elements,'account'),quota);
   const requests=elements.get('recent-table').children[0];
   api.acceptSnapshot({...sample,quotas:sample.quotas.map(q=>({...q,manual_reset_remaining:2}))});
   assert.equal(elements.get('recent-table').children[0],requests);
-  assert.notEqual(elements.get('quota-cards').children[0],quota); // Only the changed account card is replaced.
+  assert.notEqual(panel(elements,'account'),quota); // Only the changed account card is replaced.
 });
 test('countdowns update in place without rebuilding cards',()=>{
   const {api,elements}=dashboard();api.renderSample(sampleSnapshot());
@@ -473,7 +476,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.26<\/span>/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.27<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -584,7 +587,7 @@ for(const language of ['zh','en']){
   });
 }
 test('quota metrics retain readable sizing; compact cards stack windows only below 350px',()=>{
-  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:15px/);assert.match(css,/\.observed-value\{font-size:12px/);assert.match(css,/@media\(max-width:350px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);assert.match(css,/minmax\(min\(100%,300px\),1fr\)/);assert(!/\.account-browser\{[^}]*position:sticky/.test(css));assert(!/\.panel\.has-groups\{grid-column:1\/-1/.test(css));
+  const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.usage-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);assert.match(css,/\.observed-cost\{font-size:15px/);assert.match(css,/\.observed-value\{font-size:12px/);assert.match(css,/@media\(max-width:350px\)\{\.windows\{grid-template-columns:minmax\(0,1fr\)\}/);assert.match(css,/minmax\(min\(100%,320px\),336px\)/);assert.match(css,/\.provider-accounts\{display:flex;flex-direction:column;gap:8px/);assert.match(css,/\.account\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis/);assert(!/\.account-browser\{[^}]*position:sticky/.test(css));assert(!/\.panel\.has-groups\{grid-column:1\/-1/.test(css));
 });
 test('refresh and language controls live below tabs, outside CPA top-right overlay area',()=>{
   const d=dashboard(),root=d.elements.get('dashboard'),header=root.children.find(n=>n.tag==='header'),toolbar=root.children.find(n=>n.getAttribute('class')==='toolbar');
@@ -1058,7 +1061,7 @@ const manyAccounts=()=>({...twoAccounts(),quotas:Array.from({length:137},(_,i)=>
 for(const language of ['zh','en'])test(`${language}: many accounts have bounded cards, searchable IDs, status/provider filters, sorting and page sizes`,async()=>{
   const sample=manyAccounts(),d=dashboard({},undefined,{language});d.api.renderSample(sample);
   assert.equal(visibleAccounts(d).length,12);assert.equal(d.elements.get('account-page').textContent,'1 / 12');assert.equal(d.elements.get('account-prev').disabled,true);
-  await d.elements.get('account-next').onclick();assert.equal(d.elements.get('account-page').textContent,'2 / 12');assert(visibleAccounts(d).some(n=>n.dataset.authId==='credential-12'));
+  await d.elements.get('account-next').onclick();assert.equal(d.elements.get('account-page').textContent,'2 / 12');assert(visibleAccounts(d).some(n=>n.dataset.authId==='credential-36'));
   d.api.acceptSnapshot({...sample,generated_at:'next'});assert.equal(d.elements.get('account-page').textContent,'2 / 12');
   d.elements.get('account-search').oninput({target:{value:'  CREDENTIAL-132  '}});assert.deepEqual(visibleAccounts(d).map(n=>n.dataset.authId),['credential-132']);assert.equal(d.elements.get('account-page').textContent,'1 / 1');
   const card=visibleAccounts(d)[0];assert(refreshButton(card));assert(toggleButton(card));assert(resetButton(card));assert(!descendants(card).some(n=>n.className==='account-id'||n.textContent==='credential-132'));
@@ -1071,8 +1074,10 @@ for(const language of ['zh','en'])test(`${language}: many accounts have bounded 
   await d.elements.get('account-next-bottom').onclick();await d.elements.get('account-next-bottom').onclick();assert.equal(visibleAccounts(d).length,41);assert.equal(d.elements.get('account-next-bottom').disabled,true);
   d.api.acceptSnapshot({...sample,quotas:sample.quotas.slice(0,3)});assert.equal(d.elements.get('account-page').textContent,'1 / 1');assert.equal(visibleAccounts(d).length,3);
   d.api.renderSample(sample);d.elements.get('account-size').onchange({target:{value:'12'}});d.elements.get('account-sort').onchange({target:{value:'remaining'}});
-  const remaining=visibleAccounts(d).map(n=>sample.quotas.find(q=>q.auth_id===n.dataset.authId).five_hour.used_percent);assert(remaining.every(n=>n>=88),'lowest remaining quota is selected before paging');
-  d.elements.get('account-sort').onchange({target:{value:'name'}});assert(visibleAccounts(d).every(n=>Number(n.dataset.authId.split('-')[1])<12));
+  const expected=sample.quotas.filter(q=>q.provider==='codex').sort((a,b)=>Math.min(100-a.five_hour.used_percent,80)-Math.min(100-b.five_hour.used_percent,80)||a.name.localeCompare(b.name)).slice(0,12);
+  assert.deepEqual(visibleAccounts(d).map(n=>n.dataset.authId),expected.map(q=>q.auth_id),'sort applies to the full provider group before shared pagination');
+  d.elements.get('account-sort').onchange({target:{value:'name'}});assert.deepEqual(visibleAccounts(d).map(n=>n.dataset.authId),Array.from({length:12},(_,i)=>'credential-'+i*3));
+  assert.equal(d.elements.get('quota-cards').children[0].children[0].children[1].textContent,'12 / 46');
 });
 
 test('account paging preserves pending jobs, errors and actions without retaining off-page cards',async()=>{
@@ -1101,7 +1106,7 @@ for(const language of ['zh','en'])test(`${language}: filenames never become acco
     {auth_id:'orphan-without-name.json',provider:'codex'},
   ]};
   d.api.renderSample(sample);
-  const names=()=>visibleAccounts(d).map(card=>descendants(card).find(n=>n.className==='account').textContent);
+  const names=()=>records.map(record=>descendants(panel(d.elements,record.auth_id)).find(n=>n.className==='account').textContent);
   const original=names(),placeholder=language==='en'?/^Account [0-9A-Z]{7}$/:/^账户 [0-9A-Z]{7}$/;
   assert.equal(original[0],'Friendly account');assert.equal(original[5],'visible@example.test');
   for(const i of [1,2,3,4,6])assert.match(original[i],placeholder);
@@ -1122,18 +1127,25 @@ for(const language of ['zh','en'])test(`${language}: filenames never become acco
   d.api.setLanguage(language==='en'?'zh':'en');safe();
 });
 
-test('one grid honors global sort order and stable card caching across providers',()=>{
+test('provider stacks retain group order, sort within each group and preserve unchanged cards',()=>{
   const d=dashboard(),quotas=[
     {auth_id:'z',name:'Zulu',provider:'codex',five_hour:{used_percent:20}},
     {auth_id:'a',name:'Alpha',provider:'claude',five_hour:{used_percent:70}},
     {auth_id:'m',name:'Mike',provider:'antigravity',five_hour:{used_percent:50}},
+    {auth_id:'b',name:'jessica510tang@gmail.com',provider:'codex',five_hour:{used_percent:90}},
+    {auth_id:'c',name:'Very-long-'.repeat(30)+'@example.test',provider:'claude'},
   ];
-  d.api.renderSample({quotas});const cards=visibleAccounts(d);
-  assert.deepEqual(cards.map(card=>card.dataset.authId),['z','a','m']);
-  d.elements.get('account-sort').onchange({target:{value:'name'}});assert.deepEqual(visibleAccounts(d).map(card=>card.dataset.authId),['a','m','z']);
-  d.elements.get('account-sort').onchange({target:{value:'remaining'}});assert.deepEqual(visibleAccounts(d).map(card=>card.dataset.authId),['a','m','z']);
+  d.api.renderSample({quotas});const cards=new Map(visibleAccounts(d).map(card=>[card.dataset.authId,card])),stacks=[...d.elements.get('quota-cards').children];
+  const ids=()=>visibleAccounts(d).map(card=>card.dataset.authId);
+  assert.deepEqual(ids(),['z','b','a','c','m']);
+  d.elements.get('account-sort').onchange({target:{value:'name'}});assert.deepEqual(ids(),['b','z','a','c','m']);
+  d.elements.get('account-sort').onchange({target:{value:'remaining'}});assert.deepEqual(ids(),['b','z','a','c','m']);
+  assert.deepEqual(d.elements.get('quota-cards').children,stacks);
+  for(const id of ['b','c']){const label=descendants(cards.get(id)).find(n=>n.className==='account');assert.equal(label.title,label.textContent);assert.equal(label.getAttribute('aria-label'),label.textContent);assert.equal(label.tabIndex,0);assert.equal(label.id,'account-name-'+encodeURIComponent(id));}
+  assert.match(d.elements.get('account-sort-hint').textContent,/排序仅在组内生效/);
   d.api.acceptSnapshot({quotas:quotas.map(q=>q.auth_id==='z'?{...q,manual_reset_remaining:2}:q)});
-  assert.equal(panel(d.elements,'a'),cards[1]);assert.equal(panel(d.elements,'m'),cards[2]);assert.notEqual(panel(d.elements,'z'),cards[0]);
+  assert.equal(panel(d.elements,'a'),cards.get('a'));assert.equal(panel(d.elements,'m'),cards.get('m'));assert.notEqual(panel(d.elements,'z'),cards.get('z'));
+  assert.deepEqual(d.elements.get('quota-cards').children,stacks);
 });
 
 test('hidden filename IDs still drive refresh, reset and CPA status operations unchanged',async()=>{

@@ -72,10 +72,10 @@ function sample() {
 function mixedSample() {
   const data=sample(),base=data.quotas[1];
   data.quotas=[
-    {...base,auth_id:'codex-a1b2-demo-primary@example.test-team.json',name:'demo-primary@example.test',manual_reset_remaining:2},
-    {...base,auth_id:'codex-b2c3-demo-secondary@example.test-team.json',name:'codex-b2c3-demo-secondary@example.test-team.json'},
-    {...base,auth_id:'codex-c3d4-demo-unnamed@example.test-team.json',name:''},
-    {...base,auth_id:'codex-d4e5-demo-lab@example.test-plus.json',name:'demo-lab@example.test'},
+    {...base,auth_id:'codex-a1b2-demo-primary@example.test-team.json',name:'jessica510tang@gmail.com',manual_reset_remaining:2},
+    {...base,auth_id:'codex-b2c3-demo-secondary@example.test-team.json',name:'codex-b2c3-demo-secondary@example.test-team.json',five_hour:{...base.five_hour,used_percent:88}},
+    {...base,auth_id:'codex-c3d4-demo-unnamed@example.test-team.json',name:'',five_hour:{...base.five_hour,used_percent:72}},
+    {...base,auth_id:'codex-d4e5-demo-lab@example.test-plus.json',name:'demo-lab@example.test',five_hour:{...base.five_hour,used_percent:97}},
     {...data.quotas[0],auth_id:'claude-e5f6-demo@example.test.json',name:'demo-claude@example.test'},
     {provider:'antigravity',auth_id:'antigravity-f6a7-demo@example.test.json',name:'demo-google@example.test',
       groups:['gemini','claude-gpt'].map(key=>({key,five_hour:base.five_hour,seven_day:base.seven_day}))},
@@ -85,11 +85,15 @@ function mixedSample() {
   return data;
 }
 
-function fixture() {
-  assert.match(source, /^load\(\);$/m, 'fixture must suppress initial live load');
+function fixture(pageHTML=html) {
+  const pageSource=pageHTML.match(/<script>([\s\S]*?)<\/script>/)[1];
+  assert.match(pageSource, /^load\(\);$/m, 'fixture must suppress initial live load');
   const boot = `
+const offlineFetch=window.fetch;
 window.visualFixture = {
   show(state='ready') {
+    window.fetch=offlineFetch;window.__fixtureKey='';
+    actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();
     accountJobs.clear();accountErrors.clear();cardCache.clear();
     settingsJob=null;settingsError=null;requestJob=null;loading=false;headerLoading=false;
     filter='';$('provider').value='';phase='ready';key='';expanded='';recentPage=0;
@@ -118,6 +122,28 @@ window.visualFixture = {
     if(state==='login')clearSnapshot(true,'');
     document.body.dataset.fixtureState=state;
   },
+  // Real account handlers against an in-memory API, never a live endpoint or storage key.
+  startActions() {
+    key=window.__fixtureKey='DEMO-OFFLINE-NOT-A-CREDENTIAL';
+    this.calls=[];this.held='';this.failure='';this.release=null;
+    const state=this;let finished=0;
+    window.fetch=async(address,options={})=>{
+      const route=address.split('/').pop(),body=options.body?JSON.parse(options.body):null;
+      state.calls.push({route,method:options.method,body});
+      if(state.held===route){state.held='';await new Promise(resolve=>state.release=resolve);state.release=null;}
+      const reply=(payload,status=200)=>({ok:status===200,status,json:async()=>JSON.parse(JSON.stringify(payload))});
+      if(state.failure===route){state.failure='';return reply({error:'account_not_found'},404);}
+      if(route==='status')return reply({disabled:body.disabled});
+      if(route==='reset-credits')return reply({available_count:2,credits:[{id:'demo-first',expires_at:'2026-10-10T12:00:00Z'},{id:'demo-second',expires_at:'2026-10-12T12:00:00Z'}]});
+      if(route==='consume-reset')return reply({code:'nothing_to_reset'});
+      if(route==='refresh-account'){
+        data={...data,account_refresh:{...data.account_refresh,[body.auth_id]:{refreshing:false,finished_at:'demo-finished-'+(++finished)}}};
+        return reply({refresh_finished_at:'demo-previous'});
+      }
+      if(route==='data')return reply(data);
+      throw Error('Unexpected offline API route: '+route);
+    };
+  },
   showHistory() {
     data.history_available=true;
     historyPage={events:data.recent.slice(0,20),total:124,offset:0,limit:20,next_cursor:'demo-only',generated_at:data.generated_at,
@@ -131,7 +157,10 @@ setLanguage(params.get('lang')==='en'?'en':'zh',false);
 visualFixture.show(params.get('state')||'ready');
 setTab(params.get('tab')==='requests'?'requests':'quota');
 `;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, boot + '\n})();');
+  const instrumented = pageSource.replace(/^load\(\);$/m, '')
+    .replace('function guessKey(){', "function guessKey(){return window.__fixtureKey||'';")
+    .replace('const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));','const pause=()=>Promise.resolve();')
+    .replace(/\}\)\(\);\s*$/, boot + '\n})();');
   const safety = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
 <script>
 window.__blockedNetwork=0;window.__disabledTimers=0;
@@ -147,8 +176,8 @@ window.requestAnimationFrame=()=>0;
 </script>`;
   // Separate labels never alter the production file or use live credentials.
   const demoLabel = '<aside aria-label="Demo fixture" style="padding:8px 12px;border-bottom:1px solid var(--line);font:12px/1.5 var(--mono);color:var(--muted);background:var(--subtle)">DEMO / 演示数据 · Offline fixture · Network &amp; timers disabled</aside>';
-  return html.replace('<head>', '<head>' + safety).replace('<body>', '<body>' + demoLabel)
-    .replace('<script>' + source + '</script>', () => '<script>' + instrumented + '</script>');
+  return pageHTML.replace('<head>', '<head>' + safety).replace('<body>', '<body>' + demoLabel)
+    .replace('<script>' + pageSource + '</script>', () => '<script>' + instrumented + '</script>');
 }
 function board() {
   const frames = [390, 1480].flatMap(width => ['zh', 'en'].flatMap(lang => ['quota', 'requests'].map(tab =>
@@ -316,28 +345,42 @@ if (process.argv[2] === '--serve') {
             await page.locator('#tab-quota').click();
             await page.evaluate(() => visualFixture.show('mixed'));
             const mixed=await page.evaluate(()=>{
-              const root=document.querySelector('#quota-cards'),cards=[...root.children];
-              const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,bottom:r.bottom};};
-              return {columns:getComputedStyle(root).gridTemplateColumns.split(' ').length,
-                pageWidth:document.documentElement.scrollWidth,rects:cards.map(rect),
-                providers:cards.map(el=>el.querySelector('.account-provider')?.textContent),
-                articles:cards.every(el=>el.tagName==='ARTICLE'),
-                invalid:cards.filter(el=>el.scrollWidth>el.clientWidth+1||el.getBoundingClientRect().right>innerWidth).length,
-                labels:[...document.querySelectorAll('#quota-cards *')].flatMap(el=>[el.textContent,el.title,el.getAttribute('aria-label')]).filter(Boolean)};
+              const root=document.querySelector('#quota-cards'),stacks=[...root.children],cards=[...root.querySelectorAll('article')];
+              const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
+              return {pageWidth:document.documentElement.scrollWidth,rects:cards.map(rect),stacks:stacks.map(rect),
+                providers:stacks.map(el=>el.querySelector('h3').textContent),counts:stacks.map(el=>el.querySelectorAll('article').length),
+                adjacent:stacks.every(stack=>[...stack.querySelectorAll('article')].every((card,i,cards)=>!i||Math.abs(rect(card).x-rect(cards[i-1]).x)<1&&Math.abs(rect(card).y-rect(cards[i-1]).bottom-8)<1)),
+                names:cards.map(card=>{const el=card.querySelector('.account');return {text:el.textContent,title:el.title,aria:el.getAttribute('aria-label'),height:rect(el).height,lineHeight:parseFloat(getComputedStyle(el).lineHeight),clipped:el.scrollWidth>el.clientWidth};}),
+                windows:cards.map(el=>el.querySelectorAll('.window').length),
+                invalid:[...root.querySelectorAll('.panel,.window,.usage-row>*,.accounttop')].filter(el=>el.scrollWidth>el.clientWidth+1||el.getBoundingClientRect().right>innerWidth).map(el=>el.className),
+                labels:[...root.querySelectorAll('*')].flatMap(el=>[el.textContent,el.title,el.getAttribute('aria-label')]).filter(Boolean)};
             });
-            assert.equal(mixed.rects.length,6);assert(mixed.articles,'all six accounts are direct grid items');
-            assert.deepEqual(mixed.providers,['Codex','Codex','Codex','Codex','Claude','Antigravity']);
-            assert.equal(mixed.pageWidth,width);assert.equal(mixed.invalid,0);
+            assert.equal(mixed.rects.length,6);assert.deepEqual(mixed.counts,[4,1,1]);assert(mixed.adjacent,'cards are adjacent vertically within each provider stack');
+            assert.deepEqual(mixed.providers,['Codex','Claude','Antigravity']);assert.deepEqual(mixed.windows,[2,2,2,2,2,4]);
+            assert.equal(mixed.pageWidth,width);assert.deepEqual(mixed.invalid,[]);
+            assert(mixed.names.every(n=>n.height===n.lineHeight&&n.title===n.text&&n.aria===n.text),'names stay single-line with full safe accessible names');
+            assert.equal(mixed.names[0].text,'jessica510tang@gmail.com');assert(!mixed.names[0].clipped,'the typical email must be fully visible, even beside the actions');
             assert(mixed.labels.every(text=>!text.includes('.json')),'no filename in visible text, titles or accessible names');
             if(width===1480){
-              assert.equal(mixed.columns,4);
-              assert(mixed.rects.every(r=>r.width>=300&&r.width<370),'cards have a sensible shared desktop width');
-              assert(mixed.rects.slice(0,4).every(r=>Math.abs(r.y-mixed.rects[0].y)<1),'first row fills all four columns');
-              assert(Math.abs(mixed.rects[4].y-mixed.rects[5].y)<1,'Claude and Google share the second row');
-              assert(Math.abs(mixed.rects[4].y-Math.max(...mixed.rects.slice(0,4).map(r=>r.bottom))-8)<1,'no empty provider rows');
-              assert(mixed.rects[5].x>mixed.rects[4].x,'different providers fill adjacent columns');
+              assert(mixed.rects.every(r=>r.width===336),'all provider cards share the same compact desktop width');
+              assert(mixed.stacks.every(r=>Math.abs(r.y-mixed.stacks[0].y)<1),'all three independent stacks start on the same desktop row');
+              assert(mixed.stacks[0].x<mixed.stacks[1].x&&mixed.stacks[1].x<mixed.stacks[2].x);
+              assert(Math.max(...mixed.rects.slice(1,4).map(r=>r.height))-Math.min(...mixed.rects.slice(1,4).map(r=>r.height))<1,'ordinary cards have standard height');
+              assert(mixed.rects[5].height>mixed.rects[4].height,'multi-model cards grow naturally without clipping');
+              if(process.env.DASHBOARD_BASELINE_HTML){
+                const baseline=await context.newPage();
+                try{
+                  await baseline.setContent(fixture(fs.readFileSync(process.env.DASHBOARD_BASELINE_HTML,'utf8')));
+                  await baseline.evaluate(()=>visualFixture.show('mixed'));
+                  const before=await baseline.locator('#quota-cards article').evaluateAll(cards=>cards.map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.authId,width:r.width,height:r.height};}));
+                  assert.equal(before.length,6);
+                  for(let i=0;i<5;i++)assert(mixed.rects[i].width<before[i].width&&mixed.rects[i].height<=before[i].height*.9,'each ordinary card is narrower and at least 10% shorter than v0.1.26');
+                  report.push({key,tab:'v0.1.26-comparison',before,after:mixed.rects});
+                  await baseline.screenshot({path:path.join(directory,'1480-v0.1.26-mixed-accounts.png'),fullPage:true});
+                }finally{await baseline.close();}
+              }
             }else{
-              assert.equal(mixed.columns,1);assert(mixed.rects.every(r=>r.width>=300&&r.width<=390));
+              assert(mixed.stacks.every((r,i)=>!i||r.y>mixed.stacks[i-1].bottom),'mobile provider stacks follow one another without overflow');
             }
             await page.screenshot({path:path.join(directory,`${width}-mixed-accounts.png`),fullPage:true});
             report.push({key,tab:'mixed',...mixed,labels:undefined});
@@ -345,6 +388,46 @@ if (process.argv[2] === '--serve') {
             const requestIdentity=await page.locator('#credential-table,#recent-table').evaluateAll(roots=>roots.flatMap(root=>[...root.querySelectorAll('*')].flatMap(el=>[el.textContent,el.title,el.getAttribute('aria-label')]).filter(Boolean)));
             assert(requestIdentity.every(text=>!text.includes('.json')),'request-page identities also hide filenames');
             await page.locator('#tab-quota').click();
+            await page.locator('#account-sort').selectOption('name');
+            assert(await page.locator('.provider-accounts').evaluateAll(stacks=>stacks.every(stack=>{const names=[...stack.querySelectorAll('.account')].map(el=>el.textContent);return names.every((name,i)=>!i||names[i-1].localeCompare(name,'zh-CN',{numeric:true})<=0);})));
+            await page.locator('#account-sort').selectOption('remaining');
+            assert.deepEqual(await page.locator('.provider-stack').first().locator('article').evaluateAll(cards=>cards.map(el=>el.dataset.authId.split('-')[1])),['d4e5','b2c3','c3d4','a1b2']);
+            await page.locator('#account-sort').selectOption('default');
+            // Same 4+1+1 data, real controls and deferred replies: no production API.
+            await page.evaluate(()=>visualFixture.startActions());
+            const first=page.locator('.account-card').first(),sibling=page.locator('.account-card').nth(1);
+            await page.evaluate(()=>visualFixture.held='refresh-account');await first.locator('.account-refresh').click();
+            assert.equal(await first.locator('.account-refresh').getAttribute('aria-busy'),'true');assert(!(await sibling.locator('.account-refresh').isDisabled()));
+            await page.locator('#language').selectOption('en');assert.match(await first.locator('.account-refresh').getAttribute('aria-label'),/Refreshing/);
+            await page.evaluate(()=>visualFixture.release());await first.locator('.account-refresh[aria-busy=false]').waitFor();
+            await page.locator('#language').selectOption('zh');
+            await page.evaluate(()=>visualFixture.failure='refresh-account');await first.locator('.account-refresh').click();
+            await first.locator('.account-error').filter({hasText:'未找到账户'}).waitFor();
+            await page.evaluate(()=>visualFixture.held='status');await first.locator('.account-switch').click();
+            assert.equal(await first.locator('.account-switch').getAttribute('aria-busy'),'true');assert.equal(await first.locator('.account-switch').getAttribute('aria-checked'),'false');
+            assert(!(await sibling.locator('.account-switch').isDisabled()));
+            await page.evaluate(()=>visualFixture.release());await first.locator('.account-switch[aria-busy=false]').waitFor();
+            assert(await first.evaluate(el=>el.classList.contains('account-disabled')));
+            await first.locator('.account-switch').click();await first.locator('.account-switch[aria-checked=true][aria-busy=false]').waitFor();
+            const reset=first.locator('.account-reset');await reset.focus();await page.keyboard.press('Enter');
+            await page.locator('.reset-option').first().waitFor();assert.equal(await page.locator('.reset-option').first().getAttribute('aria-checked'),'true');
+            await page.keyboard.press('ArrowDown');assert.equal(await page.locator('.reset-option').nth(1).getAttribute('aria-checked'),'true');
+            await page.keyboard.press('Escape');assert(!(await page.locator('#reset-dialog').isVisible()));assert(await reset.evaluate(el=>el===document.activeElement));
+            assert.equal(await page.evaluate(()=>visualFixture.calls.filter(c=>c.route==='consume-reset').length),0);
+            await reset.click();await page.locator('.reset-option').first().waitFor();
+            await page.evaluate(()=>visualFixture.held='consume-reset');await page.locator('#reset-confirm').click();
+            assert.equal(await reset.getAttribute('aria-busy'),'true');assert(await first.locator('.account-refresh').isDisabled());
+            await page.evaluate(()=>visualFixture.release());
+            await page.waitForFunction(()=>document.querySelector('.account-reset')?.getAttribute('aria-busy')==='false');
+            assert.match(await first.locator('.account-note').textContent(),/没有需要重置/);
+            const calls=await page.evaluate(()=>visualFixture.calls),accountID='codex-a1b2-demo-primary@example.test-team.json';
+            assert(calls.filter(c=>c.route==='refresh-account'||c.route==='reset-credits'||c.route==='consume-reset').every(c=>c.body.auth_id===accountID));
+            assert.deepEqual(calls.filter(c=>c.route==='status').map(c=>c.body),[{name:accountID,disabled:true},{name:accountID,disabled:false}]);
+            assert.equal(calls.find(c=>c.route==='consume-reset').body.credit_id,'demo-first');
+            report.push({key,tab:'mixed-actions',refresh:true,refreshError:true,toggleBothDirections:true,resetCancelKeyboard:true,resetConfirm:true});
+            await page.evaluate(() => visualFixture.show('long'));
+            assert(await page.locator('.account').first().evaluate(el=>el.scrollWidth>el.clientWidth&&el.textContent===el.title&&el.textContent===el.getAttribute('aria-label')));
+            await page.locator('.account').first().focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert(await page.locator('.account').first().evaluate(el=>el===document.activeElement&&el.matches(':focus-visible')));
             await page.evaluate(() => visualFixture.show('many'));
             const density = await page.evaluate(() => {
               const rect = el => {const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
@@ -362,7 +445,7 @@ if (process.argv[2] === '--serve') {
             assert(density.windows.every(n=>n===2),'both quota windows remain directly visible');
             assert(density.card.width>0&&density.card.height>0&&density.card.height<280,'normal account is visible and compact without reducing metric type');
             if (width === 1480) {
-              assert.equal(density.columns,4);assert(density.fullyVisible>=8,'eight complete accounts fit the first 1000px screen');
+              assert(density.columns>=1);assert(density.fullyVisible>=3,'a provider stack fits three complete compact cards in the first 1000px screen');
               assert(density.browser.height<=72,'desktop browsing controls stay within two short lines');
               await page.screenshot({path:path.join(directory,'1480-compact-many.png'),fullPage:false});
             } else {
@@ -376,6 +459,8 @@ if (process.argv[2] === '--serve') {
             assert(await page.locator('.account-reset').isVisible());
             await page.locator('#account-clear').click();await page.locator('#account-next').click();
             assert.equal(await page.locator('#account-page').textContent(),'2 / 12');
+            await page.locator('#account-next').click();await page.locator('#account-next').click();
+            assert.deepEqual(await page.locator('.provider-stack').evaluateAll(stacks=>stacks.map(el=>[el.dataset.provider,el.querySelectorAll('article').length])),[['claude',10],['codex',2]],'shared page boundary preserves adjacent provider sub-stacks');
             await page.locator('#account-size').selectOption('24');
             assert.equal(await page.locator('#quota-cards .panel').count(),24);
             await page.locator('#account-state').selectOption('disabled');
@@ -386,7 +471,7 @@ if (process.argv[2] === '--serve') {
             await page.evaluate(() => visualFixture.show('groups'));
             const groups=await page.locator('.has-groups').evaluateAll(cards=>cards.map(el=>({width:el.getBoundingClientRect().width,windows:el.querySelectorAll('.window').length,overflow:el.scrollWidth>el.clientWidth+1,folds:el.querySelectorAll('details').length})));
             assert.equal(groups.length,3);assert(groups.every(el=>el.windows===4&&!el.overflow&&!el.folds));
-            if(width===1480)assert(groups.every(el=>el.width<370),'multi-model accounts no longer occupy a whole desktop row');
+            if(width===1480)assert(groups.every(el=>el.width===336),'multi-model accounts use the same standard desktop width');
           }
           await page.evaluate(() => visualFixture.show('ready'));
           await page.emulateMedia({reducedMotion: 'no-preference'});

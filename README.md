@@ -204,6 +204,10 @@ Make account cards and the filter bar more compact, showing more accounts at onc
 
 Arrange accounts from all providers in a shared responsive grid to avoid empty rows. Hide internal credential JSON filenames in account and request displays while retaining the original IDs for account operations. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
 
+### v0.1.27
+
+Group accounts into compact provider-specific vertical stacks, displayed side by side when space permits. Keep account names on one line with accessible full names, and preserve account actions and quota details. Sorting applies within each provider before shared pagination. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

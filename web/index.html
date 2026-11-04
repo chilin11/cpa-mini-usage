@@ -83,7 +83,16 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .section-head h2{min-width:0;overflow-wrap:anywhere}
 .section-label{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:8px;align-items:start}
+.provider-stacks{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),336px));gap:12px;align-items:start}
+.provider-stacks>.empty{grid-column:1/-1}
+.provider-stack{min-width:0;--provider-accent:var(--accent)}
+.provider-stack[data-provider=claude]{--provider-accent:var(--warm)}
+.provider-stack[data-provider=antigravity]{--provider-accent:var(--good)}
+.provider-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:4px 8px;border-left:3px solid var(--provider-accent)}
+.provider-heading h3{color:var(--provider-accent);overflow-wrap:anywhere}
+.provider-count{font:11px/1.5 var(--mono);color:var(--muted);white-space:nowrap}
+.provider-accounts{display:flex;flex-direction:column;gap:8px;min-width:0}
+.account-sort-hint{font-size:11px;color:var(--muted);margin:4px 0 6px}
 .account-browser{margin-bottom:10px}
 .browse-fields{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;align-items:center;gap:6px}
 .browse-fields label{display:flex;align-items:center;min-width:0;font-size:11px;color:var(--muted)}
@@ -94,25 +103,24 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .browse-summary .pagination{flex-wrap:wrap;gap:6px}
 .browse-summary .button{min-height:28px;padding:3px 8px}
 .account-bottom{justify-content:flex-end;margin-top:10px}
-.account-provider{font-size:10px;font-weight:600;line-height:1.4;color:var(--provider-accent);overflow-wrap:anywhere}
 @media(max-width:760px){.browse-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.browse-fields .account-search{grid-column:1;grid-row:1}.browse-fields label[for=account-state]{grid-column:1;grid-row:2}.browse-fields label[for=account-sort]{grid-column:2;grid-row:2}#account-clear{grid-column:2;grid-row:1;justify-self:end}.browse-summary .pagination{margin-left:auto}}
 .account-card{--provider-accent:var(--accent)}
 .account-card[data-provider=claude]{--provider-accent:var(--warm)}
 .account-card[data-provider=antigravity]{--provider-accent:var(--good)}
 .panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
-.accounttop{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px 6px;flex-wrap:wrap;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
-.identity{display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 160px}
-.account-icon{display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--line);border-radius:6px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:650;flex-shrink:0}
-.account-icon.claude{color:var(--warm);background:var(--warm-soft)}
-.account-icon.antigravity{color:var(--good);background:var(--good-soft)}
+.accounttop{padding:4px 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 6px;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
+.identity{display:flex;align-items:center;min-width:0}
+/* Provider identity lives once in the stack heading, not in every account header. */
 .group-grid{display:grid;grid-template-columns:minmax(0,1fr)}
 .group{min-width:0}
 .group+.group{border-top:1px solid var(--line)}
 .window-group{padding:4px 8px 0}
 .window-group h4{margin:0;font-size:12px;font-weight:650;color:var(--muted);letter-spacing:.2px}
-.identity-text{min-width:0}
-.account{font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
-.account-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px 6px;flex-wrap:wrap;min-width:0;max-width:100%;margin-left:auto}
+.identity-text{min-width:0;flex:1}
+.account{margin:0;font-size:13px;font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.account-actions{display:contents}
+.account-primary-actions{display:flex;align-items:center;gap:6px;grid-column:2;grid-row:1}
+.account-reset-actions{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;grid-column:1/-1;min-width:0}
 .manual-reset{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .manual-reset strong{font-size:18px;font-weight:750;line-height:1.2;color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .account-refresh{width:28px;min-height:28px;padding:0;flex-shrink:0;border-color:var(--line)}
@@ -120,22 +128,23 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .button[aria-busy=true]{cursor:progress;border-style:dashed;box-shadow:none}
 .button:disabled{box-shadow:none}
 .windows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
-.window{display:flex;flex-direction:column;padding:6px 8px;min-width:0}
+.window{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto 1fr auto;padding:4px 6px;min-width:0}
 .window+.window{border-left:1px solid var(--line)}
+.windowhead{grid-column:1;grid-row:1}
 .windowhead h3{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.2px}
-.quota-value{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}
-.percent{font-size:22px;color:var(--accent);letter-spacing:-1px;font-weight:700;line-height:1.25;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.quota-value{display:contents}
+.percent{font-size:22px;color:var(--accent);letter-spacing:-1px;font-weight:700;line-height:1.25;font-family:var(--mono);font-variant-numeric:tabular-nums;grid-column:2;grid-row:1/3;align-self:center}
 .percent-unit{font-size:12px;font-weight:500;letter-spacing:0;margin-left:2px}
-.remaining-label{font-size:11px;color:var(--muted)}
+.remaining-label{font-size:11px;color:var(--muted);grid-column:1;grid-row:2}
 .low .percent{color:var(--bad)}
-.track{height:4px;flex-shrink:0;border-radius:3px;background:var(--track);margin:4px 0}
+.track{height:4px;grid-column:1/-1;border-radius:3px;background:var(--track);margin:3px 0}
 .fill{height:100%;background:linear-gradient(90deg,var(--accent-blue),var(--accent));border-radius:3px}
 .low .fill{background:var(--bad)}
 .unknown .percent{color:var(--muted)}
-.windowstats{margin:0 0 4px;padding:4px 0;border:0;border-radius:6px;background:linear-gradient(90deg,transparent calc(50% + 3px),var(--forecast-soft) calc(50% + 3px));min-width:0}
-.usage-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:baseline}
+.windowstats{grid-column:1/-1;margin:0 0 2px;padding:0;border:0;border-radius:6px;background:linear-gradient(90deg,transparent calc(50% + 1px),var(--forecast-soft) calc(50% + 1px));min-width:0}
+.usage-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;align-items:baseline}
 .usage-row>*{min-width:0}
-.usage-row>:nth-child(2){padding-left:6px;padding-right:2px}
+.usage-row>:nth-child(2){padding-left:4px;padding-right:2px}
 .usage-label{font-size:11px;color:var(--muted);margin-bottom:2px;overflow-wrap:anywhere}
 .usage-label:nth-child(2){color:var(--forecast)}
 .observed-cost{font-size:15px;font-weight:600;letter-spacing:-.5px;line-height:1.35;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--cost);overflow-wrap:anywhere}
@@ -144,7 +153,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .usage-row .estimate-cost{display:block;overflow-wrap:anywhere}
 .observed-value{font-size:12px;color:var(--muted);margin-top:1px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
 .estimate-value{font-size:12px;color:var(--forecast);margin-top:1px;line-height:1.5;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.35px;overflow-wrap:anywhere}
-.reset{font-size:11px;color:var(--muted);margin-top:auto;padding-top:4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.reset{font-size:11px;color:var(--muted);grid-column:1/-1;align-self:end;padding-top:3px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .account-error{margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--bad);border-radius:4px;background:var(--bad-soft);font-size:11px;color:var(--bad);overflow-wrap:anywhere}
 .account-error:empty{display:none}
 .account-note{margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--good);border-radius:4px;background:var(--good-soft);font-size:11px;color:var(--good);overflow-wrap:anywhere}
@@ -265,7 +274,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 .timing-unit{display:block;font-size:10px;line-height:1.5;color:var(--muted);font-weight:400}
 .request-timing .timing-line{display:block;font-size:11px;line-height:1.5}
 .request-timing .timing-label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;color:var(--muted);margin-right:5px;letter-spacing:0}
-@media(max-width:760px){main{padding:12px}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:36px}.account-refresh{width:36px}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
+@media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:36px}.account-refresh{width:36px}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
 @media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{margin-right:auto}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
 @media(max-width:350px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.tabs button{padding:6px 8px}}
 .needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login .statusbar,.needs-login #updated{display:none}
@@ -275,7 +284,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.26</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.27</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -298,12 +307,13 @@ tbody tr:focus-within>td{background:var(--hover)}
     <div class="browse-fields">
       <label class="account-search" for="account-search"><span class="sr-only" data-i18n="搜索账户（名称、邮箱或 ID）">搜索账户（名称、邮箱或 ID）</span><input id="account-search" type="search" autocomplete="off" aria-controls="quota-cards" placeholder="搜索账户（名称、邮箱或 ID）"></label>
       <label for="account-state"><span class="sr-only" data-i18n="账户状态">账户状态</span><select id="account-state"><option value="" data-i18n="全部账户">全部账户</option><option value="enabled" data-i18n="仅已启用">仅已启用</option><option value="disabled" data-i18n="仅已禁用">仅已禁用</option></select></label>
-      <label for="account-sort"><span class="sr-only" data-i18n="排序">排序</span><select id="account-sort"><option value="default" data-i18n="默认顺序">默认顺序</option><option value="name" data-i18n="账户名称">账户名称</option><option value="remaining" data-i18n="剩余额度从低到高">剩余额度从低到高</option></select></label>
+      <label for="account-sort"><span class="sr-only" data-i18n="排序">排序</span><select id="account-sort" aria-describedby="account-sort-hint"><option value="default" data-i18n="默认顺序">默认顺序</option><option value="name" data-i18n="账户名称">账户名称</option><option value="remaining" data-i18n="剩余额度从低到高">剩余额度从低到高</option></select></label>
       <button id="account-clear" class="button" type="button" data-i18n="清除账户筛选">清除账户筛选</button>
     </div>
     <div class="browse-summary"><span id="account-results" class="results" role="status" aria-live="polite"></span><nav class="pagination" aria-label="账户分页"><label class="page-size-control" for="account-size"><span data-i18n="每页">每页</span><select id="account-size" aria-label="每页账户数"><option value="12">12</option><option value="24">24</option><option value="48">48</option></select></label><button id="account-prev" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page" class="tabnum">0 / 0</span><button id="account-next" class="button" type="button" data-i18n="下一页">下一页</button></nav></div>
   </section>
-  <div id="quota-cards" class="grid"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
+  <p id="account-sort-hint" class="account-sort-hint" data-i18n="按供应商分组；排序仅在组内生效，然后统一分页。">按供应商分组；排序仅在组内生效，然后统一分页。</p>
+  <div id="quota-cards" class="provider-stacks"><div class="empty"><strong>正在读取 CPA 登录状态…</strong></div></div>
   <nav id="account-bottom" class="pagination account-bottom" aria-label="账户分页（底部）"><button id="account-prev-bottom" class="button" type="button" data-i18n="上一页">上一页</button><span id="account-page-bottom" class="tabnum">0 / 0</span><button id="account-next-bottom" class="button" type="button" data-i18n="下一页">下一页</button></nav>
 </section>
 <section id="page-requests" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" class="hide">
@@ -363,6 +373,7 @@ const endpoint = '/v0/management/plugins/cpa-mini-usage/';
 const languageStorage='cpa-mini-usage-language';
 const translations={
   '中文':'Chinese','英语':'English',
+  '按供应商分组；排序仅在组内生效，然后统一分页。':'Grouped by provider; sort within each group before shared pagination.','显示 {shown} / {total} 个匹配账户':'Showing {shown} / {total} matching accounts',
   '账户浏览':'Browse accounts','搜索账户（名称、邮箱或 ID）':'Search accounts (name, email or ID)','账户状态':'Account status','全部账户':'All accounts','仅已启用':'Enabled only','仅已禁用':'Disabled only','排序':'Sort','默认顺序':'Default order','账户名称':'Account name','剩余额度从低到高':'Lowest remaining quota first','每页账户数':'Accounts per page','清除账户筛选':'Clear account filters','账户分页':'Account pagination','账户分页（底部）':'Account pagination (bottom)',
   '显示 {start}–{end} / 匹配 {n} 个，共 {total} 个账户':'Showing {start}–{end} / {n} matching, {total} accounts total','当前账户筛选无匹配结果':'No accounts match these filters','请更改搜索、账户状态或服务商筛选。':'Change the search, account status or provider filter.','账户 {code}':'Account {code}',
   '最近 24 小时':'Last 24 hours','日期留空时查询滚动最近 24 小时；手选日期需同时填写起止，包含结束当天。':'Leave both dates empty for the rolling last 24 hours; custom dates require both fields and include the end day.','滚动 24 小时：{start} — {end}（本地时间）':'Rolling 24 hours: {start} — {end} (local time)','所选日期：{start} — {end}（本地时间，结束不含）':'Selected dates: {start} — {end} (local time, exclusive end)',
@@ -963,9 +974,15 @@ function accountRemaining(item){
 }
 function renderQuotas(){
   const root=$('quota-cards'),all=list(data?.quotas),providerQuotas=all.filter(active),query=accountSearch.trim().toLowerCase();
-  const matches=providerQuotas.filter(q=>(!query||[credentialName(q),q.name,q.auth_id].some(value=>String(value||'').toLowerCase().includes(query)))&&(!accountState||Boolean(q.disabled)===(accountState==='disabled')));
-  if(accountSort==='name')matches.sort((a,b)=>credentialName(a).localeCompare(credentialName(b),locale(),{numeric:true})||String(a.auth_id).localeCompare(String(b.auth_id)));
-  if(accountSort==='remaining')matches.sort((a,b)=>accountRemaining(a)-accountRemaining(b)||credentialName(a).localeCompare(credentialName(b)));
+  // Keep provider order independent of account sorting; sort the full groups before paging.
+  const grouped=new Map();providerQuotas.forEach(q=>{if(!grouped.has(q.provider))grouped.set(q.provider,[]);});
+  providerQuotas.forEach(q=>{if((!query||[credentialName(q),q.name,q.auth_id].some(value=>String(value||'').toLowerCase().includes(query)))&&(!accountState||Boolean(q.disabled)===(accountState==='disabled')))grouped.get(q.provider).push(q);});
+  const byName=(a,b)=>credentialName(a).localeCompare(credentialName(b),locale(),{numeric:true})||String(a.auth_id).localeCompare(String(b.auth_id));
+  for(const accounts of grouped.values()){
+    if(accountSort==='name')accounts.sort(byName);
+    if(accountSort==='remaining')accounts.sort((a,b)=>(accountRemaining(a)-accountRemaining(b))||byName(a,b));
+  }
+  const matches=[...grouped.values()].flat();
   const pages=Math.ceil(matches.length/accountSize);accountPage=Math.max(0,Math.min(accountPage,pages-1));
   const start=accountPage*accountSize,quotas=matches.slice(start,start+accountSize);
   $('quota-count').textContent=data?fmt(providerQuotas.length):'—';
@@ -976,32 +993,50 @@ function renderQuotas(){
   }
   $('account-bottom').hidden=pages<=1;
   if(!data||!quotas.length){root.replaceChildren(!data?noData():providerQuotas.length?empty('当前账户筛选无匹配结果','请更改搜索、账户状态或服务商筛选。'):empty(filter?'此服务商暂无 OAuth 额度':'还没有可用的 OAuth 额度','请检查 Claude / Codex / Antigravity 凭证是否支持额度查询，或点击“刷新全部”重新检查。'));cardCache.clear();return;}
-  const panels=[],present=new Set();
+  const visibleGroups=new Map(),present=new Set();
   quotas.forEach((item,i)=>{
       const id=item.auth_id??item.provider+':'+(start+i),stamp=accountContent(item);present.add(id);let entry=cardCache.get(id);
       if(!entry||entry.stamp!==stamp){
         const groups=list(item.groups);
         const panel=el('article','panel account-card'+(groups.length?' has-groups':'')+(item.disabled?' account-disabled':''));panel.dataset.authId=id;panel.dataset.provider=item.provider||'';
         const head=add(panel,'div','accounttop'),identity=add(head,'div','identity');
-        const icon=add(identity,'span','account-icon'+(item.provider==='claude'?' claude':item.provider==='antigravity'?' antigravity':''),item.provider==='claude'?'C':item.provider==='antigravity'?'A':'⌘');icon.setAttribute('aria-hidden','true');
-        const text=add(identity,'div','identity-text');add(text,'h3','account',credentialName(item));
-        add(text,'div','account-provider',providerName(item.provider));
+        const text=add(identity,'div','identity-text'),name=credentialName(item),label=add(text,'h4','account',name);label.title=name;label.setAttribute('aria-label',name);label.tabIndex=0;label.id='account-name-'+encodeURIComponent(id);
         if(item.disabled)add(text,'span','account-state','已禁用');
-        const actions=add(head,'div','account-actions');
-        if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){const resets=add(actions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');}
-        let reset=null;if(item.provider==='codex'&&!item.disabled&&Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0){reset=add(actions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
-        const toggle=add(actions,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
-        const button=add(actions,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','sr-only','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
+        const actions=add(head,'div','account-actions'),primary=add(actions,'div','account-primary-actions');
+        let reset=null;
+        if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
+          const secondary=add(actions,'div','account-reset-actions'),resets=add(secondary,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
+          if(item.provider==='codex'&&!item.disabled&&item.manual_reset_remaining>0){reset=add(secondary,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
+        }
+        const toggle=add(primary,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
+        const button=add(primary,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','sr-only','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
         if(groups.length){const holder=add(panel,'div','group-grid');groups.forEach(g=>{const box=add(holder,'div','group');const head=add(box,'div','window-group');const label=add(head,'h4','',groupName(g));label.title=t('此分组按模型系列统计本机观测用量。');const grid=add(box,'div','windows');addWindow(grid,'5 小时','5h',g.five_hour);addWindow(grid,'7 天','7d',g.seven_day);});}
         else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
         entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
-      panels.push(entry.panel);
+      if(!visibleGroups.has(item.provider))visibleGroups.set(item.provider,[]);visibleGroups.get(item.provider).push(entry.panel);
   });
   for(const id of cardCache.keys())if(!present.has(id))cardCache.delete(id);
-  // Patch changed cards in place when order is stable; retain sibling nodes and focus.
-  if(panels.length===root.children.length&&panels.every((panel,i)=>panel.dataset.authId===root.children[i].dataset.authId)){panels.forEach((panel,i)=>{if(panel!==root.children[i])root.children[i].replaceWith(panel);});}else root.replaceChildren(...panels);
+  // Reuse stacks and patch only changed cards, retaining sibling nodes and keyboard focus.
+  const patch=(target,nodes,field)=>{
+    if(nodes.length===target.children.length&&nodes.every((node,i)=>node.dataset[field]===target.children[i].dataset[field]))nodes.forEach((node,i)=>{if(node!==target.children[i])target.children[i].replaceWith(node);});
+    else target.replaceChildren(...nodes);
+  };
+  const existing=new Map([...root.children].map(section=>[section.dataset.provider,section])),stacks=[];
+  for(const [provider,panels] of visibleGroups){
+    let section=existing.get(provider);
+    if(!section||section.className!=='provider-stack'){
+      section=el('section','provider-stack');section.dataset.provider=provider||'';
+      const head=add(section,'div','provider-heading'),title=add(head,'h3','',providerName(provider));title.id='provider-heading-'+encodeURIComponent(provider||'unknown');section.setAttribute('aria-labelledby',title.id);
+      add(head,'span','provider-count');add(section,'div','provider-accounts');
+    }
+    section.children[0].children[0].textContent=providerName(provider);
+    const count=section.children[0].children[1],total=grouped.get(provider).length;
+    count.textContent=panels.length+' / '+total;count.title=t('显示 {shown} / {total} 个匹配账户',{shown:panels.length,total});count.setAttribute('aria-label',count.title);
+    patch(section.children[1],panels,'authId');stacks.push(section);
+  }
+  patch(root,stacks,'provider');
   syncAccountControls();
 }
 function addCell(tr,what,align){return add(tr,'td',align||'',what);}
