@@ -212,6 +212,10 @@ Group accounts into compact provider-specific vertical stacks, displayed side by
 
 When no plugin language has been explicitly selected, follow the same-origin CPA management language and respond to its changes; fall back to the browser language when CPA settings are unavailable. The plugin supports Chinese and English; other CPA languages use English. A manually chosen plugin language remains in effect. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
 
+### v0.1.29
+
+Separate account refresh from the enable toggle and reset-card controls to reduce accidental taps. Disabling an account now requires confirmation; cancelling does not change its status. Reset-card consumption retains its separate confirmation. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

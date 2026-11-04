@@ -108,7 +108,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account-card[data-provider=claude]{--provider-accent:var(--warm)}
 .account-card[data-provider=antigravity]{--provider-accent:var(--good)}
 .panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
-.accounttop{padding:4px 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 6px;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
+.accounttop{padding:2px 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 6px;border-bottom:1px solid var(--line);border-radius:11px 11px 0 0;background:var(--subtle);box-shadow:inset 0 2px 0 var(--provider-accent)}
 .identity{display:flex;align-items:center;min-width:0}
 /* Provider identity lives once in the stack heading, not in every account header. */
 .group-grid{display:grid;grid-template-columns:minmax(0,1fr)}
@@ -120,10 +120,11 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account{margin:0;font-size:13px;font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
 .account-actions{display:contents}
 .account-primary-actions{display:flex;align-items:center;gap:6px;grid-column:2;grid-row:1}
-.account-reset-actions{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;grid-column:1/-1;min-width:0}
+.account-secondary-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 8px;border-top:1px solid var(--line)}
+.account-reset-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;min-width:0;padding-left:12px;border-left:1px solid var(--line)}
 .manual-reset{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .manual-reset strong{font-size:18px;font-weight:750;line-height:1.2;color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.account-refresh{width:28px;min-height:28px;padding:0;flex-shrink:0;border-color:var(--line)}
+.account-refresh{min-height:32px;padding:4px 8px;gap:4px;flex-shrink:0;border-color:var(--line);font-size:11px}
 .refresh-icon{font:22px/1 var(--mono)}
 .button[aria-busy=true]{cursor:progress;border-style:dashed;box-shadow:none}
 .button:disabled{box-shadow:none}
@@ -160,18 +161,18 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account-note:empty{display:none}
 .account-state{display:inline-block;margin-top:2px;padding:0 6px;border:1px solid var(--warm);border-radius:4px;background:var(--warm-soft);color:var(--warm);font-size:11px;font-weight:600;line-height:1.6}
 .panel.account-disabled .windows{opacity:.55}
-.account-action{padding:4px 8px;min-height:28px;font-size:11px;font-weight:500;border-color:var(--line)}
+.account-action{padding:4px 8px;min-height:32px;font-size:11px;font-weight:500;border-color:var(--line)}
 .account-reset:not(:disabled){color:var(--accent);border-color:var(--edge)}
-.account-switch{display:inline-flex;align-items:center;flex-shrink:0;min-height:28px;padding:0 2px;border:0;border-radius:11px;background:transparent}
-.account-switch:disabled{background:transparent;cursor:default}
+.account-switch{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:32px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-size:11px}
+.account-switch:hover:not(:disabled){border-color:var(--edge);background:var(--hover)}
+.account-switch:disabled{cursor:default;opacity:.65}
 .switch-track{position:relative;display:block;width:36px;height:20px;box-sizing:border-box;border:1px solid var(--edge);border-radius:10px;background:var(--track)}
 .switch-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .account-switch[aria-checked=true] .switch-track{border-color:var(--good);background:var(--good)}
 .account-switch[aria-checked=true] .switch-thumb{left:18px}
-.account-switch:hover:not(:disabled) .switch-track{border-color:var(--accent)}
-.account-switch[aria-checked=true]:hover:not(:disabled) .switch-track{border-color:var(--good)}
-.account-switch[aria-busy=true]{cursor:progress}
+.account-switch[aria-busy=true]{cursor:progress;border-style:dashed}
 .account-switch[aria-busy=true] .switch-track{border-style:dashed;opacity:.7}
+.account-reset::before{content:'↺';font-size:16px;line-height:1}
 .modal{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(6,12,22,.55)}
 .modal-card{display:flex;flex-direction:column;gap:12px;width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.28)}
 .modal-card:focus{outline:none}
@@ -274,8 +275,8 @@ tbody tr:focus-within>td{background:var(--hover)}
 .timing-unit{display:block;font-size:10px;line-height:1.5;color:var(--muted);font-weight:400}
 .request-timing .timing-line{display:block;font-size:11px;line-height:1.5}
 .request-timing .timing-label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;color:var(--muted);margin-right:5px;letter-spacing:0}
-@media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:36px}.account-refresh{width:36px}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
-@media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{margin-right:auto}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
+@media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:44px;min-width:44px}.modal-actions .button{min-height:44px}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
+@media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{flex-wrap:nowrap}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
 @media(max-width:350px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.tabs button{padding:6px 8px}}
 .needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login .statusbar,.needs-login #updated{display:none}
 </style>
@@ -284,7 +285,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.28</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.29</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -351,12 +352,20 @@ tbody tr:focus-within>td{background:var(--hover)}
     <div class="modal-actions"><button class="button" type="button" id="reset-retry" data-i18n="重新读取">重新读取</button><button class="button" type="button" id="reset-cancel" data-i18n="取消">取消</button><button class="button modal-primary" type="button" id="reset-confirm" data-i18n="确认使用">确认使用</button></div>
   </div>
 </div>
+<div id="disable-dialog" class="modal" hidden>
+  <div id="disable-card" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="disable-title" aria-describedby="disable-subtitle disable-warning" tabindex="-1">
+    <h2 id="disable-title" data-i18n="停用账户？">停用账户？</h2>
+    <p id="disable-subtitle" class="modal-sub"></p>
+    <p id="disable-warning" class="modal-warning" data-i18n="停用后，CPA 将不再调度此账户。已有额度不会重置，你可以稍后重新启用。">停用后，CPA 将不再调度此账户。已有额度不会重置，你可以稍后重新启用。</p>
+    <div class="modal-actions"><button class="button" type="button" id="disable-cancel" data-i18n="取消">取消</button><button class="button" type="button" id="disable-confirm" data-i18n="确认停用">确认停用</button></div>
+  </div>
+</div>
 <script>
 (() => {
 'use strict';
 let key = '', data = null, tab = 'quota', filter = '', expanded = '';
 let loading = false, headerLoading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
-let quotaStamp='',requestStamp='',lastSyncAt=0, accountSnapshotSerial=0,appliedAccountSnapshotSerial=0;
+let quotaStamp='',requestStamp='',lastSyncAt=0, accountSnapshotSerial=0,appliedAccountSnapshotSerial=0,accountMutationSerial=0;
 const accountJobs=new Map();
 let statusKey='正在读取登录状态', alertKeys=[];
 let settingsJob=null,settingsError=null;
@@ -454,6 +463,8 @@ const translations={
   '重试同一请求':'Retry same request','确认使用':'Use this reset','取消':'Cancel','重新读取':'Reload',
   '重置卡读取失败，请稍后重试。':'Loading reset credits failed. Please retry later.','重置卡明细格式异常。':'Invalid reset credit details.','重置卡标识无效。':'Invalid reset credit id.',
   '这张重置卡已不可用，请重新选择。':'That reset credit is no longer available. Please choose again.',
+  '刷新':'Refresh','停用':'Disable','启用':'Enable','已启用':'Enabled','账户启用状态：{name}':'Account enabled status: {name}','停用 {name}':'Disable {name}','停用账户？':'Disable account?',
+  '停用后，CPA 将不再调度此账户。已有额度不会重置，你可以稍后重新启用。':'CPA will no longer route requests to this account. Its quota will not be reset; you can enable it again later.','确认停用':'Disable account',
   '已禁用':'Disabled','启用 {name}':'Enable {name}','已启用，点击禁用':'Enabled; click to disable','已禁用，点击启用':'Disabled; click to enable','正在禁用…':'Disabling…','正在启用…':'Enabling…',
   '已使用重置卡，重置了 {n} 个额度窗口。':'Reset credit used; {n} quota window(s) reset.','当前没有需要重置的额度窗口。':'No quota window needs a reset.',
   '没有可用的重置卡。':'No reset credits available.','该重置请求已处理，未重复扣除。':'This reset request was already processed; nothing was charged twice.',
@@ -502,7 +513,7 @@ function applyLanguage(){
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
   $('account-search').placeholder=t('搜索账户（名称、邮箱或 ID）');
-  $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();renderResetDialog();
+  $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();
 }
 function setLanguage(value,persist=true){
   language=value==='en'?'en':'zh';if(persist){try{localStorage.setItem(languageStorage,language);}catch{}}
@@ -595,9 +606,12 @@ function acceptSnapshot(snapshot){
     if(!account.error&&!state?.error&&(account.fetched_at&&account.fetched_at!==previous?.fetched_at||state?.finished_at&&state.finished_at!==data?.account_refresh?.[account.auth_id]?.finished_at))accountErrors.delete(account.auth_id);
   }
   data=snapshot;phase='ready';
+  if(resetDialog&&!resetTargetCurrent(resetDialog.target))closeReset();
+  if(disableDialog&&!accountTargetCurrent(disableDialog.target))closeDisable();
+  for(const [id,pending] of pendingRedeem)if(!accountTargetCurrent(pending.target))pendingRedeem.delete(id);
   if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
   if(requests!==requestStamp){renderRequests();requestStamp=requests;}
-  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();restoreFocus(focused);
+  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
 }
 function updateSyncInfo(){
   if(tab==='requests'){
@@ -665,12 +679,12 @@ async function api(path,method='GET',body,signal) {
 const remoteAccountBusy=()=>Object.values(data?.account_refresh||{}).some(state=>state?.refreshing);
 function syncAccountControls(){
   for(const [id,entry] of cardCache){
-    const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新额度'),job=actionJobs.get(id);
+    const busy=accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing),label=t(busy?'正在刷新…':'刷新'),job=actionJobs.get(id);
     entry.button.disabled=busy||Boolean(job);if(entry.refreshLabel.textContent!==label)entry.refreshLabel.textContent=label;
     entry.refreshIcon.textContent=busy?'…':'↻';
     const refreshName=t('刷新 {name} 的额度',{name:entry.name});entry.button.title=busy?label+' · '+refreshName:refreshName;entry.button.setAttribute('aria-label',entry.button.title);
     if(entry.reset)syncActionButton(entry.reset,job?.kind==='reset'?'正在使用…':'使用重置卡',busy||Boolean(job),job?.kind==='reset',{text:'为 {name} 使用一张重置卡',values:{name:entry.name}});
-    syncSwitch(entry.toggle,job,entry.disabled,entry.name);
+    syncSwitch(entry.toggle,job,entry.disabled,entry.name,busy);
     const note=accountNote(id),noteText=note?message(note):'';if(entry.note.textContent!==noteText)entry.note.textContent=noteText;entry.note.hidden=!noteText;
     if(entry.button.getAttribute('aria-busy')!==String(busy))entry.button.setAttribute('aria-busy',String(busy));
     if(!accountErrors.has(id)&&!accountJobs.has(id)){const error=data?.account_refresh?.[id]?.error||entry.backendError;const text=error?message(errorKey(error,'账户额度刷新失败，请稍后重试。')):'';if(entry.error.textContent!==text)entry.error.textContent=text;entry.error.hidden=!text;}
@@ -694,7 +708,7 @@ function syncControls(){
 function clearSnapshot(needsLogin,msg){
   ++historySerial;historyAbort?.abort();historyAbort=null;historyPage=null;historyBusy=false;historyError='';historyIndex=0;historyCursors=[''];historyQuery=null;
   accountPage=0;accountSearch='';accountState='';$('account-search').value='';$('account-state').value='';
-  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
+  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();closeDisable();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
   setAlert(msg);render();
@@ -702,7 +716,7 @@ function clearSnapshot(needsLogin,msg){
 function validSnapshot(snapshot){if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw failure('CPA 快照格式异常。');return snapshot;}
 const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));
 async function load(force=false){
-  if((accountJobs.size||settingsJob||requestJob)&&key===guessKey())return;
+  if((accountJobs.size||actionJobs.size||resetDialog||disableDialog||settingsJob||requestJob)&&key===guessKey())return;
   const serial=++loadSerial,saved=guessKey();
   if(key!==saved){clearSnapshot(!saved,'');}
   const quiet=!force&&Boolean(data)&&key===saved;
@@ -761,6 +775,8 @@ function showAccountError(id,value){
 async function refreshAccount(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
+  if(actionJobs.has(id)||resetDialog?.id===id||disableDialog?.id===id)return;
+  if(!accountTarget(id))return;
   if(accountJobs.has(id)||loading||data?.quota_refreshing||data?.account_refresh?.[id]?.refreshing){showAccountError(id,'已有额度刷新正在进行，请稍后重试。');return;}
   const job={id,key,serial:loadSerial};accountJobs.set(id,job);showAccountError(id,null);syncAccountControls();
   const current=()=>accountJobs.get(id)===job&&loadSerial===job.serial;
@@ -770,7 +786,8 @@ async function refreshAccount(id){
     const baseline=accepted.refresh_finished_at,deadline=Date.now()+120000;
     while(Date.now()<deadline){
       await pause();if(await authChanged())return;
-      const snapshotSerial=++accountSnapshotSerial,snapshot=await api('data');if(await authChanged())return;
+      const snapshotSerial=++accountSnapshotSerial,mutation=accountMutationSerial,snapshot=await api('data');if(await authChanged())return;
+      if(mutation!==accountMutationSerial)continue; // Never apply a read straddling another card's write.
       validSnapshot(snapshot);if(snapshotSerial>appliedAccountSnapshotSerial){appliedAccountSnapshotSerial=snapshotSerial;acceptSnapshot(snapshot);lastSyncAt=Date.now();}
       const state=data?.account_refresh?.[id];
       if(state&&!state.refreshing&&state.finished_at&&state.finished_at!==baseline){if(state.error)showAccountError(id,errorKey(state.error,'账户额度刷新失败，请稍后重试。'));return;}
@@ -786,12 +803,48 @@ function syncActionButton(button,labelKey,disabled,busy,aria){
   if(button.getAttribute('aria-busy')!==String(busy))button.setAttribute('aria-busy',String(busy));button.setAttribute('aria-haspopup','dialog');
   const name=message(aria);button.setAttribute('aria-label',name);button.title=name;
 }
-// The switch shows the requested state while its request runs; a failure snaps back to CPA's state.
-function syncSwitch(button,job,disabled,name){
-  const pending=job&&job.kind!=='reset',enabled=pending?job.kind==='enable':!disabled;
-  button.setAttribute('aria-checked',String(enabled));button.setAttribute('aria-busy',String(Boolean(pending)));button.disabled=Boolean(job);
-  button.setAttribute('aria-label',t('启用 {name}',{name}));
-  button.title=t(pending?(job.kind==='enable'?'正在启用…':'正在禁用…'):enabled?'已启用，点击禁用':'已禁用，点击启用');
+// Keep the switch in its confirmed state until disabling is explicitly approved.
+function syncSwitch(button,job,disabled,name,refreshing){
+  const pending=job&&job.kind!=='reset',label=pending?(job.kind==='enable'?'正在启用…':'正在禁用…'):disabled?'已禁用':'已启用';
+  button.children[1].textContent=t(label);button.setAttribute('aria-checked',String(!disabled));button.setAttribute('aria-busy',String(Boolean(pending)));button.disabled=Boolean(job)||refreshing;
+  button.setAttribute('aria-label',t('账户启用状态：{name}',{name}));
+  button.setAttribute('aria-haspopup',disabled?'false':'dialog');button.title=pending?t(label):t(disabled?'启用 {name}':'停用 {name}',{name});
+}
+// Bind confirmations to the signed-in session and the unique account identity, not a cached DOM node.
+function accountTarget(id){
+  const matches=list(data?.quotas).filter(q=>q.auth_id===id);if(matches.length!==1)return null;
+  const q=matches[0];return {id,key,name:credentialName(q),identity:JSON.stringify([q.auth_id,q.provider,q.name??'']),disabled:Boolean(q.disabled),provider:q.provider};
+}
+function accountTargetCurrent(target){
+  const now=target&&accountTarget(target.id);
+  return Boolean(now&&target.key&&key===target.key&&guessKey()===target.key&&now.identity===target.identity&&now.disabled===target.disabled);
+}
+function resetTargetCurrent(target){
+  return accountTargetCurrent(target)&&target.provider==='codex'&&!target.disabled&&list(data?.quotas).find(q=>q.auth_id===target.id)?.manual_reset_remaining>0;
+}
+const accountBusy=id=>actionJobs.has(id)||accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing)||Boolean(data?.quota_refreshing)||loading;
+function modalBackground(){
+  // The real background is inert while either modal is open, including to pointer/AT navigation.
+  $('dashboard').inert=Boolean(resetDialog||disableDialog);
+}
+let disableDialog=null;
+function renderDisableDialog(){
+  $('disable-dialog').hidden=!disableDialog;modalBackground();if(!disableDialog)return;
+  $('disable-subtitle').textContent=t('账户：{name}',{name:accountTarget(disableDialog.id)?.name||disableDialog.target.name});
+}
+function closeDisable(){
+  const state=disableDialog;if(!state)return;disableDialog=null;renderDisableDialog();restoreFocus(state.returnFocus);
+}
+async function confirmDisable(){
+  const state=disableDialog;if(!state)return;closeDisable();
+  if(!accountTargetCurrent(state.target)){if(key!==guessKey())await load();return;}
+  await runAccountStatus(state.target,true);
+}
+function trapModalFocus(e,card){
+  if(e.key!=='Tab')return;
+  const items=[...(card.querySelectorAll?.('button:not([disabled]):not([hidden]),[tabindex="0"]')||[])].filter(n=>!n.closest?.('[hidden]')&&n.tabIndex>=0);if(!items.length)return;
+  const first=items[0],last=items.at(-1),active=document.activeElement;
+  if(e.shiftKey&&(active===first||!items.includes(active))){e.preventDefault();last.focus();}else if(!e.shiftKey&&(active===last||!items.includes(active))){e.preventDefault();first.focus();}
 }
 function accountNote(id){const note=accountNotes.get(id);if(!note)return null;if(Date.now()>note.until){accountNotes.delete(id);return null;}return note.value;}
 function showAccountNote(id,value){if(value){accountNotes.set(id,{value,until:Date.now()+20000});setTimeout(syncAccountControls,20100);}else accountNotes.delete(id);syncAccountControls();}
@@ -835,8 +888,8 @@ function resetOption(creditID,title,detail,description,first){
   return button;
 }
 function renderResetDialog(){
-  const root=$('reset-dialog'),state=resetDialog;root.hidden=!state;if(!state)return;
-  $('reset-subtitle').textContent=t('账户：{name}',{name:state.name})+(state.count==null?'':' · '+t('可用 {n} 张',{n:fmt(state.count)}));
+  const root=$('reset-dialog'),state=resetDialog;root.hidden=!state;modalBackground();if(!state)return;
+  $('reset-subtitle').textContent=t('账户：{name}',{name:accountTarget(state.id)?.name||state.name})+(state.count==null?'':' · '+t('可用 {n} 张',{n:fmt(state.count)}));
   const body=$('reset-body'),nodes=[];
   if(state.status==='loading')nodes.push(textAdd(body,'p','modal-message',t('正在读取重置卡…')));
   else if(state.status==='error'){const p=textAdd(body,'p','modal-message error',message(state.error));p.setAttribute('role','alert');nodes.push(p);}
@@ -852,15 +905,18 @@ function renderResetDialog(){
 }
 async function loadResetCredits(){
   const state=resetDialog;if(!state)return;const serial=state.serial;
+  if(!resetTargetCurrent(state.target)||accountBusy(state.id)){closeReset();if(key!==guessKey())await load();return;}
   Object.assign(state,{status:'loading',error:null});renderResetDialog();
   try{
     const parsed=validResetCredits(await api('reset-credits','POST',{auth_id:state.id}));
     if(resetDialog?.serial!==serial)return;
+    if(!resetTargetCurrent(state.target)){closeReset();if(key!==guessKey())await load();return;}
     if(!parsed)Object.assign(state,{status:'error',error:'重置卡明细格式异常。'});
     else if(parsed.count===0)Object.assign(state,{status:'empty',count:0});
     else Object.assign(state,{status:'ready',count:parsed.count,credits:parsed.credits,selected:parsed.credits[0]?.id??null});
   }catch(err){
     if(resetDialog?.serial!==serial)return;
+    if(!resetTargetCurrent(state.target)){closeReset();if(key!==guessKey())await load();return;}
     if(err.auth){closeReset();++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
     Object.assign(state,{status:'error',error:err.ui||'重置卡读取失败，请稍后重试。'});
   }
@@ -871,10 +927,11 @@ function focusSelectedReset(){$('reset-body').querySelector?.('[aria-checked="tr
 async function openReset(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
-  if(actionJobs.has(id)||resetDialog)return;
+  const target=accountTarget(id),q=list(data?.quotas).find(q=>q.auth_id===id);
+  if(!accountTargetCurrent(target)||target.disabled||target.provider!=='codex'||!(q.manual_reset_remaining>0)||accountBusy(id)||resetDialog||disableDialog)return;
   showAccountError(id,null);showAccountNote(id,null);
-  const pending=pendingRedeem.get(id);resetReturnFocus=document.activeElement?.id||'';
-  resetDialog={id,name:cardCache.get(id)?.name||credentialName(list(data?.quotas).find(q=>q.auth_id===id)||{auth_id:id}),serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
+  const pending=pendingRedeem.get(id);resetReturnFocus='account-reset-'+encodeURIComponent(id);
+  resetDialog={id,target,name:target.name,serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
   renderResetDialog();$('reset-card').focus();
   if(!pending)await loadResetCredits();
 }
@@ -888,34 +945,38 @@ function closeReset(){
 }
 async function confirmReset(){
   const state=resetDialog;if(!state||(state.status!=='ready'&&state.status!=='retry'))return;
-  closeReset();await runReset(state.id,state.selected);
+  closeReset();
+  if(!resetTargetCurrent(state.target)){if(key!==guessKey())await load();return;}
+  await runReset(state.target,state.selected);
 }
 function resetDialogKey(e){
+  if(disableDialog){if(e.key==='Escape'){e.preventDefault();closeDisable();}else trapModalFocus(e,$('disable-card'));return;}
   if(!resetDialog)return;
   if(e.key==='Escape'){e.preventDefault();closeReset();return;}
   if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)&&resetDialog.status==='ready'&&resetDialog.credits.length>1&&e.target?.getAttribute?.('role')==='radio'){
     e.preventDefault();const ids=resetDialog.credits.map(c=>c.id),step=e.key==='ArrowDown'||e.key==='ArrowRight'?1:ids.length-1;
     selectResetCredit(ids[(ids.indexOf(resetDialog.selected)+step)%ids.length]);return;
   }
-  if(e.key==='Tab'){ // Keep focus inside the modal.
-    const items=[...($('reset-card').querySelectorAll?.('button:not([disabled]):not([hidden]),[tabindex="0"]')||[])].filter(n=>!n.closest?.('[hidden]')&&n.tabIndex>=0);if(!items.length)return;
-    const first=items[0],last=items.at(-1),active=document.activeElement;
-    if(e.shiftKey&&(active===first||!items.includes(active))){e.preventDefault();last.focus();}else if(!e.shiftKey&&(active===last||!items.includes(active))){e.preventDefault();first.focus();}
-  }
+  trapModalFocus(e,$('reset-card'));
 }
 // Spend one Codex reset credit. The plugin backend holds the OAuth token.
-async function runReset(id,credit){
-  if(actionJobs.has(id))return;
-  const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null};pendingRedeem.set(id,pending);
-  const job={kind:'reset',key};actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
+async function actionAuthChanged(id,job){
+  if(actionJobs.get(id)!==job)return true;
+  if(key!==job.key||guessKey()!==job.key){await load();return true;}
+  return !accountTargetCurrent(job.target);
+}
+async function runReset(target,credit){
+  const id=target.id;if(!resetTargetCurrent(target)||accountBusy(id))return;
+  const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null,target};pendingRedeem.set(id,pending);
+  const job={kind:'reset',key,target};++accountMutationSerial;actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
   let refresh=false;
   try{
     const body={auth_id:id,redeem_request_id:pending.redeem};if(pending.credit)body.credit_id=pending.credit;
-    const result=await api('consume-reset','POST',body);if(actionJobs.get(id)!==job)return;
-    pendingRedeem.delete(id);
+    const result=await api('consume-reset','POST',body);if(await actionAuthChanged(id,job))return;
+    ++accountMutationSerial;pendingRedeem.delete(id);
     const note=resetNotes[result?.code];showAccountNote(id,note?note(result.windows_reset,pending.credit):'重置接口响应格式异常。');refresh=Boolean(note);
   }catch(err){
-    if(actionJobs.get(id)!==job)return;
+    if(await actionAuthChanged(id,job))return;
     if(err.status&&err.status<500)pendingRedeem.delete(id); // Definitive rejection; ambiguous failures keep the id.
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
     showAccountError(id,err.ui||'重置卡使用失败，请稍后重试。');
@@ -926,16 +987,23 @@ async function runReset(id,credit){
 async function toggleAccount(id,disabled){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
-  if(actionJobs.has(id))return;
-  const job={kind:disabled?'disable':'enable',key};actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
+  const target=accountTarget(id);
+  if(!accountTargetCurrent(target)||target.disabled===disabled||accountBusy(id)||resetDialog||disableDialog)return;
+  if(!disabled){await runAccountStatus(target,false);return;}
+  disableDialog={id,target,returnFocus:'account-toggle-'+encodeURIComponent(id)};
+  renderDisableDialog();$('disable-cancel').focus();
+}
+async function runAccountStatus(target,disabled){
+  const id=target.id;if(!accountTargetCurrent(target)||accountBusy(id))return;
+  const job={kind:disabled?'disable':'enable',key,target};++accountMutationSerial;actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
   let changed=false;
   try{
-    const result=await api('/v0/management/auth-files/status','PATCH',{name:id,disabled});if(actionJobs.get(id)!==job)return;
-    const now=typeof result?.disabled==='boolean'?result.disabled:disabled;changed=true;
+    const result=await api('/v0/management/auth-files/status','PATCH',{name:id,disabled});if(await actionAuthChanged(id,job))return;
+    ++accountMutationSerial;const now=typeof result?.disabled==='boolean'?result.disabled:disabled;changed=true;
     if(data)acceptSnapshot({...data,quotas:list(data.quotas).map(q=>q.auth_id===id?{...q,disabled:now}:q)});
     showAccountNote(id,now?'账户已禁用，CPA 不会再调度它。':'账户已启用。');
   }catch(err){
-    if(actionJobs.get(id)!==job)return;
+    if(await actionAuthChanged(id,job))return;
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
     showAccountError(id,err.ui||'账户状态更新失败，请稍后重试。');
   }finally{if(actionJobs.get(id)===job){actionJobs.delete(id);syncAccountControls();}}
@@ -1015,16 +1083,17 @@ function renderQuotas(){
         const text=add(identity,'div','identity-text'),name=credentialName(item),label=add(text,'h4','account',name);label.title=name;label.setAttribute('aria-label',name);label.tabIndex=0;label.id='account-name-'+encodeURIComponent(id);
         if(item.disabled)add(text,'span','account-state','已禁用');
         const actions=add(head,'div','account-actions'),primary=add(actions,'div','account-primary-actions');
-        let reset=null;
-        if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
-          const secondary=add(actions,'div','account-reset-actions'),resets=add(secondary,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
-          if(item.provider==='codex'&&!item.disabled&&item.manual_reset_remaining>0){reset=add(secondary,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
-        }
-        const toggle=add(primary,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');add(add(toggle,'span','switch-track'),'span','switch-thumb');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
-        const button=add(primary,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','sr-only','刷新额度');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
+        const button=add(primary,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','','刷新');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
         if(groups.length){const holder=add(panel,'div','group-grid');groups.forEach(g=>{const box=add(holder,'div','group');const head=add(box,'div','window-group');const label=add(head,'h4','',groupName(g));label.title=t('此分组按模型系列统计本机观测用量。');const grid=add(box,'div','windows');addWindow(grid,'5 小时','5h',g.five_hour);addWindow(grid,'7 天','7d',g.seven_day);});}
         else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
+        const secondary=add(panel,'div','account-secondary-actions');
+        const toggle=add(secondary,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');const track=add(toggle,'span','switch-track');track.setAttribute('aria-hidden','true');add(track,'span','switch-thumb');add(toggle,'span','');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
+        let reset=null;
+        if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
+          const resetActions=add(secondary,'div','account-reset-actions'),resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
+          if(item.provider==='codex'&&!item.disabled&&item.manual_reset_remaining>0){reset=add(resetActions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
+        }
         entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
       if(!visibleGroups.has(item.provider))visibleGroups.set(item.provider,[]);visibleGroups.get(item.provider).push(entry.panel);
@@ -1227,6 +1296,8 @@ $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 $('reset-cancel').onclick=closeReset;$('reset-confirm').onclick=confirmReset;$('reset-retry').onclick=loadResetCredits;
 $('reset-dialog').onclick=e=>{if(e.target===$('reset-dialog'))closeReset();};
+$('disable-cancel').onclick=closeDisable;$('disable-confirm').onclick=confirmDisable;
+$('disable-dialog').onclick=e=>{if(e.target===$('disable-dialog'))closeDisable();};
 window.addEventListener('keydown',resetDialogKey);
 window.addEventListener('storage',e=>{if(e.key===languageStorage||e.key===cpaLanguageStorage){setLanguage(initialLanguage(),false);return;}load();});
 window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});

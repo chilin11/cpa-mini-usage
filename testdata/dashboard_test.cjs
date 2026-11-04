@@ -40,8 +40,9 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     documentElement:descendants(root).find(n=>n.tag==='html'),hidden:false,
     getElementById(id) { const found=descendants(root).find(n=>n.id===id);if(found)return found;if(!elements.has(id))elements.set(id,new Element('div'));return elements.get(id); },
     querySelectorAll(selector) { return descendants(root).filter(n=>selector==='[data-reset-at]'?n.dataset.resetAt:selector==='[data-i18n]'?n.dataset.i18n:selector==='[aria-label]'?n.getAttribute('aria-label')!==null:false); },
-    createElement(tag) { return new Element(tag); },
+    createElement(tag) { const node=new Element(tag);node.focus=()=>{document.activeElement=node;};return node; },
   };
+  for(const node of descendants(root))node.focus=()=>{document.activeElement=node;};
   const context = vm.createContext({
     Intl, URL, URLSearchParams, AbortController, TextEncoder, TextDecoder, atob, Date:options.fakeClock?FakeDate:Date,
     location:{protocol:'https:',host:'cpa.test',origin:'https://cpa.test'}, navigator:{userAgent:'test-agent',language:options.language||'zh-CN',languages:options.languages},
@@ -49,7 +50,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(ms===20000)return 1;if(options.fakeClock)fakeNow+=ms;callback();}, clearTimeout(){}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){fakeNow+=ms;}};
 }
@@ -301,7 +302,7 @@ for(const language of ['zh','en']){
     assert.equal(refreshButton(panel(elements,'account')).getAttribute('aria-label'),language==='en'?'Refresh quota for alice@example.com':'刷新 alice@example.com 的额度');
     assert.equal(elements.get('provider').getAttribute('aria-label'),language==='en'?'Filter by provider':'筛选服务商');
     assert.equal(elements.get('account-search').placeholder,language==='en'?'Search accounts (name, email or ID)':'搜索账户（名称、邮箱或 ID）');
-    const refresh=refreshButton(panel(elements,'account'));assert.equal(refresh.title,refresh.getAttribute('aria-label'));assert.equal(refresh.children[0].getAttribute('aria-hidden'),'true');assert.equal(refresh.children[1].textContent,language==='en'?'Refresh quota':'刷新额度');
+    const refresh=refreshButton(panel(elements,'account'));assert.equal(refresh.title,refresh.getAttribute('aria-label'));assert.equal(refresh.children[0].getAttribute('aria-hidden'),'true');assert.equal(refresh.children[1].textContent,language==='en'?'Refresh':'刷新');
     assert.match(elements.get('footer').textContent,/15/);assert.equal(document.title,language==='en'?'Usage & quota · CPA Mini Usage':'用量与额度 · CPA Mini Usage');
     assert.equal(api.resetCountdown(new Date(Date.now()+20*60000).toISOString()),language==='en'?'Resets in 20m':'还有 20 分钟重置');
     const nodes=[...elements.values()].flatMap(descendants);assert(nodes.some(n=>n.textContent===(language==='en'?'Total tokens':'总 token')));assert(nodes.some(n=>n.textContent==='gpt-test'));
@@ -494,7 +495,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.28<\/span>/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.29<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -770,12 +771,14 @@ for(const language of ['zh','en']){
     const a=panel(d.elements,'codex-a'),zero=panel(d.elements,'codex-zero'),off=panel(d.elements,'codex-off'),claude=panel(d.elements,'claude-a');
     assert(resetButton(a));assert(!resetButton(zero));assert(!resetButton(off));assert(!resetButton(claude));
     assert.equal(resetButton(a).textContent,language==='en'?'Use reset':'使用重置卡');
-    for(const card of [a,off]){assert.equal(toggleButton(card).getAttribute('role'),'switch');assert.equal(toggleButton(card).textContent,'');assert(descendants(toggleButton(card)).some(n=>n.className==='switch-thumb'));}
+    for(const card of [a,off]){assert.equal(toggleButton(card).getAttribute('role'),'switch');assert.equal(toggleButton(card).children[0].getAttribute('aria-hidden'),'true');}
     assert.equal(toggleButton(a).getAttribute('aria-checked'),'true');assert.equal(toggleButton(off).getAttribute('aria-checked'),'false');
-    assert.equal(toggleButton(a).title,language==='en'?'Enabled; click to disable':'已启用，点击禁用');assert.equal(toggleButton(off).title,language==='en'?'Disabled; click to enable':'已禁用，点击启用');
+    assert.equal(toggleButton(a).children[1].textContent,language==='en'?'Enabled':'已启用');assert.equal(toggleButton(off).children[1].textContent,language==='en'?'Disabled':'已禁用');
+    assert.equal(toggleButton(a).getAttribute('aria-haspopup'),'dialog');assert.equal(toggleButton(off).getAttribute('aria-haspopup'),'false');
+    assert.equal(toggleButton(a).title,language==='en'?'Disable alice@example.com':'停用 alice@example.com');assert.equal(toggleButton(off).title,language==='en'?'Enable off@example.com':'启用 off@example.com');
     assert(off.className.includes('account-disabled'));assert(descendants(off).some(n=>n.className==='account-state'&&n.textContent===(language==='en'?'Disabled':'已禁用')));
     assert(!descendants(a).some(n=>n.className==='account-state'));
-    assert.equal(toggleButton(claude).getAttribute('aria-label'),language==='en'?'Enable claude@example.com':'启用 claude@example.com');
+    assert.equal(toggleButton(claude).getAttribute('aria-label'),language==='en'?'Account enabled status: claude@example.com':'账户启用状态：claude@example.com');
     if(language==='en')for(const node of descendants(d.elements.get('quota-cards'))){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);assert(!/[\u3400-\u9fff]/.test(node.title||''),node.title);for(const v of Object.values(node.attributes))assert(!/[\u3400-\u9fff]/.test(v),v);}
   });
 }
@@ -902,21 +905,23 @@ test('en: the reset dialog is fully translated',async()=>{
   for(const node of descendants(resetDialog(d))){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);for(const [name,v] of Object.entries(node.attributes))if(name!=='data-i18n')assert(!/[\u3400-\u9fff]/.test(v),v);}
 });
 
-test('the switch flips CPA status with one click in both directions; state follows the snapshot',async()=>{
+test('disable requires confirmation, enable is direct, and state follows the snapshot',async()=>{
   const calls=[];let disabled=false;
   const snapshot=()=>{const s=actionAccounts();s.quotas=s.quotas.map(q=>q.auth_id==='codex-a'?{...q,disabled}:q);return s;};
   const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('/auth-files/status')){disabled=JSON.parse(options.body).disabled;return reply({status:'ok',disabled});}return reply(snapshot());});
   await d.api.load();
   await toggleButton(panel(d.elements,'codex-a')).onclick();
+  assert.equal(posted(calls,'/auth-files/status').length,0);
+  await d.api.confirmDisable();
   const patch=calls.filter(c=>c.url.endsWith('/auth-files/status'));assert.equal(patch.length,1);
   assert.equal(patch[0].url,'/v0/management/auth-files/status');assert.equal(patch[0].options.method,'PATCH');assert.equal(patch[0].options.headers.Authorization,'Bearer key');assert.equal(patch[0].options.headers['Content-Type'],'application/json');
   assert.deepEqual(JSON.parse(patch[0].options.body),{name:'codex-a',disabled:true});
   assert(calls.at(-1).url.endsWith('/data'),'status change is followed by a snapshot');
-  let card=panel(d.elements,'codex-a');assert(card.className.includes('account-disabled'));assert(!resetButton(card));assert.equal(toggleButton(card).getAttribute('aria-checked'),'false');
+  let card=panel(d.elements,'codex-a');assert(card.className.includes('account-disabled'));assert(!resetButton(card));assert.equal(toggleButton(card).children[1].textContent,'已禁用');assert.equal(toggleButton(card).getAttribute('aria-checked'),'false');
   assert.equal(accountNoteNode(card).textContent,'账户已禁用，CPA 不会再调度它。');
   await toggleButton(card).onclick();
   assert.deepEqual(JSON.parse(calls.filter(c=>c.url.endsWith('/auth-files/status'))[1].options.body),{name:'codex-a',disabled:false});
-  card=panel(d.elements,'codex-a');assert(!card.className.includes('account-disabled'));assert(resetButton(card));assert.equal(toggleButton(card).getAttribute('aria-checked'),'true');assert.equal(accountNoteNode(card).textContent,'账户已启用。');
+  card=panel(d.elements,'codex-a');assert(!card.className.includes('account-disabled'));assert(resetButton(card));assert.equal(toggleButton(card).children[1].textContent,'已启用');assert.equal(toggleButton(card).getAttribute('aria-checked'),'true');assert.equal(accountNoteNode(card).textContent,'账户已启用。');
 });
 
 test('status API failures are translated without leaking text, and auth failures return to sign-in',async()=>{
@@ -939,13 +944,130 @@ test('an in-flight action locks only its own card',async()=>{
   release();await pending;assert.equal(toggleButton(panel(d.elements,'codex-a')).disabled,false);
 });
 
-test('the switch shows the requested state while busy and snaps back on failure',async()=>{
+test('the status button shows the pending action and recovers after failure',async()=>{
   let release;const d=dashboard(login(),async url=>url.endsWith('/auth-files/status')?new Promise(r=>release=()=>r(reply({error:'auth file not found'},404))):reply(actionAccounts()));
-  await d.api.load();const pending=toggleButton(panel(d.elements,'codex-a')).onclick();
-  let sw=toggleButton(panel(d.elements,'codex-a'));assert.equal(sw.getAttribute('aria-checked'),'false');assert.equal(sw.getAttribute('aria-busy'),'true');assert.equal(sw.disabled,true);assert.equal(sw.title,'正在禁用…');
+  await d.api.load();await toggleButton(panel(d.elements,'codex-a')).onclick();const pending=d.api.confirmDisable();
+  let sw=toggleButton(panel(d.elements,'codex-a'));assert.equal(sw.children[1].textContent,'正在禁用…');assert.equal(sw.getAttribute('aria-busy'),'true');assert.equal(sw.disabled,true);assert.equal(sw.title,'正在禁用…');
   assert.equal(toggleButton(panel(d.elements,'codex-zero')).disabled,false);
   release();await pending;sw=toggleButton(panel(d.elements,'codex-a'));
-  assert.equal(sw.getAttribute('aria-checked'),'true');assert.equal(sw.getAttribute('aria-busy'),'false');assert.equal(sw.disabled,false);assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'未找到账户。');
+  assert.equal(sw.children[1].textContent,'已启用');assert.equal(sw.getAttribute('aria-checked'),'true');assert.equal(sw.getAttribute('aria-busy'),'false');assert.equal(sw.disabled,false);assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'未找到账户。');
+});
+
+for(const language of ['zh','en'])test(`${language}: disable confirmation defaults to cancel; cancel/backdrop/Escape make no requests`,async()=>{
+  const calls=[],d=dashboard(login(),resetFetcher(calls),{language});await d.api.load();calls.length=0;
+  const button=toggleButton(panel(d.elements,'codex-a'));button.focus();
+  for(const method of ['cancel','backdrop','Escape']){
+    await button.onclick();assert.equal(d.elements.get('disable-dialog').hidden,false);assert.equal(button.getAttribute('aria-checked'),'true');
+    assert.equal(d.document.activeElement.id,'disable-cancel');assert.equal(d.elements.get('dashboard').inert,true);
+    assert.equal(d.elements.get('disable-subtitle').textContent,language==='en'?'Account: alice@example.com':'账户：alice@example.com');
+    assert.match(d.elements.get('disable-warning').textContent,language==='en'?/no longer route requests/:/不再调度/);
+    assert.equal(calls.length,0,'opening the disable dialog performs no network I/O');
+    await d.api.toggleAccount('codex-zero',true);await d.api.openReset('codex-a');assert.equal(resetDialog(d).hidden,true,'only one modal can be active');
+    if(method==='cancel')d.elements.get('disable-cancel').onclick();
+    else if(method==='backdrop'){
+      d.elements.get('disable-dialog').onclick({target:d.elements.get('disable-card')});assert.equal(d.elements.get('disable-dialog').hidden,false);
+      d.elements.get('disable-dialog').onclick({target:d.elements.get('disable-dialog')});
+    }else d.events.keydown({key:'Escape',preventDefault(){}});
+    assert.equal(d.elements.get('disable-dialog').hidden,true);assert.equal(d.elements.get('dashboard').inert,false);assert.equal(d.document.activeElement,button);assert.equal(button.getAttribute('aria-checked'),'true');
+    await d.api.confirmDisable();assert.equal(calls.length,0);
+  }
+});
+
+test('refresh is isolated from status/credits, and refresh locks out programmatic writes on its own card',async()=>{
+  const calls=[];let release;const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('refresh-account'))return new Promise(resolve=>release=()=>resolve(reply({error:'account_not_found'},404)));return reply(actionAccounts());});
+  await d.api.load();calls.length=0;const card=panel(d.elements,'codex-a'),pending=refreshButton(card).onclick();
+  assert.equal(toggleButton(card).disabled,true);assert.equal(resetButton(card).disabled,true);
+  await d.api.toggleAccount('codex-a',true);await d.api.openReset('codex-a');await d.api.confirmReset();await d.api.confirmDisable();
+  assert.deepEqual(calls.map(c=>c.url.split('/').pop()),['refresh-account']);release();await pending;
+  assert.equal(toggleButton(panel(d.elements,'codex-a')).disabled,false);
+});
+
+test('confirmed writes submit once and block refresh/reset/status races until their reply',async()=>{
+  for(const kind of ['disable','reset']){
+    const calls=[];let release;const route=kind==='disable'?'status':'consume-reset';
+    const d=dashboard(login(),async(url,options)=>{calls.push({url,options});if(url.endsWith('/'+route))return new Promise(resolve=>release=()=>resolve(reply({error:'account_not_found'},404)));if(url.endsWith('reset-credits'))return reply(creditList());return reply(actionAccounts());});
+    await d.api.load();if(kind==='disable')await d.api.toggleAccount('codex-a',true);else await d.api.openReset('codex-a');
+    const confirm=kind==='disable'?d.api.confirmDisable:d.api.confirmReset,pending=confirm();
+    await confirm();await d.api.refreshAccount('codex-a');await d.api.toggleAccount('codex-a',true);await d.api.openReset('codex-a');await d.api.load();
+    assert.equal(posted(calls,'/'+route).length,1);assert.equal(posted(calls,'refresh-account').length,0);assert.equal(posted(calls,'data').length,1);
+    release();await pending;
+  }
+});
+
+test('confirmations reject removed, renamed, replaced, duplicate and disabled account snapshots',async()=>{
+  for(const kind of ['disable','reset'])for(const change of ['removed','name','provider','duplicate','disabled','refreshing']){
+    const calls=[],d=dashboard(login(),resetFetcher(calls));await d.api.load();
+    if(kind==='disable')await d.api.toggleAccount('codex-a',true);else await d.api.openReset('codex-a');
+    const sample=actionAccounts();
+    if(change==='removed')sample.quotas=sample.quotas.filter(q=>q.auth_id!=='codex-a');
+    if(change==='duplicate')sample.quotas.push({...sample.quotas[0]});
+    if(change==='name')sample.quotas[0].name='replacement@example.test';
+    if(change==='provider')sample.quotas[0].provider='claude';
+    if(change==='disabled')sample.quotas[0].disabled=true;
+    if(change==='refreshing')sample.account_refresh={'codex-a':{refreshing:true}};
+    d.api.acceptSnapshot(sample);await d.api.confirmDisable();await d.api.confirmReset();
+    assert.equal(posted(calls,'/auth-files/status').length,0,kind+'/'+change);assert.equal(posted(calls,'consume-reset').length,0,kind+'/'+change);
+  }
+});
+
+test('confirmation and late action replies cannot cross logout or credential replacement',async()=>{
+  for(const kind of ['disable','reset'])for(const nextKey of ['',JSON.stringify('new-key')])for(const inFlight of [false,true]){
+    const stored=login(),calls=[];let release;
+    const d=dashboard(stored,async(url,options)=>{calls.push({url,options});if(url.endsWith('/status')||url.endsWith('consume-reset'))return new Promise(resolve=>release=()=>resolve(reply(url.endsWith('/status')?{disabled:true}:{code:'nothing_to_reset'})));if(url.endsWith('reset-credits'))return reply(creditList());return reply(actionAccounts());});
+    await d.api.load();if(kind==='disable')await d.api.toggleAccount('codex-a',true);else await d.api.openReset('codex-a');
+    const confirm=kind==='disable'?d.api.confirmDisable:d.api.confirmReset,pending=inFlight?confirm():null;
+    stored.managementKey=nextKey;
+    if(inFlight){release();await pending;}else await confirm();
+    assert.equal(posted(calls,'/auth-files/status').length+posted(calls,'consume-reset').length,inFlight?1:0);
+    assert.equal(posted(calls,'refresh-account').length,0,'late reset success must not refresh using replacement credentials');
+    assert.equal(d.elements.get('disable-dialog').hidden,true);assert.equal(resetDialog(d).hidden,true);
+    const card=panel(d.elements,'codex-a');if(card){assert.equal(accountNoteNode(card).textContent,'');assert(!card.className.includes('account-disabled'));}else assert(d.elements.get('dashboard').classes.has('needs-login'));
+  }
+});
+
+test('a quota snapshot straddling another account status write cannot restore stale status',async()=>{
+  let reads=0,release,disabled=false;
+  const sample=()=>{const s=actionAccounts();s.quotas[0].disabled=disabled;s.account_refresh={'codex-zero':{refreshing:false,finished_at:'new'}};return s;};
+  const d=dashboard(login(),async(url)=>{
+    if(url.endsWith('refresh-account'))return reply({refresh_finished_at:'old'},202);
+    if(url.endsWith('/status')){disabled=true;return reply({disabled:true});}
+    if(++reads===2){const stale=sample();return new Promise(resolve=>release=()=>resolve(reply(stale)));}
+    return reply(sample());
+  });
+  await d.api.load();const refresh=d.api.refreshAccount('codex-zero');
+  for(let i=0;i<20&&!release;i++)await Promise.resolve();assert(release);
+  await d.api.toggleAccount('codex-a',true);await d.api.confirmDisable();assert(panel(d.elements,'codex-a').className.includes('account-disabled'));
+  release();await refresh;assert(panel(d.elements,'codex-a').className.includes('account-disabled'));assert.equal(reads,3);
+});
+
+test('modal identity labels localize on language changes and focus returns to their own trigger',async()=>{
+  for(const kind of ['disable','reset']){
+    const sample=actionAccounts();sample.quotas[0].name='codex-private-file.json';
+    const d=dashboard(login(),async url=>reply(url.endsWith('reset-credits')?creditList():sample));await d.api.load();
+    d.elements.get('refresh').focus(); // Pointer activation need not focus a button on every browser.
+    if(kind==='disable')await d.api.toggleAccount('codex-a',true);else await d.api.openReset('codex-a');
+    assert.match(d.elements.get(kind+'-subtitle').textContent,/账户 [0-9A-Z]{7}/);
+    d.api.setLanguage('en');assert.match(d.elements.get(kind+'-subtitle').textContent,/Account [0-9A-Z]{7}/);assert(!d.elements.get(kind+'-subtitle').textContent.includes('.json'));
+    d.elements.get(kind+'-cancel').onclick();assert.equal(d.document.activeElement.id,(kind==='disable'?'account-toggle-':'account-reset-')+'codex-a');
+  }
+});
+
+test('zero credits invalidate an already-open reset confirmation',async()=>{
+  const calls=[],d=dashboard(login(),resetFetcher(calls));await d.api.load();await d.api.openReset('codex-a');
+  const sample=actionAccounts();sample.quotas[0].manual_reset_remaining=0;d.api.acceptSnapshot(sample);await d.api.confirmReset();
+  assert.equal(resetDialog(d).hidden,true);assert.equal(posted(calls,'consume-reset').length,0);
+});
+
+test('late reset-credit reads are ignored after close, account change or logout',async()=>{
+  for(const change of ['close','account','logout']){
+    const stored=login(),calls=[];let release;
+    const d=dashboard(stored,async(url,options)=>{calls.push({url,options});if(url.endsWith('reset-credits'))return new Promise(resolve=>release=()=>resolve(reply(creditList())));return reply(actionAccounts());});
+    await d.api.load();const pending=d.api.openReset('codex-a');
+    if(change==='close')d.elements.get('reset-cancel').onclick();
+    if(change==='account'){const sample=actionAccounts();sample.quotas=[];d.api.acceptSnapshot(sample);}
+    if(change==='logout')stored.managementKey='';
+    release();await pending;await d.api.confirmReset();assert.equal(resetDialog(d).hidden,true);assert.equal(posted(calls,'consume-reset').length,0);
+  }
 });
 
 test('custom upstream reset copy is shown as-is',async()=>{
@@ -1183,10 +1305,10 @@ test('hidden filename IDs still drive refresh, reset and CPA status operations u
   await resetButton(panel(d.elements,id)).onclick();assert(!d.elements.get('reset-subtitle').textContent.includes('.json'));assert(d.elements.get('reset-subtitle').textContent.includes(name));
   await d.api.confirmReset();
   for(const suffix of ['reset-credits','consume-reset'])assert.equal(JSON.parse(posted(calls,suffix)[0].options.body).auth_id,id);
-  await toggleButton(panel(d.elements,id)).onclick();
+  await toggleButton(panel(d.elements,id)).onclick();assert(!d.elements.get('disable-subtitle').textContent.includes('.json'));await d.api.confirmDisable();
   assert.deepEqual(JSON.parse(posted(calls,'/auth-files/status')[0].options.body),{name:id,disabled:true});
   assert.equal(posted(calls,'/auth-files/status')[0].options.method,'PATCH');
-  assert.equal(toggleButton(panel(d.elements,id)).getAttribute('aria-checked'),'false');
+  assert.equal(toggleButton(panel(d.elements,id)).children[1].textContent,'已禁用');
 });
 
 test('browser local midnight uses calendar boundaries across DST rather than adding 24 hours',()=>{

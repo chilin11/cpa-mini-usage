@@ -93,7 +93,7 @@ const offlineFetch=window.fetch;
 window.visualFixture = {
   show(state='ready') {
     window.fetch=offlineFetch;window.__fixtureKey='';
-    actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();
+    actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();if(typeof closeDisable==='function')closeDisable();
     accountJobs.clear();accountErrors.clear();cardCache.clear();
     settingsJob=null;settingsError=null;requestJob=null;loading=false;headerLoading=false;
     filter='';$('provider').value='';phase='ready';key='';expanded='';recentPage=0;
@@ -241,7 +241,7 @@ if (process.argv[2] === '--serve') {
       t.after(() => browser.close());
       const report = [];
       for (const width of [390, 1480]) for (const lang of ['zh', 'en']) for (const theme of ['light', 'dark']) {
-        const context = await browser.newContext({viewport: {width, height: 1000}, colorScheme: theme, reducedMotion: 'reduce', locale: lang === 'en' ? 'en-US' : 'zh-CN'});
+        const context = await browser.newContext({viewport: {width, height: 1000}, hasTouch: width===390, colorScheme: theme, reducedMotion: 'reduce', locale: lang === 'en' ? 'en-US' : 'zh-CN'});
         try {
           const page = await context.newPage(), errors = [], requests = [];
           page.on('pageerror', e => errors.push(e.message));
@@ -396,25 +396,49 @@ if (process.argv[2] === '--serve') {
             // Same 4+1+1 data, real controls and deferred replies: no production API.
             await page.evaluate(()=>visualFixture.startActions());
             const first=page.locator('.account-card').first(),sibling=page.locator('.account-card').nth(1);
-            await page.evaluate(()=>visualFixture.held='refresh-account');await first.locator('.account-refresh').click();
-            assert.equal(await first.locator('.account-refresh').getAttribute('aria-busy'),'true');assert(!(await sibling.locator('.account-refresh').isDisabled()));
+            const targets=await first.evaluate(card=>{
+              const rect=selector=>{const r=card.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+              return {refresh:rect('.account-refresh'),status:rect('.account-switch'),reset:rect('.account-reset'),headerHasStatus:Boolean(card.querySelector('.account-primary-actions .account-switch'))};
+            });
+            assert(!targets.headerHasStatus);assert(targets.status.top-targets.refresh.bottom>60&&targets.reset.top-targets.refresh.bottom>60,'quota content separates refresh from write controls');
+            assert(targets.reset.left-targets.status.right>=24,'status and reset have a divider and distinct touch targets');
+            if(width===390)assert(Object.values(targets).filter(v=>v&&v.height).every(r=>r.height>=44&&r.width>=44));
+            const press=async locator=>width===390?locator.tap():locator.click();
+            await page.evaluate(()=>visualFixture.held='refresh-account');await press(first.locator('.account-refresh'));
+            assert.equal(await page.evaluate(()=>visualFixture.calls.filter(c=>['status','reset-credits','consume-reset'].includes(c.route)).length),0,'refresh never opens or submits a write action');
+            assert(!(await page.locator('#disable-dialog').isVisible()));assert(!(await page.locator('#reset-dialog').isVisible()));
+            assert.equal(await first.locator('.account-refresh').getAttribute('aria-busy'),'true');assert(await first.locator('.account-switch').isDisabled());assert(!(await sibling.locator('.account-refresh').isDisabled()));
             await page.locator('#language').selectOption('en');assert.match(await first.locator('.account-refresh').getAttribute('aria-label'),/Refreshing/);
             await page.evaluate(()=>visualFixture.release());await first.locator('.account-refresh[aria-busy=false]').waitFor();
+            await first.locator('.account-switch').click();assert.equal(await page.locator('#disable-title').textContent(),'Disable account?');assert.match(await page.locator('#disable-warning').textContent(),/no longer route requests/);
+            await page.locator('#disable-cancel').click();assert.equal(await page.evaluate(()=>visualFixture.calls.filter(c=>c.route==='status').length),0);
             await page.locator('#language').selectOption('zh');
             await page.evaluate(()=>visualFixture.failure='refresh-account');await first.locator('.account-refresh').click();
             await first.locator('.account-error').filter({hasText:'未找到账户'}).waitFor();
-            await page.evaluate(()=>visualFixture.held='status');await first.locator('.account-switch').click();
-            assert.equal(await first.locator('.account-switch').getAttribute('aria-busy'),'true');assert.equal(await first.locator('.account-switch').getAttribute('aria-checked'),'false');
+            const status=first.locator('.account-switch');await status.focus();await page.keyboard.press('Enter');
+            assert(await page.locator('#disable-cancel').evaluate(el=>el===document.activeElement));
+            await page.keyboard.press('Enter');assert(!(await page.locator('#disable-dialog').isVisible()));
+            for(const close of ['Escape','backdrop']){
+              await press(status);assert.equal(await page.evaluate(()=>visualFixture.calls.filter(c=>c.route==='status').length),0);
+              await page.keyboard.press('Shift+Tab');assert(await page.locator('#disable-confirm').evaluate(el=>el===document.activeElement));
+              await page.keyboard.press('Tab');assert(await page.locator('#disable-cancel').evaluate(el=>el===document.activeElement));
+              if(close==='Escape')await page.keyboard.press('Escape');else await page.locator('#disable-dialog').click({position:{x:4,y:4}});
+              assert(!(await page.locator('#disable-dialog').isVisible()));assert(await status.evaluate(el=>el===document.activeElement));
+            }
+            await page.evaluate(()=>visualFixture.held='status');await press(status);
+            await page.screenshot({path:path.join(directory,`${width}-disable-confirm.png`),fullPage:false});
+            await page.locator('#disable-confirm').click();
+            assert.equal(await status.getAttribute('aria-busy'),'true');assert.equal(await status.getAttribute('aria-checked'),'true');assert.equal(await status.textContent(),'正在禁用…');
             assert(!(await sibling.locator('.account-switch').isDisabled()));
             await page.evaluate(()=>visualFixture.release());await first.locator('.account-switch[aria-busy=false]').waitFor();
             assert(await first.evaluate(el=>el.classList.contains('account-disabled')));
-            await first.locator('.account-switch').click();await first.locator('.account-switch[aria-checked=true][aria-busy=false]').waitFor();
+            await press(first.locator('.account-switch'));await page.waitForFunction(()=>!document.querySelector('.account-card').classList.contains('account-disabled'));await first.locator('.account-switch[aria-busy=false]').waitFor();
             const reset=first.locator('.account-reset');await reset.focus();await page.keyboard.press('Enter');
             await page.locator('.reset-option').first().waitFor();assert.equal(await page.locator('.reset-option').first().getAttribute('aria-checked'),'true');
             await page.keyboard.press('ArrowDown');assert.equal(await page.locator('.reset-option').nth(1).getAttribute('aria-checked'),'true');
             await page.keyboard.press('Escape');assert(!(await page.locator('#reset-dialog').isVisible()));assert(await reset.evaluate(el=>el===document.activeElement));
             assert.equal(await page.evaluate(()=>visualFixture.calls.filter(c=>c.route==='consume-reset').length),0);
-            await reset.click();await page.locator('.reset-option').first().waitFor();
+            await press(reset);await page.locator('.reset-option').first().waitFor();
             await page.evaluate(()=>visualFixture.held='consume-reset');await page.locator('#reset-confirm').click();
             assert.equal(await reset.getAttribute('aria-busy'),'true');assert(await first.locator('.account-refresh').isDisabled());
             await page.evaluate(()=>visualFixture.release());
@@ -424,7 +448,7 @@ if (process.argv[2] === '--serve') {
             assert(calls.filter(c=>c.route==='refresh-account'||c.route==='reset-credits'||c.route==='consume-reset').every(c=>c.body.auth_id===accountID));
             assert.deepEqual(calls.filter(c=>c.route==='status').map(c=>c.body),[{name:accountID,disabled:true},{name:accountID,disabled:false}]);
             assert.equal(calls.find(c=>c.route==='consume-reset').body.credit_id,'demo-first');
-            report.push({key,tab:'mixed-actions',refresh:true,refreshError:true,toggleBothDirections:true,resetCancelKeyboard:true,resetConfirm:true});
+            report.push({key,tab:'mixed-actions',targets,refresh:true,refreshError:true,disableCancelKeyboardBackdrop:true,toggleBothDirections:true,resetCancelKeyboard:true,resetConfirm:true});
             await page.evaluate(() => visualFixture.show('long'));
             assert(await page.locator('.account').first().evaluate(el=>el.scrollWidth>el.clientWidth&&el.textContent===el.title&&el.textContent===el.getAttribute('aria-label')));
             await page.locator('.account').first().focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert(await page.locator('.account').first().evaluate(el=>el===document.activeElement&&el.matches(':focus-visible')));
