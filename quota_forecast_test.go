@@ -50,6 +50,29 @@ func TestManagerPlusForecastExamples(t *testing.T) {
 	}
 }
 
+func TestForecastAcrossLocalMidnight(t *testing.T) {
+	// A five-hour quota window can straddle local midnight. Both sides must be
+	// counted, while a request before the official cycle starts must not be.
+	zone := time.FixedZone("local-example", -8*60*60)
+	now := time.Date(2026, 11, 4, 0, 10, 0, 0, zone)
+	reset := time.Date(2026, 11, 4, 3, 35, 0, 0, zone)
+	e := newEngine()
+	e.prices["openai/test"] = ModelPrice{Input: 1}
+	e.events = []Event{
+		forecastEvent(reset.Add(-5*time.Hour-time.Second), 900000000, 900000000),
+		forecastEvent(time.Date(2026, 11, 3, 23, 50, 0, 0, zone), 30000000, 9000000),
+		forecastEvent(time.Date(2026, 11, 4, 0, 5, 0, 0, zone), 30970000, 10497300),
+	}
+	q := &QuotaWindow{Used: 51, ResetAt: reset.Format(time.RFC3339Nano)}
+	got := e.windowSummaryObserved("a", now, now, q, 5*time.Hour)
+	if got.ObservedTokens != 60970000 || got.ObservedCost == nil || math.Abs(*got.ObservedCost-19.4973) > 1e-9 {
+		t.Fatalf("cross-midnight observed usage: %+v", got)
+	}
+	if got.EstimatedBasis != "quota" || got.EstimatedTotalTokens == nil || *got.EstimatedTotalTokens != 119549020 || got.EstimatedTotalCost == nil || math.Abs(*got.EstimatedTotalCost-38.23) > 1e-9 {
+		t.Fatalf("cross-midnight estimate: %+v", got)
+	}
+}
+
 func TestForecastInvalidPercentAndOverflow(t *testing.T) {
 	for _, used := range []float64{0, -1, 101, math.NaN(), math.Inf(1), math.Inf(-1), math.SmallestNonzeroFloat64, 1e-307} {
 		e, now, q := forecastFixture()

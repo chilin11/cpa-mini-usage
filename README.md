@@ -37,7 +37,19 @@ The dashboard automatically reuses the saved login from the **same-origin CPA ma
 
 **Save data** is enabled by default. Requests (including measured first-token time and total latency), quota snapshots, account identities, price cache, and the server-side setting are stored separately from the plugin under `data/cpa-mini-usage/`. Set `CPA_MINI_USAGE_DATA_DIR` to use another persistent directory; hover over the dashboard storage control to see its path. Replacing/upgrading the `.so` does not replace these files. Disabling persistence stops further usage/quota/price writes but never deletes existing saved history; enabling flushes current in-memory data. Recent request storage retains up to 35 days / 200,000 records. If the directory is not writable, the UI reports a storage error. Collection starts at installation time; prior request history is **not backfilled**.
 
-For Docker, bind-mount this directory or use a named volume, for example set `CPA_MINI_USAGE_DATA_DIR=/data/cpa-mini-usage` and mount `./mini-usage-data:/data/cpa-mini-usage`. A browser toggle cannot preserve files from a container that is deleted without a persistent mount.
+For Docker, set the CPA working directory and mount one shared data directory. This plugin then needs no plugin-specific environment variable or mount:
+
+```yaml
+services:
+  cliproxyapi:
+    working_dir: /CLIProxyAPI
+    volumes:
+      - ./data:/CLIProxyAPI/data
+```
+
+With `CPA_MINI_USAGE_DATA_DIR` unset, this plugin writes to `/CLIProxyAPI/data/cpa-mini-usage` (`./data/cpa-mini-usage` on the host). The default is relative to the CPA process working directory, so verify it when using a custom image or `working_dir`. A custom `CPA_MINI_USAGE_DATA_DIR` still overrides the default and must itself be backed by persistent storage. Other plugins must use this shared directory or have their own persistent mounts; the shared mount cannot redirect arbitrary plugin paths automatically.
+
+**Migrating an existing installation:** do not just remove the old environment variable or mount, as that would point the plugin at a different, potentially empty directory. Stop CPA to prevent writes, back up existing data, copy the old plugin data into `./data/cpa-mini-usage`, verify the copy, and only then switch the mount and restart. Before mounting `/CLIProxyAPI/data`, preserve any existing data already in that container directory; a bind mount hides its prior contents. Keep the old copy until the new installation and backups have been verified. A browser toggle cannot preserve files from a container that is deleted without a persistent mount.
 
 If any existing history/settings/quota/price file cannot be fully read, the plugin enters **read-only protection** instead of replacing it with partial or empty memory. Valid records already read remain viewable and new requests can be tracked in memory, but no persistence writes or save-setting changes are allowed until the original files/permissions are backed up, repaired and CPA is restarted. Do not delete the files just to clear the warning. This protection cannot recover data removed with an unmounted Docker container; keep a fixed `CPA_MINI_USAGE_DATA_DIR` and its bind mount/volume. Atomic replacements use private temporary files and sync file contents before rename.
 
@@ -215,6 +227,10 @@ When no plugin language has been explicitly selected, follow the same-origin CPA
 ### v0.1.29
 
 Separate account refresh from the enable toggle and reset-card controls to reduce accidental taps. Disabling an account now requires confirmation; cancelling does not change its status. Reset-card consumption retains its separate confirmation. Upgrade the plugin and restart CPA, preserving the existing data directory and Docker persistent mount.
+
+### v0.1.30
+
+Document the existing shared Docker data directory setup and add a focused cross-midnight quota forecast test. Runtime behavior is unchanged apart from version metadata; this release does not fix or establish the cause of reported low estimates. Existing installations do not need to upgrade for these changes alone. If upgrading, preserve the existing data directory and Docker persistent mount and restart CPA.
 
 ## Optional CPA Plugin Store source
 
