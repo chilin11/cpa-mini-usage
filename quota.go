@@ -178,11 +178,15 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 func quotaProvider(p string) bool { return p == "claude" || p == "codex" || p == "antigravity" }
 
 func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
+	return e.refreshAccountQuotaWith(entry, hostRPC, safeProviderGET)
+}
+
+func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) (any, error), get func(string, http.Header) ([]byte, error)) bool {
 	e.mu.Lock()
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.aliases[entry.Index] = entry.ID
 	e.mu.Unlock()
-	headers, creds, email, failure := providerCredential(entry, hostRPC)
+	headers, creds, email, failure := providerCredential(entry, rpc)
 	if email != "" {
 		entry.Name = email
 	}
@@ -193,11 +197,11 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 	if entry.Provider == "antigravity" {
 		return e.refreshAntigravityQuota(entry, headers, creds, antigravityPOST)
 	}
-	url := "https://api.anthropic.com/api/oauth/usage"
+	url := claudeUsageURL
 	if entry.Provider == "codex" {
 		url = "https://chatgpt.com/backend-api/wham/usage"
 	}
-	body, err := safeProviderGET(url, headers)
+	body, err := get(url, headers)
 	if err != nil {
 		e.recordQuotaError(entry, "Quota endpoint unavailable")
 		return false
@@ -213,9 +217,11 @@ func (e *Engine) refreshAccountQuota(entry AuthEntry) bool {
 		return false
 	}
 	observedAt := time.Now().UTC()
-	resetRemaining := parseManualResetRemaining(body)
-	if entry.Provider == "codex" {
-		resetRemaining = codexResetRemaining(body, headers, safeProviderGET)
+	var resetRemaining *int64
+	if entry.Provider == "claude" {
+		resetRemaining = claudeResetRemaining(headers, get)
+	} else if entry.Provider == "codex" {
+		resetRemaining = codexResetRemaining(body, headers, get)
 	}
 	e.mu.Lock()
 	e.quotaUpdated = observedAt
@@ -454,12 +460,16 @@ func extractJWTAccountID(token string) string {
 }
 
 func safeProviderGET(url string, headers http.Header) ([]byte, error) {
-	// Explicit allow-list prevents credentials being sent to arbitrary hosts.
-	if url != "https://api.anthropic.com/api/oauth/usage" && url != "https://chatgpt.com/backend-api/wham/usage" && url != codexResetCreditsURL {
+	return safeProviderGETWithRPC(url, headers, hostRPC)
+}
+
+func safeProviderGETWithRPC(url string, headers http.Header, rpc func(string, any) (any, error)) ([]byte, error) {
+	// Exact URLs only: optional inventory must not broaden the credential allow-list.
+	if url != claudeUsageURL && url != claudeResetInventoryURL && url != "https://chatgpt.com/backend-api/wham/usage" && url != codexResetCreditsURL {
 		return nil, fmt.Errorf("endpoint not permitted")
 	}
 	request := map[string]any{"Method": "GET", "URL": url, "Headers": headers, "Header": headers}
-	data, err := hostRPC("host.http.do", request)
+	data, err := rpc("host.http.do", request)
 	if err == nil {
 		if r, ok := data.(map[string]any); ok {
 			code := number(r, "StatusCode", "status_code", "statusCode")
@@ -478,6 +488,11 @@ func safeProviderGET(url string, headers http.Header) ([]byte, error) {
 			}
 			return nil, fmt.Errorf("quota HTTP %d", code)
 		}
+	}
+	// Optional inventory is a single host GET, with no direct-HTTP retry even if the
+	// callback fails ambiguously. Legacy ordinary usage keeps its existing fallback.
+	if url == claudeResetInventoryURL {
+		return nil, fmt.Errorf("optional reset inventory unavailable")
 	}
 	// Legacy hosts may not implement host.http.do; fixed HTTPS fallback.
 	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
@@ -619,7 +634,94 @@ func parseManualResetRemaining(body []byte) *int64 {
 	return nil
 }
 
-const codexResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+const (
+	claudeUsageURL          = "https://api.anthropic.com/api/oauth/usage"
+	claudeResetInventoryURL = claudeUsageURL + "?cedar_ember=1"
+	codexResetCreditsURL    = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+)
+
+// CodexBar's ClaudeOAuthUsageFetcher/ClaudeRateLimitResetCredits contract at
+// 7447bc77c2497323d9c41e40164ce705533493c8. This optional, read-only request
+// never replaces ordinary usage, and never sends a redemption handle anywhere.
+func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]byte, error)) *int64 {
+	inventoryHeaders := headers.Clone()
+	if inventoryHeaders == nil {
+		inventoryHeaders = make(http.Header)
+	}
+	inventoryHeaders.Set("User-Agent", "claude-cli/2.1.0 (external, cli)")
+	inventoryHeaders.Set("Anthropic-Beta", "oauth-2025-04-20")
+	inventoryHeaders.Set("Content-Type", "application/json")
+	inventoryHeaders.Set("Cache-Control", "no-store")
+	body, err := get(claudeResetInventoryURL, inventoryHeaders)
+	if err != nil {
+		return nil
+	}
+	return parseClaudeResetRemaining(body, time.Now().UTC())
+}
+
+// Count saved inventory, NOT immediate redeemability (usable_now), automatic
+// window resets, or extra-usage money. Fail closed on any malformed grant rather
+// than reporting a partial total, especially a fabricated zero.
+func parseClaudeResetRemaining(body []byte, now time.Time) *int64 {
+	var response struct {
+		Inventory *struct {
+			Eligible *bool           `json:"eligible"`
+			Grants   json.RawMessage `json:"grants"`
+		} `json:"cedar_ember"`
+	}
+	if json.Unmarshal(body, &response) != nil || response.Inventory == nil {
+		return nil
+	}
+	inventory := response.Inventory
+	if inventory.Eligible == nil || !*inventory.Eligible {
+		return nil
+	}
+	var grants []json.RawMessage
+	if json.Unmarshal(inventory.Grants, &grants) != nil || grants == nil || len(grants) > 200 {
+		return nil
+	}
+	var count int64
+	for _, raw := range grants {
+		var grant struct {
+			Left     *int64  `json:"resets_left"`
+			Total    *int64  `json:"resets_total"`
+			Paused   *bool   `json:"paused"`
+			StartsAt *string `json:"starts_at"`
+			EndsAt   *string `json:"ends_at"`
+		}
+		if json.Unmarshal(raw, &grant) != nil || grant.Left == nil || grant.Paused == nil || *grant.Left < 0 {
+			return nil
+		}
+		if grant.Total != nil && *grant.Total < *grant.Left {
+			return nil
+		}
+		startsAt, startOK := parseClaudeResetBound(grant.StartsAt)
+		endsAt, endOK := parseClaudeResetBound(grant.EndsAt)
+		if !startOK || !endOK || (startsAt != nil && endsAt != nil && !endsAt.After(*startsAt)) {
+			return nil
+		}
+		if *grant.Paused || (startsAt != nil && now.Before(*startsAt)) || (endsAt != nil && !now.Before(*endsAt)) {
+			continue
+		}
+		// CodexBar's plausibility limits, without allocating one item per reset.
+		if *grant.Left > 50-count {
+			return nil
+		}
+		count += *grant.Left
+	}
+	return &count
+}
+
+func parseClaudeResetBound(value *string) (*time.Time, bool) {
+	if value == nil {
+		return nil, true // Missing/null bounds are open; unreadable ones are not.
+	}
+	bound, err := time.Parse(time.RFC3339Nano, *value)
+	if err != nil {
+		return nil, false
+	}
+	return &bound, true
+}
 
 // GET-only details fallback used by the official Codex client. Spending a credit is only
 // done by the explicit, confirmed consume-reset route in account_actions.go.
