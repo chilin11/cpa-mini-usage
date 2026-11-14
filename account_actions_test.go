@@ -215,9 +215,12 @@ func TestDisabledStateFollowsCPA(t *testing.T) {
 		t.Fatalf("entries %+v", entries)
 	}
 	e := newEngine()
+	e.persistence.Enabled = false
 	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}
 	e.quotas["c"] = AccountQuota{AuthID: "c", Provider: "codex", Disabled: true}
-	e.syncAuthStatus(func(string, any) (any, error) { return map[string]any{"files": files}, nil })
+	if !e.syncAuthStatus(func(string, any) (any, error) { return map[string]any{"files": files}, nil }) {
+		t.Fatal("new account must request a discovery refresh")
+	}
 	views := map[string]QuotaView{}
 	for _, q := range e.snapshot().Quotas {
 		views[q.AuthID] = q
@@ -225,8 +228,8 @@ func TestDisabledStateFollowsCPA(t *testing.T) {
 	if !views["a"].Disabled || views["c"].Disabled {
 		t.Fatalf("views %+v", views)
 	}
-	if _, ok := views["b"]; ok {
-		t.Fatal("sync must not invent quota accounts")
+	if q, ok := views["b"]; !ok || !q.Disabled || q.Error == "" || q.FetchedAt != "" {
+		t.Fatal("new host account must be visible with pending, not fabricated, quota")
 	}
 	// Host failure or an empty list keeps the last known state.
 	e.syncAuthStatus(func(string, any) (any, error) { return nil, fmt.Errorf("down") })

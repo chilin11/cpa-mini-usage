@@ -21,6 +21,10 @@ type AuthEntry struct {
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
+	return e.beginFullRefresh(hostRPC, e.refreshAccountQuota)
+}
+
+func (e *Engine) beginFullRefresh(rpc func(string, any) (any, error), read func(AuthEntry) bool) (string, bool) {
 	if !e.refreshMu.TryLock() {
 		return "", false
 	}
@@ -31,7 +35,7 @@ func (e *Engine) kickFullRefresh() (string, bool) {
 	}
 	e.quotaRefreshing = true
 	e.mu.Unlock()
-	go func() { defer e.refreshMu.Unlock(); e.refreshQuotaLocked(true) }()
+	go func() { defer e.refreshMu.Unlock(); e.refreshQuotaWith(true, rpc, read) }()
 	return previous, true
 }
 
@@ -116,6 +120,9 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 	}
 	e.lastRefresh = time.Now()
 	e.quotaRefreshing = true
+	// Consume only discoveries made before this fresh host.auth.list call. A new
+	// account observed while this batch runs stays pending for the next sync.
+	e.authDiscoveryPending = false
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()

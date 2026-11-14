@@ -269,23 +269,38 @@ func providerPOST(url string, headers http.Header, body []byte, rpc func(string,
 	return code, decoded, nil
 }
 
-// syncAuthStatus overlays CPA's live enabled/disabled state onto known quota accounts, so
-// changes made here or in CPA's own management UI show without waiting for a quota scan.
-func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) {
+// syncAuthStatus reconciles live CPA identities as well as enabled/disabled state.
+// New accounts are visible before their first quota read. The caller requests a full
+// refresh when true; a busy refresh lock leaves the discovery pending for a later sync.
+func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) bool {
 	raw, err := rpc("host.auth.list", map[string]any{})
 	if err != nil {
-		return
+		return false
 	}
 	entries := parseAuthList(raw)
 	if len(entries) == 0 {
-		return
+		return false
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	added := false
 	for _, entry := range entries {
-		if q, ok := e.quotas[entry.ID]; ok && q.Disabled != entry.Disabled {
-			q.Disabled = entry.Disabled
-			e.quotas[entry.ID] = q
+		if !quotaProvider(entry.Provider) {
+			continue
 		}
+		q, known := e.quotas[entry.ID]
+		if !known {
+			q = AccountQuota{AuthID: entry.ID, Provider: entry.Provider, Name: entry.Name, Error: "Quota has not been fetched; refresh pending"}
+			e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
+			e.aliases[entry.Index] = entry.ID
+			e.authDiscoveryPending = true
+			added = true
+		}
+		q.Disabled = entry.Disabled
+		e.quotas[entry.ID] = q
 	}
+	if added {
+		e.persistQuotasLocked()
+	}
+	return e.authDiscoveryPending
 }

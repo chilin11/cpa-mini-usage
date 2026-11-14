@@ -203,6 +203,7 @@ type Engine struct {
 	prices               map[string]ModelPrice
 	quotaUpdated         time.Time
 	quotaRefreshing      bool
+	authDiscoveryPending bool
 	quotaRefreshFinished time.Time
 	accountRefresh       map[string]AccountRefreshState
 	priceUpdated         time.Time

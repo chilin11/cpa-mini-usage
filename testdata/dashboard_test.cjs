@@ -495,7 +495,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.32<\/span>/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.33<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -1419,4 +1419,120 @@ test('Claude reset diagnostic updates card cache on snapshot changes and preserv
   d.api.acceptSnapshot({quotas:[{auth_id:'c-test',provider:'claude',name:'c@example.com'}]});
   card=panel(d.elements,'c-test');
   assert.equal(descendants(card).filter(n=>n.className==='manual-reset').length,0);
+});
+
+for(const language of ['zh','en'])test(`${language}: adding new subscription updates card list, provider stacks, counters, and cache`,async()=>{
+  const d=dashboard({},undefined,{language});
+  const sample1={
+    quotas:[{auth_id:'codex-1',provider:'codex',name:'alice@example.com',five_hour:{used_percent:20}}],
+  };
+  d.api.renderSample(sample1);
+  assert.equal(visibleAccounts(d).length,1);
+  assert.equal(d.elements.get('quota-count').textContent,'1');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–1 / 匹配 1 个，共 1 个账户':'Showing 1–1 / 1 matching, 1 accounts total');
+
+  // New account of existing provider and new account of a new provider appear in snapshot
+  const sample2={
+    quotas:[
+      {auth_id:'codex-1',provider:'codex',name:'alice@example.com',five_hour:{used_percent:20}},
+      {auth_id:'codex-2',provider:'codex',name:'bob@example.com',five_hour:{used_percent:35}},
+      {auth_id:'claude-1',provider:'claude',name:'clara@example.com',five_hour:{used_percent:10}},
+    ],
+  };
+  d.api.acceptSnapshot(sample2);
+  assert.equal(visibleAccounts(d).length,3);
+  assert.equal(d.elements.get('quota-count').textContent,'3');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–3 / 匹配 3 个，共 3 个账户':'Showing 1–3 / 3 matching, 3 accounts total');
+  const stacks=d.elements.get('quota-cards').children;
+  assert.equal(stacks.length,2);
+  assert.deepEqual([...stacks].map(s=>s.dataset.provider),['codex','claude']);
+  assert.equal(stacks[0].children[0].children[1].textContent,'2 / 2');
+  assert.equal(stacks[1].children[0].children[1].textContent,'1 / 1');
+  const card1=panel(d.elements,'codex-1'),card2=panel(d.elements,'codex-2'),card3=panel(d.elements,'claude-1');
+  assert(card1&&card2&&card3);
+  assert(refreshButton(card2));assert(toggleButton(card2));
+  assert(refreshButton(card3));assert(toggleButton(card3));
+});
+
+for(const language of ['zh','en'])test(`${language}: manual refresh accepts new subscription snapshot and updates cards immediately`,async()=>{
+  let calls=0;
+  const sample1={
+    quotas:[{auth_id:'codex-1',provider:'codex',name:'alice@example.com',five_hour:{used_percent:20}}],
+    quota_refresh_finished_at:'2026-10-09T01:00:00Z',
+  };
+  const sample2={
+    quotas:[
+      {auth_id:'codex-1',provider:'codex',name:'alice@example.com',five_hour:{used_percent:20}},
+      {auth_id:'codex-2',provider:'codex',name:'bob@example.com',five_hour:{used_percent:30}},
+    ],
+    quota_refresh_finished_at:'2026-10-09T02:00:00Z',
+  };
+  const d=dashboard(login(),async(url)=>{
+    calls++;
+    if(url.endsWith('refresh'))return reply({quota_refresh_finished_at:'2026-10-09T01:00:00Z'},202);
+    return reply(calls<=2?sample1:sample2);
+  },{language});
+
+  await d.api.load();
+  assert.equal(visibleAccounts(d).length,1);
+  assert.equal(d.elements.get('quota-count').textContent,'1');
+
+  // Trigger manual refresh
+  await d.elements.get('refresh').onclick();
+  assert.equal(visibleAccounts(d).length,2);
+  assert.equal(d.elements.get('quota-count').textContent,'2');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–2 / 匹配 2 个，共 2 个账户':'Showing 1–2 / 2 matching, 2 accounts total');
+});
+
+for(const language of ['zh','en'])test(`${language}: pagination boundary, sorting and filter limits when new subscription appears`,async()=>{
+  const d=dashboard(login(),undefined,{language});
+  const twelveAccounts=Array.from({length:12},(_,i)=>({
+    auth_id:'acc-'+String(i).padStart(2,'0'),
+    provider:'codex',
+    name:'user-'+String(i).padStart(2,'0')+'@example.test',
+    five_hour:{used_percent:20},
+  }));
+  d.api.renderSample({quotas:twelveAccounts});
+  assert.equal(visibleAccounts(d).length,12);
+  assert.equal(d.elements.get('account-page').textContent,'1 / 1');
+  assert.equal(d.elements.get('account-next').disabled,true);
+
+  // 13th account arrives: triggers second page
+  const thirteenAccounts=[...twelveAccounts,{
+    auth_id:'acc-12',
+    provider:'codex',
+    name:'user-12@example.test',
+    five_hour:{used_percent:20},
+  }];
+  d.api.acceptSnapshot({quotas:thirteenAccounts});
+  assert.equal(visibleAccounts(d).length,12);
+  assert.equal(d.elements.get('account-page').textContent,'1 / 2');
+  assert.equal(d.elements.get('account-next').disabled,false);
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 13 个，共 13 个账户':'Showing 1–12 / 13 matching, 13 accounts total');
+
+  // Navigate to page 2: only 13th account is on page 2
+  await d.elements.get('account-next').onclick();
+  assert.equal(visibleAccounts(d).length,1);
+  assert.equal(visibleAccounts(d)[0].dataset.authId,'acc-12');
+  assert.equal(d.elements.get('account-page').textContent,'2 / 2');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 13–13 / 匹配 13 个，共 13 个账户':'Showing 13–13 / 13 matching, 13 accounts total');
+
+  // Filter limits: filter by provider hides accounts of other providers but preserves total count
+  const withClaude=[...thirteenAccounts,{
+    auth_id:'claude-new',
+    provider:'claude',
+    name:'claudia@example.test',
+    five_hour:{used_percent:10},
+  }];
+  await d.elements.get('provider').onchange({target:{value:'codex'}});
+  d.api.acceptSnapshot({quotas:withClaude});
+  // Page reset to 0 by provider onchange, only codex matched
+  assert.equal(visibleAccounts(d).length,12);
+  assert.equal(d.elements.get('quota-count').textContent,'13');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 13 个，共 14 个账户':'Showing 1–12 / 13 matching, 14 accounts total');
+
+  // Clear filter reveals all accounts including new Claude subscription
+  await d.elements.get('account-clear').onclick();
+  assert.equal(d.elements.get('quota-count').textContent,'14');
+  assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 14 个，共 14 个账户':'Showing 1–12 / 14 matching, 14 accounts total');
 });

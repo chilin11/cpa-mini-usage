@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.32"
+const pluginVersion = "0.1.33"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -191,7 +191,9 @@ func dispatch(method string, body []byte) []byte {
 			return okEnvelope(httpResponse(200, "text/html; charset=utf-8", []byte(dashboardHTML)))
 		}
 		if req.Method == "GET" && strings.HasSuffix(req.Path, "/"+pluginID+"/data") {
-			tracker.syncAuthStatus(hostRPC)
+			if tracker.syncAuthStatus(hostRPC) {
+				tracker.kickFullRefresh()
+			}
 			data, err := json.Marshal(tracker.snapshot())
 			if err != nil {
 				return okEnvelope(httpResponse(500, "application/json", []byte(`{"error":"snapshot_encoding_failed"}`)))
