@@ -78,16 +78,17 @@ type QuotaWindow struct {
 }
 
 type AccountQuota struct {
-	Provider             string       `json:"provider"`
-	AuthID               string       `json:"auth_id"`
-	Name                 string       `json:"name"`
-	Five                 *QuotaWindow `json:"five_hour,omitempty"`
-	Week                 *QuotaWindow `json:"seven_day,omitempty"`
-	FetchedAt            string       `json:"fetched_at"`
-	Error                string       `json:"error,omitempty"`
-	ManualResetRemaining *int64       `json:"manual_reset_remaining,omitempty"`
-	Disabled             bool         `json:"disabled,omitempty"`
-	Groups               []QuotaGroup `json:"groups,omitempty"` // Antigravity shared-quota groups.
+	Provider              string       `json:"provider"`
+	AuthID                string       `json:"auth_id"`
+	Name                  string       `json:"name"`
+	Five                  *QuotaWindow `json:"five_hour,omitempty"`
+	Week                  *QuotaWindow `json:"seven_day,omitempty"`
+	FetchedAt             string       `json:"fetched_at"`
+	Error                 string       `json:"error,omitempty"`
+	ManualResetRemaining  *int64       `json:"manual_reset_remaining,omitempty"`
+	ManualResetDiagnostic string       `json:"manual_reset_diagnostic,omitempty"`
+	Disabled              bool         `json:"disabled,omitempty"`
+	Groups                []QuotaGroup `json:"groups,omitempty"` // Antigravity shared-quota groups.
 }
 
 type WindowEstimate struct {
@@ -108,16 +109,33 @@ type WindowEstimate struct {
 }
 
 type QuotaView struct {
-	Provider             string           `json:"provider"`
-	AuthID               string           `json:"auth_id"`
-	Name                 string           `json:"name"`
-	Five                 *WindowEstimate  `json:"five_hour,omitempty"`
-	Week                 *WindowEstimate  `json:"seven_day,omitempty"`
-	FetchedAt            string           `json:"fetched_at,omitempty"`
-	Error                string           `json:"error,omitempty"`
-	ManualResetRemaining *int64           `json:"manual_reset_remaining,omitempty"`
-	Disabled             bool             `json:"disabled,omitempty"`
-	Groups               []QuotaGroupView `json:"groups,omitempty"`
+	Provider              string           `json:"provider"`
+	AuthID                string           `json:"auth_id"`
+	Name                  string           `json:"name"`
+	Five                  *WindowEstimate  `json:"five_hour,omitempty"`
+	Week                  *WindowEstimate  `json:"seven_day,omitempty"`
+	FetchedAt             string           `json:"fetched_at,omitempty"`
+	Error                 string           `json:"error,omitempty"`
+	ManualResetRemaining  *int64           `json:"manual_reset_remaining,omitempty"`
+	ManualResetDiagnostic string           `json:"manual_reset_diagnostic,omitempty"`
+	Disabled              bool             `json:"disabled,omitempty"`
+	Groups                []QuotaGroupView `json:"groups,omitempty"`
+}
+
+// Enforce the diagnostic allow-list at both persistence and API JSON boundaries,
+// including older or externally edited caches. Never serialize a raw reason.
+func (q AccountQuota) MarshalJSON() ([]byte, error) {
+	type quotaJSON AccountQuota
+	safe := quotaJSON(q)
+	safe.ManualResetDiagnostic = sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic)
+	return json.Marshal(safe)
+}
+
+func (q QuotaView) MarshalJSON() ([]byte, error) {
+	type quotaJSON QuotaView
+	safe := quotaJSON(q)
+	safe.ManualResetDiagnostic = sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic)
+	return json.Marshal(safe)
 }
 
 type ModelStat struct {
@@ -737,7 +755,7 @@ func (e *Engine) snapshot() Snapshot {
 		five, changedFive := e.resolveForecastLocked(q, "5h", now)
 		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
 		forecastsChanged = forecastsChanged || changedFive || changedWeek
-		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, Disabled: q.Disabled}
+		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, ManualResetDiagnostic: sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic), Disabled: q.Disabled}
 		for _, g := range q.Groups {
 			gFive, c1 := e.resolveGroupForecastLocked(q, g, "5h", now)
 			gWeek, c2 := e.resolveGroupForecastLocked(q, g, "7d", now)

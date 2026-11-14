@@ -218,8 +218,9 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	}
 	observedAt := time.Now().UTC()
 	var resetRemaining *int64
+	var resetDiagnostic string
 	if entry.Provider == "claude" {
-		resetRemaining = claudeResetRemaining(headers, get)
+		resetRemaining, resetDiagnostic = claudeResetRemaining(headers, get)
 	} else if entry.Provider == "codex" {
 		resetRemaining = codexResetRemaining(body, headers, get)
 	}
@@ -227,7 +228,7 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, Disabled: entry.Disabled}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, ManualResetDiagnostic: resetDiagnostic, Disabled: entry.Disabled}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	if state, ok := e.accountRefresh[entry.ID]; ok {
 		state.Error = ""
@@ -637,24 +638,50 @@ func parseManualResetRemaining(body []byte) *int64 {
 const (
 	claudeUsageURL          = "https://api.anthropic.com/api/oauth/usage"
 	claudeResetInventoryURL = claudeUsageURL + "?cedar_ember=1"
-	codexResetCreditsURL    = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+	// Public successful inventory read: pingdotgg/t3code#34226. This pinned
+	// version can age out; it is not an eligibility or availability guarantee.
+	claudeResetInventoryUserAgent = "claude-cli/2.1.321 (external, cli)"
+	codexResetCreditsURL          = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 )
 
+const (
+	manualResetRequestFailed   = "request_failed"
+	manualResetCLIVersion      = "cli_version"
+	manualResetSurface         = "surface"
+	manualResetNotEligible     = "not_eligible"
+	manualResetUnavailable     = "unavailable"
+	manualResetInvalidResponse = "invalid_response"
+)
+
+func sanitizeManualResetDiagnostic(provider string, remaining *int64, diagnostic string) string {
+	if provider != "claude" || remaining != nil {
+		return ""
+	}
+	switch diagnostic {
+	case manualResetRequestFailed, manualResetCLIVersion, manualResetSurface,
+		manualResetNotEligible, manualResetUnavailable, manualResetInvalidResponse:
+		return diagnostic
+	default:
+		return manualResetUnavailable
+	}
+}
+
 // CodexBar's ClaudeOAuthUsageFetcher/ClaudeRateLimitResetCredits contract at
-// 7447bc77c2497323d9c41e40164ce705533493c8. This optional, read-only request
-// never replaces ordinary usage, and never sends a redemption handle anywhere.
-func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]byte, error)) *int64 {
+// 7447bc77c2497323d9c41e40164ce705533493c8, with a publicly tested newer CLI
+// identity from https://github.com/pingdotgg/t3code/issues/34226. This optional,
+// read-only request never replaces usage or sends a redemption handle anywhere.
+func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]byte, error)) (*int64, string) {
 	inventoryHeaders := headers.Clone()
 	if inventoryHeaders == nil {
 		inventoryHeaders = make(http.Header)
 	}
-	inventoryHeaders.Set("User-Agent", "claude-cli/2.1.0 (external, cli)")
+	inventoryHeaders.Set("User-Agent", claudeResetInventoryUserAgent)
 	inventoryHeaders.Set("Anthropic-Beta", "oauth-2025-04-20")
 	inventoryHeaders.Set("Content-Type", "application/json")
 	inventoryHeaders.Set("Cache-Control", "no-store")
 	body, err := get(claudeResetInventoryURL, inventoryHeaders)
 	if err != nil {
-		return nil
+		return nil, manualResetRequestFailed
 	}
 	return parseClaudeResetRemaining(body, time.Now().UTC())
 }
@@ -662,23 +689,40 @@ func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]
 // Count saved inventory, NOT immediate redeemability (usable_now), automatic
 // window resets, or extra-usage money. Fail closed on any malformed grant rather
 // than reporting a partial total, especially a fabricated zero.
-func parseClaudeResetRemaining(body []byte, now time.Time) *int64 {
-	var response struct {
-		Inventory *struct {
-			Eligible *bool           `json:"eligible"`
-			Grants   json.RawMessage `json:"grants"`
-		} `json:"cedar_ember"`
+func parseClaudeResetRemaining(body []byte, now time.Time) (*int64, string) {
+	var response map[string]json.RawMessage
+	if json.Unmarshal(body, &response) != nil || response == nil {
+		return nil, manualResetInvalidResponse
 	}
-	if json.Unmarshal(body, &response) != nil || response.Inventory == nil {
-		return nil
+	raw, present := response["cedar_ember"]
+	if !present || string(raw) == "null" {
+		return nil, manualResetUnavailable
 	}
-	inventory := response.Inventory
-	if inventory.Eligible == nil || !*inventory.Eligible {
-		return nil
+	var inventory struct {
+		Eligible         *bool           `json:"eligible"`
+		IneligibleReason json.RawMessage `json:"ineligible_reason"`
+		Grants           json.RawMessage `json:"grants"`
+	}
+	if json.Unmarshal(raw, &inventory) != nil || inventory.Eligible == nil {
+		return nil, manualResetInvalidResponse
+	}
+	if !*inventory.Eligible {
+		var reason string
+		// Only exact known reasons are exposed. Unknown/malformed reasons are
+		// deliberately collapsed; never retain upstream text or credential data.
+		_ = json.Unmarshal(inventory.IneligibleReason, &reason)
+		switch reason {
+		case "cli_version":
+			return nil, manualResetCLIVersion
+		case "surface":
+			return nil, manualResetSurface
+		default:
+			return nil, manualResetNotEligible
+		}
 	}
 	var grants []json.RawMessage
 	if json.Unmarshal(inventory.Grants, &grants) != nil || grants == nil || len(grants) > 200 {
-		return nil
+		return nil, manualResetInvalidResponse
 	}
 	var count int64
 	for _, raw := range grants {
@@ -690,26 +734,26 @@ func parseClaudeResetRemaining(body []byte, now time.Time) *int64 {
 			EndsAt   *string `json:"ends_at"`
 		}
 		if json.Unmarshal(raw, &grant) != nil || grant.Left == nil || grant.Paused == nil || *grant.Left < 0 {
-			return nil
+			return nil, manualResetInvalidResponse
 		}
 		if grant.Total != nil && *grant.Total < *grant.Left {
-			return nil
+			return nil, manualResetInvalidResponse
 		}
 		startsAt, startOK := parseClaudeResetBound(grant.StartsAt)
 		endsAt, endOK := parseClaudeResetBound(grant.EndsAt)
 		if !startOK || !endOK || (startsAt != nil && endsAt != nil && !endsAt.After(*startsAt)) {
-			return nil
+			return nil, manualResetInvalidResponse
 		}
 		if *grant.Paused || (startsAt != nil && now.Before(*startsAt)) || (endsAt != nil && !now.Before(*endsAt)) {
 			continue
 		}
 		// CodexBar's plausibility limits, without allocating one item per reset.
 		if *grant.Left > 50-count {
-			return nil
+			return nil, manualResetInvalidResponse
 		}
 		count += *grant.Left
 	}
-	return &count
+	return &count, ""
 }
 
 func parseClaudeResetBound(value *string) (*time.Time, bool) {

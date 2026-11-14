@@ -104,8 +104,8 @@ func TestClaudeResetInventoryCountsSavedGrants(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := []byte(`{"cedar_ember":{"eligible":true,"grants":` + tc.grants + `}}`)
-			got := parseClaudeResetRemaining(body, now)
-			if got == nil || *got != tc.want {
+			got, diagnostic := parseClaudeResetRemaining(body, now)
+			if got == nil || *got != tc.want || diagnostic != "" {
 				t.Fatalf("want %d saved resets, got %v", tc.want, got)
 			}
 		})
@@ -120,7 +120,7 @@ func TestClaudeResetInventoryUnknownNeverBecomesZero(t *testing.T) {
 		`{"eligible":true}`, `{"eligible":true,"grants":null}`, `{"eligible":true,"grants":{}}`,
 		`{"eligible":true,"grants":"[]"}`,
 	} {
-		if parseClaudeResetRemaining([]byte(`{"cedar_ember":`+block+`}`), now) != nil {
+		if got, diagnostic := parseClaudeResetRemaining([]byte(`{"cedar_ember":`+block+`}`), now); got != nil || diagnostic == "" {
 			t.Fatalf("unavailable block must stay unknown: %s", block)
 		}
 	}
@@ -141,7 +141,7 @@ func TestClaudeResetInventoryUnknownNeverBecomesZero(t *testing.T) {
 	} {
 		// Do not return a partial count even when a valid sibling exists.
 		body := `{"cedar_ember":{"eligible":true,"grants":[{"resets_left":1,"paused":false},` + grant + `]}}`
-		if parseClaudeResetRemaining([]byte(body), now) != nil {
+		if got, diagnostic := parseClaudeResetRemaining([]byte(body), now); got != nil || diagnostic != manualResetInvalidResponse {
 			t.Fatalf("malformed inventory must stay unknown: %s", grant)
 		}
 	}
@@ -151,14 +151,14 @@ func TestClaudeResetInventoryUnknownNeverBecomesZero(t *testing.T) {
 		`{"five_hour":{"utilization":30,"resets_at":"2026-01-03T00:00:00Z"},"extra_usage":{"used_credits":1,"monthly_limit":1000},"credits":{"balance":9}}`,
 		`{"cedar_ember":{"eligible":true,"grants":[{"resets_left":26,"paused":false},{"resets_left":25,"paused":false}]}}`,
 	} {
-		if parseClaudeResetRemaining([]byte(body), now) != nil {
+		if got, diagnostic := parseClaudeResetRemaining([]byte(body), now); got != nil || diagnostic == "" {
 			t.Fatalf("unsupported data must not become reset inventory: %s", body)
 		}
 	}
 	for _, n := range []int{200, 201} {
 		grants := strings.Repeat(`{"resets_left":0,"paused":false},`, n-1) + `{"resets_left":1,"paused":false}`
-		got := parseClaudeResetRemaining([]byte(`{"cedar_ember":{"eligible":true,"grants":[`+grants+`]}}`), now)
-		if (n == 200 && (got == nil || *got != 1)) || (n == 201 && got != nil) {
+		got, diagnostic := parseClaudeResetRemaining([]byte(`{"cedar_ember":{"eligible":true,"grants":[`+grants+`]}}`), now)
+		if (n == 200 && (got == nil || *got != 1 || diagnostic != "")) || (n == 201 && (got != nil || diagnostic != manualResetInvalidResponse)) {
 			t.Fatalf("grant record bound failed for %d records", n)
 		}
 	}
@@ -167,14 +167,14 @@ func TestClaudeResetInventoryUnknownNeverBecomesZero(t *testing.T) {
 func TestClaudeResetInventoryRequestIdentity(t *testing.T) {
 	headers := http.Header{"Authorization": {"Bearer synthetic-only-token"}, "User-Agent": {"claude-code/2.1.0"}, "Anthropic-Beta": {"oauth-2025-04-20"}, "Accept": {"application/json"}}
 	calls := 0
-	got := claudeResetRemaining(headers, func(url string, h http.Header) ([]byte, error) {
+	got, diagnostic := claudeResetRemaining(headers, func(url string, h http.Header) ([]byte, error) {
 		calls++
-		if url != claudeResetInventoryURL || h.Get("Authorization") != headers.Get("Authorization") || h.Get("Anthropic-Beta") != "oauth-2025-04-20" || h.Get("User-Agent") != "claude-cli/2.1.0 (external, cli)" || h.Get("Cache-Control") != "no-store" || h.Get("Content-Type") != "application/json" || h.Get("Accept") != "application/json" {
+		if url != claudeResetInventoryURL || h.Get("Authorization") != headers.Get("Authorization") || h.Get("Anthropic-Beta") != "oauth-2025-04-20" || h.Get("User-Agent") != "claude-cli/2.1.321 (external, cli)" || h.Get("Cache-Control") != "no-store" || h.Get("Content-Type") != "application/json" || h.Get("Accept") != "application/json" {
 			t.Fatal("inventory must retain OAuth identity with the opt-in URL and headers")
 		}
 		return []byte(`{"cedar_ember":{"eligible":true,"grants":[{"resets_left":2,"paused":false}]}}`), nil
 	})
-	if calls != 1 || got == nil || *got != 2 || headers.Get("User-Agent") != "claude-code/2.1.0" || headers.Get("Cache-Control") != "" || headers.Get("Content-Type") != "" {
+	if calls != 1 || got == nil || *got != 2 || diagnostic != "" || headers.Get("User-Agent") != "claude-code/2.1.0" || headers.Get("Cache-Control") != "" || headers.Get("Content-Type") != "" {
 		t.Fatal("inventory request changed ordinary usage headers or count")
 	}
 }
@@ -263,8 +263,12 @@ func TestCodexQuotaRefreshKeepsResetCreditContract(t *testing.T) {
 		if embedded {
 			wantCalls = 1
 		}
-		if !ok || calls != wantCalls || q.Five == nil || q.Five.Used != 20 || q.ManualResetRemaining == nil || *q.ManualResetRemaining != 2 {
+		if !ok || calls != wantCalls || q.Five == nil || q.Five.Used != 20 || q.ManualResetRemaining == nil || *q.ManualResetRemaining != 2 || q.ManualResetDiagnostic != "" {
 			t.Fatal("ordinary Codex usage and reset fallback must remain intact")
+		}
+		encoded, err := json.Marshal(e.snapshot())
+		if err != nil || strings.Contains(string(encoded), "manual_reset_diagnostic") {
+			t.Fatal("Claude inventory diagnostics must not appear for Codex")
 		}
 	}
 }
@@ -277,19 +281,23 @@ func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 		usage      string
 		usageError bool
 		want       int64 // -1 means unknown.
+		diagnostic string
 	}{
-		{"available", `{"cedar_ember":{"eligible":true,"grants":[{"id":"private-grant-handle","label":"private-grant-label","resets_left":2,"paused":false,"usable_now":false}]}}`, nil, "", false, 2},
-		{"known zero", `{"cedar_ember":{"eligible":true,"grants":[{"resets_left":0,"paused":false}]}}`, nil, "", false, 0},
-		{"no opt-in support", "", fmt.Errorf("HTTP 400"), "", false, -1},
-		{"forbidden", "", fmt.Errorf("HTTP 403"), "", false, -1},
-		{"rate limited", "", fmt.Errorf("HTTP 429"), "", false, -1},
-		{"timeout", "", fmt.Errorf("Bearer synthetic-only-token timeout"), "", false, -1},
-		{"ineligible", `{"cedar_ember":{"eligible":false,"grants":[]}}`, nil, "", false, -1},
-		{"missing inventory", `{}`, nil, "", false, -1},
-		{"malformed inventory", `{"cedar_ember":{"eligible":true,"grants":[{}]}}`, nil, "", false, -1},
-		{"invalid JSON", `broken`, nil, "", false, -1},
-		{"ordinary read failure", "", nil, "", true, -1},
-		{"ordinary schema failure", "", nil, `{}`, false, -1},
+		{"available", `{"cedar_ember":{"eligible":true,"grants":[{"id":"private-grant-handle","label":"private-grant-label","resets_left":2,"paused":false,"usable_now":false}]}}`, nil, "", false, 2, ""},
+		{"known zero", `{"cedar_ember":{"eligible":true,"grants":[{"resets_left":0,"paused":false}]}}`, nil, "", false, 0, ""},
+		{"no opt-in support", "", fmt.Errorf("HTTP 400"), "", false, -1, "request_failed"},
+		{"forbidden", "", fmt.Errorf("HTTP 403"), "", false, -1, "request_failed"},
+		{"rate limited", "", fmt.Errorf("HTTP 429"), "", false, -1, "request_failed"},
+		{"timeout", "", fmt.Errorf("Bearer synthetic-only-token timeout"), "", false, -1, "request_failed"},
+		{"old CLI", `{"cedar_ember":{"eligible":false,"ineligible_reason":"cli_version"}}`, nil, "", false, -1, "cli_version"},
+		{"wrong surface", `{"cedar_ember":{"eligible":false,"ineligible_reason":"surface"}}`, nil, "", false, -1, "surface"},
+		{"ineligible", `{"cedar_ember":{"eligible":false,"grants":[]}}`, nil, "", false, -1, "not_eligible"},
+		{"private reason", `{"cedar_ember":{"eligible":false,"ineligible_reason":"synthetic-only-token private-grant-handle private-grant-label"}}`, nil, "", false, -1, "not_eligible"},
+		{"missing inventory", `{}`, nil, "", false, -1, "unavailable"},
+		{"malformed inventory", `{"cedar_ember":{"eligible":true,"grants":[{}]}}`, nil, "", false, -1, "invalid_response"},
+		{"invalid JSON", `broken`, nil, "", false, -1, "invalid_response"},
+		{"ordinary read failure", "", nil, "", true, -1, ""},
+		{"ordinary schema failure", "", nil, `{}`, false, -1, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEngine()
@@ -321,35 +329,45 @@ func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 					}
 					return []byte(`{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"manual_reset_remaining":99,"extra_usage":{"used_credits":500}}`), nil
 				}
-				if calls != 2 || url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.0 (external, cli)" {
+				if calls != 2 || url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.321 (external, cli)" {
 					t.Fatal("only one optional inventory request may follow ordinary usage")
 				}
 				return []byte(tc.inventory), tc.failure
 			})
 			q := e.quotas["account"]
 			if tc.usageError || tc.usage != "" {
-				if ok || calls != 1 || q.Five.Used != 70 || q.Error == "" {
+				if ok || calls != 1 || q.Five.Used != 70 || q.Error == "" || q.ManualResetRemaining == nil || *q.ManualResetRemaining != oldCount || q.ManualResetDiagnostic != "" {
 					t.Fatal("ordinary failures must keep prior usage and skip optional inventory")
 				}
 			} else {
 				if !ok || calls != 2 || q.Five == nil || q.Five.Used != 12 || q.Week == nil || q.Week.Used != 34 || q.Error != "" || q.FetchedAt == "" || !q.Disabled || e.accountRefresh["account"].Error != "" {
 					t.Fatal("optional inventory must not break ordinary usage or account state")
 				}
-				if (tc.want < 0 && q.ManualResetRemaining != nil) || (tc.want >= 0 && (q.ManualResetRemaining == nil || *q.ManualResetRemaining != tc.want)) {
+				if (tc.want < 0 && q.ManualResetRemaining != nil) || (tc.want >= 0 && (q.ManualResetRemaining == nil || *q.ManualResetRemaining != tc.want)) || q.ManualResetDiagnostic != tc.diagnostic {
 					t.Fatal("incorrect reset count or stale inventory was retained")
 				}
 				encoded, err := json.Marshal(q)
-				if err != nil || strings.Contains(string(encoded), "manual_reset_remaining") != (tc.want >= 0) {
-					t.Fatal("existing JSON omission/explicit-zero contract changed")
+				if err != nil || strings.Contains(string(encoded), "manual_reset_remaining") != (tc.want >= 0) || strings.Contains(string(encoded), "manual_reset_diagnostic") != (tc.diagnostic != "") {
+					t.Fatal("count/diagnostic JSON omission contract changed")
 				}
 			}
 			saved, err := os.ReadFile(e.dir + "/quotas.json")
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, secret := range []string{"synthetic-only-token", "private-grant-handle", "private-grant-label", "cedar_ember"} {
-				if strings.Contains(string(saved), secret) {
-					t.Fatal("raw inventory or credential leaked into persisted quota data")
+			restored := newEngine()
+			restored.dir = e.dir
+			restored.loadPersistence()
+			if restored.storageReadFailed || restored.quotas["account"].ManualResetDiagnostic != tc.diagnostic || restored.snapshot().Quotas[0].ManualResetDiagnostic != tc.diagnostic {
+				t.Fatal("diagnostic must survive persistence and reach the snapshot unchanged")
+			}
+			encodedSnapshot, err := json.Marshal(restored.snapshot())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{"synthetic-only-token", "private-grant-handle", "private-grant-label", "cedar_ember", "ineligible_reason", "HTTP 400", "HTTP 403", "HTTP 429"} {
+				if strings.Contains(string(saved), secret) || strings.Contains(string(encodedSnapshot), secret) {
+					t.Fatal("raw inventory, reason, HTTP status or credential leaked into persisted/API data")
 				}
 			}
 		})

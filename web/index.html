@@ -285,7 +285,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.31</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.32</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -474,7 +474,8 @@ const translations={
   '缺少 Antigravity 项目 ID。':'Antigravity project ID unavailable.','OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。':'OAuth access token expired; CPA refreshes it automatically. Try again shortly.',
   'Gemini 模型':'Gemini models','Claude / GPT 模型':'Claude / GPT models','此分组按模型系列统计本机观测用量。':'Observed usage in this group counts only its model family.',
   '账户已禁用，CPA 不会再调度它。':'Account disabled; CPA will no longer route requests to it.','账户已启用。':'Account enabled.','账户状态更新失败，请稍后重试。':'Updating the account status failed. Please retry later.',
-  '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.'
+  '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.',
+  '未能读取（请求失败）':'Could not read (request failed)','未能读取（客户端版本）':'Could not read (CLI version)','未能读取（入口不受支持）':'Could not read (surface unsupported)','未能读取（无资格）':'Could not read (not eligible)','未能读取（不可用）':'Could not read (unavailable)','未能读取（响应格式异常）':'Could not read (invalid response)'
 };
 function initialLanguage(){
   try{
@@ -548,6 +549,14 @@ const list = value => Array.isArray(value)?value:[];
 const active = d => !filter || d.provider===filter;
 const providerName = p => ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[p]||p||t('未知服务商'));
 const groupLabels={gemini:'Gemini 模型','claude-gpt':'Claude / GPT 模型'};
+const claudeResetDiagnostics=Object.assign(Object.create(null),{
+  request_failed:'未能读取（请求失败）',
+  cli_version:'未能读取（客户端版本）',
+  surface:'未能读取（入口不受支持）',
+  not_eligible:'未能读取（无资格）',
+  unavailable:'未能读取（不可用）',
+  invalid_response:'未能读取（响应格式异常）'
+});
 const groupName = g => groupLabels[g?.key]?t(groupLabels[g.key]):String(g?.label||g?.key||'');
 const modelName = m => typeof m==='string' && m.trim()?m:t('未知模型');
 function credentialName(s){
@@ -1093,6 +1102,8 @@ function renderQuotas(){
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
           const resetActions=add(secondary,'div','account-reset-actions'),resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
           if(item.provider==='codex'&&!item.disabled&&item.manual_reset_remaining>0){reset=add(resetActions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
+        }else if(item.provider==='claude'&&claudeResetDiagnostics[item.manual_reset_diagnostic]){
+          const resetActions=add(secondary,'div','account-reset-actions'),resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'span','manual-reset-diagnostic',claudeResetDiagnostics[item.manual_reset_diagnostic]);
         }
         entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }

@@ -50,7 +50,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(ms===20000)return 1;if(options.fakeClock)fakeNow+=ms;callback();}, clearTimeout(){}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){fakeNow+=ms;}};
 }
@@ -495,7 +495,7 @@ test('settings network or malformed-response errors retain actual preference and
 });
 
 test('Chinese uses token labels everywhere and recent table scroll is confined internally',()=>{
-  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.31<\/span>/);
+  assert(!html.includes('\u8bcd\u5143'));const css=html.match(/<style>([\s\S]*?)<\/style>/)[1];assert.match(css,/\.tablewrap\{overflow-x:auto/);assert.match(css,/#recent-table table\{min-width:1220px/);assert.match(css,/\.tablewrap\{max-width:100%;min-width:0\}/);assert.match(html,/<span class="version">v0\.1\.32<\/span>/);
 });
 
 test('enabling persistence succeeds using returned setting and directory without redrawing requests',async()=>{
@@ -1318,4 +1318,105 @@ test('browser local midnight uses calendar boundaries across DST rather than add
     let p=d.api.historyParams();assert.equal(new Date(p.get('end'))-new Date(p.get('start')),23*3600000);
     d.elements.get('history-start').value='2026-11-01';d.elements.get('history-end').value='2026-11-01';p=d.api.historyParams();assert.equal(new Date(p.get('end'))-new Date(p.get('start')),25*3600000);
   }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});
+
+const diagnosticExpectations = [
+  ['request_failed', '未能读取（请求失败）', 'Could not read (request failed)'],
+  ['cli_version', '未能读取（客户端版本）', 'Could not read (CLI version)'],
+  ['surface', '未能读取（入口不受支持）', 'Could not read (surface unsupported)'],
+  ['not_eligible', '未能读取（无资格）', 'Could not read (not eligible)'],
+  ['unavailable', '未能读取（不可用）', 'Could not read (unavailable)'],
+  ['invalid_response', '未能读取（响应格式异常）', 'Could not read (invalid response)'],
+];
+
+for(const language of ['zh','en'])test(`${language}: Claude reset inventory diagnostic renders all 6 allowed enums, preserves known counts and never invents zero`,()=>{
+  const d=dashboard({},undefined,{language});
+  for(const [diagnostic,zhText,enText] of diagnosticExpectations){
+    const expectedLabel=language==='en'?'Resets remaining':'可重置',expectedText=language==='en'?enText:zhText;
+    d.api.renderSample({quotas:[{auth_id:'claude-diag',provider:'claude',name:'claude@example.com',manual_reset_diagnostic:diagnostic}]});
+    const card=panel(d.elements,'claude-diag');
+    const resets=descendants(card).filter(n=>n.className==='manual-reset');
+    assert.equal(resets.length,1,`diagnostic ${diagnostic} must render manual-reset container`);
+    assert.deepEqual(resets[0].children.map(c=>c.textContent),[expectedLabel,expectedText]);
+    assert.equal(descendants(card).find(n=>n.className==='button account-action account-reset'),undefined,'Claude never receives a reset button');
+    if(language==='en')for(const node of descendants(resets[0]))assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);
+  }
+  // Known counts (positive and explicit 0) must always take precedence over diagnostic and show count, not diagnostic or false zero.
+  d.api.renderSample({quotas:[{auth_id:'claude-known-2',provider:'claude',name:'claude@example.com',manual_reset_remaining:2,manual_reset_diagnostic:'request_failed'},{auth_id:'claude-known-0',provider:'claude',name:'claude0@example.com',manual_reset_remaining:0,manual_reset_diagnostic:'unavailable'}]});
+  const reset2=descendants(panel(d.elements,'claude-known-2')).find(n=>n.className==='manual-reset');
+  assert.deepEqual(reset2.children.map(c=>c.textContent),language==='en'?['Resets remaining','2']:['可重置','2','次']);
+  const reset0=descendants(panel(d.elements,'claude-known-0')).find(n=>n.className==='manual-reset');
+  assert.deepEqual(reset0.children.map(c=>c.textContent),language==='en'?['Resets remaining','0']:['可重置','0','次']);
+
+  // Invalid/unrecognized count values fall back to diagnostic rather than reporting 0 or counts.
+  for(const invalidRemaining of [null, undefined, -1, '2', NaN, false]){
+    d.api.renderSample({quotas:[{auth_id:'claude-invalid-rem',provider:'claude',name:'claude@example.com',manual_reset_remaining:invalidRemaining,manual_reset_diagnostic:'request_failed'}]});
+    const resetInvalid=descendants(panel(d.elements,'claude-invalid-rem')).find(n=>n.className==='manual-reset');
+    assert.deepEqual(resetInvalid.children.map(c=>c.textContent),language==='en'?['Resets remaining','Could not read (request failed)']:['可重置','未能读取（请求失败）']);
+  }
+});
+
+test('Claude reset diagnostic compatibility: unknown values and absent fields render nothing and leak no upstream data',()=>{
+  const d=dashboard();
+  const unknownValues=['unknown_status','request_timeout','<script>alert(1)</script>','Bearer secret_token',123,true,{},[],null,''];
+  for(const val of unknownValues){
+    d.api.renderSample({quotas:[{auth_id:'claude-leak',provider:'claude',name:'claude@example.com',manual_reset_diagnostic:val}]});
+    const card=panel(d.elements,'claude-leak');
+    const resets=descendants(card).filter(n=>n.className==='manual-reset');
+    assert.equal(resets.length,0,`unknown diagnostic value ${String(val)} must stay hidden`);
+    assert(!descendants(card).some(n=>typeof val==='string'&&val.length>3&&n.textContent.includes(val)),`raw value ${String(val)} leaked into card`);
+  }
+  // Old backend without manual_reset_diagnostic and without manual_reset_remaining renders nothing.
+  d.api.renderSample({quotas:[{auth_id:'claude-old',provider:'claude',name:'old@example.com'}]});
+  assert.equal(descendants(panel(d.elements,'claude-old')).filter(n=>n.className==='manual-reset').length,0);
+});
+
+test('Codex and Antigravity reset behaviors are completely unaffected by diagnostic values',()=>{
+  const d=dashboard();
+  // Codex with known count gets count display and reset button.
+  // Codex with unknown count and diagnostic gets NO diagnostic display and NO reset button.
+  // Antigravity with diagnostic gets NO diagnostic display.
+  d.api.renderSample({quotas:[
+    {auth_id:'codex-known',provider:'codex',name:'c1@example.com',manual_reset_remaining:2,manual_reset_diagnostic:'request_failed'},
+    {auth_id:'codex-unknown',provider:'codex',name:'c2@example.com',manual_reset_diagnostic:'request_failed'},
+    {auth_id:'ag-unknown',provider:'antigravity',name:'ag@example.com',manual_reset_diagnostic:'cli_version'}
+  ]});
+  const codexKnown=panel(d.elements,'codex-known');
+  const codexKnownReset=descendants(codexKnown).find(n=>n.className==='manual-reset');
+  assert.deepEqual(codexKnownReset.children.map(c=>c.textContent),['可重置','2','次']);
+  assert(descendants(codexKnown).some(n=>n.className==='button account-action account-reset'&&n.textContent==='使用重置卡'));
+
+  const codexUnknown=panel(d.elements,'codex-unknown');
+  assert.equal(descendants(codexUnknown).filter(n=>n.className==='manual-reset').length,0);
+  assert.equal(descendants(codexUnknown).filter(n=>n.className==='button account-action account-reset').length,0);
+
+  const agCard=panel(d.elements,'ag-unknown');
+  assert.equal(descendants(agCard).filter(n=>n.className==='manual-reset').length,0);
+});
+
+test('Claude reset diagnostic updates card cache on snapshot changes and preserves card controls',()=>{
+  const d=dashboard();
+  d.api.acceptSnapshot({quotas:[{auth_id:'c-test',provider:'claude',name:'c@example.com',manual_reset_diagnostic:'request_failed'}]});
+  let card=panel(d.elements,'c-test');
+  let reset=descendants(card).find(n=>n.className==='manual-reset');
+  assert.deepEqual(reset.children.map(c=>c.textContent),['可重置','未能读取（请求失败）']);
+  assert(refreshButton(card),'refresh button present');
+  assert(toggleButton(card),'toggle button present');
+
+  // Updating to cli_version updates the cached card.
+  d.api.acceptSnapshot({quotas:[{auth_id:'c-test',provider:'claude',name:'c@example.com',manual_reset_diagnostic:'cli_version'}]});
+  card=panel(d.elements,'c-test');
+  reset=descendants(card).find(n=>n.className==='manual-reset');
+  assert.deepEqual(reset.children.map(c=>c.textContent),['可重置','未能读取（客户端版本）']);
+
+  // Updating to known count replaces diagnostic with count.
+  d.api.acceptSnapshot({quotas:[{auth_id:'c-test',provider:'claude',name:'c@example.com',manual_reset_remaining:1}]});
+  card=panel(d.elements,'c-test');
+  reset=descendants(card).find(n=>n.className==='manual-reset');
+  assert.deepEqual(reset.children.map(c=>c.textContent),['可重置','1','次']);
+
+  // Clearing to old backend state removes manual-reset entirely.
+  d.api.acceptSnapshot({quotas:[{auth_id:'c-test',provider:'claude',name:'c@example.com'}]});
+  card=panel(d.elements,'c-test');
+  assert.equal(descendants(card).filter(n=>n.className==='manual-reset').length,0);
 });
