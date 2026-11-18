@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.33"
+const pluginVersion = "0.1.34"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -144,8 +144,16 @@ func hostRPC(name string, arg any) (any, error) {
 			if !okv {
 				return nil, fmt.Errorf("host callback %s rejected request", name)
 			}
+			if name == "host.auth.list" && len(m) != 2 {
+				// Only the official {ok:true,result:...} envelope vouches for
+				// completeness. Do not lose an outer error or pagination marker.
+				return discoveryOnlyAuthList{m["result"]}, nil
+			}
 			return m["result"], nil
 		}
+	}
+	if name == "host.auth.list" {
+		return discoveryOnlyAuthList{v}, nil
 	}
 	return v, nil
 }

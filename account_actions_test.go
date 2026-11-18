@@ -231,9 +231,9 @@ func TestDisabledStateFollowsCPA(t *testing.T) {
 	if q, ok := views["b"]; !ok || !q.Disabled || q.Error == "" || q.FetchedAt != "" {
 		t.Fatal("new host account must be visible with pending, not fabricated, quota")
 	}
-	// Host failure or an empty list keeps the last known state.
+	// Host failure or a null (not explicitly empty) list keeps the last known state.
 	e.syncAuthStatus(func(string, any) (any, error) { return nil, fmt.Errorf("down") })
-	e.syncAuthStatus(func(string, any) (any, error) { return map[string]any{"files": []any{}}, nil })
+	e.syncAuthStatus(func(string, any) (any, error) { return map[string]any{"files": nil}, nil })
 	if !e.quotas["a"].Disabled {
 		t.Fatal("state cleared on failure")
 	}

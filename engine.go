@@ -204,6 +204,8 @@ type Engine struct {
 	quotaUpdated         time.Time
 	quotaRefreshing      bool
 	authDiscoveryPending bool
+	authListStarted      uint64 // Order sync/full list RPCs without serializing host calls.
+	authListApplied      uint64
 	quotaRefreshFinished time.Time
 	accountRefresh       map[string]AccountRefreshState
 	priceUpdated         time.Time

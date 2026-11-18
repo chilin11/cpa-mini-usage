@@ -273,17 +273,32 @@ func providerPOST(url string, headers http.Header, body []byte, rpc func(string,
 // New accounts are visible before their first quota read. The caller requests a full
 // refresh when true; a busy refresh lock leaves the discovery pending for a later sync.
 func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) bool {
+	e.mu.Lock()
+	e.authListStarted++
+	listVersion := e.authListStarted
+	e.mu.Unlock()
 	raw, err := rpc("host.auth.list", map[string]any{})
 	if err != nil {
 		return false
 	}
 	entries := parseAuthList(raw)
-	if len(entries) == 0 {
+	live, complete := completeAuthIDs(raw, entries)
+	if len(entries) == 0 && !complete {
 		return false
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	added := false
+	if listVersion < e.authListApplied {
+		return e.authDiscoveryPending
+	}
+	e.authListApplied = listVersion
+	changed := false
+	// Never wait here with mu held. Busy account/full writers may still have
+	// old results; discover additions now, and prune on a fresh idle sync.
+	if complete && e.refreshMu.TryLock() {
+		changed = e.pruneQuotasLocked(live)
+		e.refreshMu.Unlock()
+	}
 	for _, entry := range entries {
 		if !quotaProvider(entry.Provider) {
 			continue
@@ -294,12 +309,12 @@ func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) bool {
 			e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 			e.aliases[entry.Index] = entry.ID
 			e.authDiscoveryPending = true
-			added = true
+			changed = true
 		}
 		q.Disabled = entry.Disabled
 		e.quotas[entry.ID] = q
 	}
-	if added {
+	if changed {
 		e.persistQuotasLocked()
 	}
 	return e.authDiscoveryPending

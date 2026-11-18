@@ -38,7 +38,7 @@ func TestAuthDiscoverySyncRegistersNewAccountsAndPreservesHistory(t *testing.T) 
 	e.events = []Event{{AuthID: "historical", At: time.Now().UTC(), Total: 12}}
 	clock := time.Now()
 	e.lastRefresh = clock
-	files := []any{discoveryRecord("old", "codex")}
+	files := []any{discoveryRecord("old", "codex"), discoveryRecord("historical", "claude")}
 	rpc := func(method string, _ any) (any, error) {
 		if method != "host.auth.list" {
 			t.Errorf("sync must not read credential material: %s", method)
@@ -48,6 +48,7 @@ func TestAuthDiscoverySyncRegistersNewAccountsAndPreservesHistory(t *testing.T) 
 	if e.syncAuthStatus(rpc) {
 		t.Fatal("unchanged identities should not request an early scan")
 	}
+	files = files[:1] // Next list is partial/malformed: keep the historical card.
 	for _, provider := range []string{"claude", "codex", "antigravity"} {
 		files = append(files, discoveryRecord(provider, provider))
 	}
@@ -74,9 +75,9 @@ func TestAuthDiscoverySyncRegistersNewAccountsAndPreservesHistory(t *testing.T) 
 	if !e.syncAuthStatus(rpc) {
 		t.Fatal("an unaccepted early refresh must remain pending on subsequent syncs")
 	}
-	for _, raw := range []any{nil, map[string]any{"files": []any{}}, map[string]any{"unexpected": files}} {
+	for _, raw := range []any{nil, map[string]any{"files": nil}, map[string]any{"unexpected": files}} {
 		if e.syncAuthStatus(func(string, any) (any, error) { return raw, nil }) {
-			t.Fatal("empty or unrecognized host list should not trigger a scan")
+			t.Fatal("null or unrecognized host list should not trigger a scan")
 		}
 	}
 	if e.syncAuthStatus(func(string, any) (any, error) { return nil, fmt.Errorf("private host detail") }) || len(e.quotas) != 5 || !e.authDiscoveryPending {
@@ -94,6 +95,116 @@ func TestAuthDiscoverySyncRegistersNewAccountsAndPreservesHistory(t *testing.T) 
 	s := waitDiscoveryRefresh(t, e)
 	if s.QuotaError != "CPA credential callback is unavailable" || len(s.Quotas) != 5 || e.syncAuthStatus(rpc) {
 		t.Fatal("failed discovery scan lost accounts or caused a polling retry loop")
+	}
+}
+
+func TestAuthDiscoveryPrunesOnlyActiveState(t *testing.T) {
+	for _, path := range []string{"sync", "full"} {
+		t.Run(path, func(t *testing.T) {
+			e := newEngine()
+			e.dir = t.TempDir()
+			for _, id := range []string{"keep", "gone"} {
+				e.quotas[id] = AccountQuota{AuthID: id, Provider: "codex", Five: &QuotaWindow{Used: 37}}
+				e.accountRefresh[id] = AccountRefreshState{FinishedAt: "prior"}
+			}
+			e.names["gone"], e.aliases["index-gone"] = "Historical", "gone"
+			e.forecasts["gone:week"] = SavedForecast{Seconds: 42, ResetAt: time.Now().Add(time.Hour)}
+			e.events = []Event{{AuthID: "gone", Total: 12}}
+			apply := func(files []any) {
+				rpc := func(string, any) (any, error) { return map[string]any{"files": files}, nil }
+				if path == "sync" {
+					if e.syncAuthStatus(rpc) {
+						t.Fatal("removal requested a provider refresh")
+					}
+				} else {
+					e.refreshMu.Lock()
+					e.refreshQuotaWith(true, rpc, func(AuthEntry) bool { return true })
+					e.refreshMu.Unlock()
+				}
+			}
+			apply([]any{discoveryRecord("keep", "codex")})
+			if len(e.snapshot().Quotas) != 1 || e.quotas["keep"].Five.Used != 37 || len(e.accountRefresh) != 1 || e.accountRefresh["keep"].FinishedAt != "prior" {
+				t.Fatal("did not remove exactly the obsolete card and refresh state")
+			}
+			e.persistence.Enabled = false
+			apply([]any{})
+			if len(e.snapshot().Quotas) != 0 || len(e.accountRefresh) != 0 || len(e.events) != 1 || e.events[0].Total != 12 || e.quotaError != "" {
+				t.Fatal("explicit empty list should remove the last card but not request history")
+			}
+			restored := newEngine()
+			restored.dir = e.dir
+			restored.loadPersistence()
+			if restored.storageReadFailed || len(restored.quotas) != 1 || restored.quotas["keep"].AuthID != "keep" || restored.names["gone"] != "Historical" || restored.aliases["index-gone"] != "gone" || restored.forecasts["gone:week"].Seconds != 42 {
+				t.Fatal("enabled removal must persist history; disabled removal must not overwrite disk")
+			}
+		})
+	}
+}
+
+func TestAuthDiscoveryUntrustedListsNeverPrune(t *testing.T) {
+	row := discoveryRecord("new", "codex")
+	for _, raw := range []any{
+		discoveryOnlyAuthList{map[string]any{"files": []any{row}}},
+		[]any{row}, map[string]any{"items": []any{row}}, map[string]any{"files": []any{row}, "next_cursor": "p2"},
+		map[string]any{"files": []any{row, nil}}, map[string]any{"files": []any{row, row}},
+		map[string]any{"files": []any{row, map[string]any{"name": "disk.json", "type": "codex"}}},
+		map[string]any{"files": []any{row, map[string]any{"auth_index": "idx", "type": "codex"}}},
+		map[string]any{"files": []any{row, map[string]any{"id": "bad", "auth_index": "idx", "provider": false}}},
+	} {
+		e := newEngine()
+		e.persistence.Enabled = false
+		e.quotas["keep"] = AccountQuota{AuthID: "keep"}
+		if !e.syncAuthStatus(func(string, any) (any, error) { return raw, nil }) || e.quotas["new"].AuthID != "new" || e.quotas["keep"].AuthID != "keep" {
+			t.Fatal("untrusted list must allow discovery but never removal")
+		}
+	}
+}
+
+func TestAuthDiscoveryOutOfOrderListCannotUndoNewerInventory(t *testing.T) {
+	for _, slow := range []string{"sync", "full"} {
+		t.Run(slow, func(t *testing.T) {
+			e := newEngine()
+			e.persistence.Enabled = false
+			started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			t.Cleanup(unblock)
+			stale := func(string, any) (any, error) {
+				close(started)
+				<-release
+				return map[string]any{"files": []any{discoveryRecord("obsolete", "codex")}}, nil
+			}
+			fresh := func(string, any) (any, error) {
+				return map[string]any{"files": []any{discoveryRecord("new", "codex")}}, nil
+			}
+			read := func(entry AuthEntry) bool { e.recordQuotaError(entry, "synthetic"); return false }
+			full := func(rpc func(string, any) (any, error)) {
+				e.refreshMu.Lock()
+				defer e.refreshMu.Unlock()
+				e.refreshQuotaWith(true, rpc, read)
+			}
+			if slow == "sync" {
+				e.quotas["obsolete"] = AccountQuota{AuthID: "obsolete"}
+			}
+			go func() {
+				defer close(done)
+				if slow == "sync" {
+					e.syncAuthStatus(stale)
+				} else {
+					full(stale)
+				}
+			}()
+			<-started
+			if slow == "sync" {
+				full(fresh)
+			} else {
+				e.syncAuthStatus(fresh)
+			}
+			unblock()
+			<-done
+			if len(e.quotas) != 1 || e.quotas["new"].AuthID != "new" {
+				t.Fatal("old list removed a newer account or resurrected an obsolete one")
+			}
+		})
 	}
 }
 
@@ -227,7 +338,7 @@ func TestAuthDiscoveryRetriesAfterBusyRefreshWithoutOverlap(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("initial provider read did not start")
 			}
-			files := append([]any{}, oldFiles...)
+			files := []any{} // The busy provider read targets an account CPA just removed.
 			for _, provider := range []string{"claude", "codex", "antigravity"} {
 				files = append(files, discoveryRecord(provider, provider))
 			}
@@ -255,6 +366,11 @@ func TestAuthDiscoveryRetriesAfterBusyRefreshWithoutOverlap(t *testing.T) {
 			} else {
 				waitDiscoveryRefresh(t, e)
 			}
+			if !e.syncAuthStatus(rpc) || len(e.snapshot().Quotas) != 3 {
+				t.Fatal("first idle sync must remove the old account and retain pending discoveries")
+			}
+			// CPA re-adds the same identity; it is new again, not a stale worker result.
+			files = append(files, oldFiles...)
 			if !e.syncAuthStatus(rpc) {
 				t.Fatal("discovery during a busy batch must survive its completion")
 			}

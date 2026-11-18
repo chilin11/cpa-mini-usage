@@ -123,6 +123,8 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 	// Consume only discoveries made before this fresh host.auth.list call. A new
 	// account observed while this batch runs stays pending for the next sync.
 	e.authDiscoveryPending = false
+	e.authListStarted++
+	listVersion := e.authListStarted
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()
@@ -136,13 +138,35 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 		return
 	}
 	auths := parseAuthList(raw)
-	if len(auths) == 0 {
+	live, complete := completeAuthIDs(raw, auths)
+	if len(auths) == 0 && !complete {
 		e.quotaFailure("CPA returned no OAuth credential records")
 		return
 	}
 	e.mu.Lock()
+	if listVersion >= e.authListApplied {
+		e.authListApplied = listVersion
+		// The full batch already owns refreshMu exclusively.
+		if complete && e.pruneQuotasLocked(live) {
+			e.persistQuotasLocked()
+		}
+	} else {
+		// A newer sync completed during the list RPC. Don't prune its new cards
+		// or introduce identities found only in our stale list. Its pending
+		// discoveries still request their own fresh batch.
+		known := auths[:0]
+		for _, entry := range auths {
+			if _, ok := e.quotas[entry.ID]; ok {
+				known = append(known, entry)
+			}
+		}
+		auths = known
+	}
 	e.quotaError = ""
 	e.mu.Unlock()
+	if len(auths) == 0 {
+		return
+	}
 	jobs := make(chan AuthEntry, len(auths))
 	for _, entry := range auths {
 		if quotaProvider(entry.Provider) {
@@ -336,7 +360,13 @@ func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	e.persistQuotasLocked()
 }
 
+// A legacy/extended wire envelope can provide identities but cannot prove absence.
+type discoveryOnlyAuthList struct{ result any }
+
 func parseAuthList(v any) []AuthEntry {
+	if compat, ok := v.(discoveryOnlyAuthList); ok {
+		v = compat.result
+	}
 	records := []any{}
 	switch x := v.(type) {
 	case []any:
@@ -383,6 +413,76 @@ func parseAuthList(v any) []AuthEntry {
 	}
 	return entries
 }
+
+// The native, unpaginated list response contains *only* files. Keep alternate
+// envelopes, future pagination metadata and disk-only/partial records useful for
+// discovery, but never infer absence from them. Compare every identity, including
+// unsupported providers, so that filtering quota jobs cannot imply deletion.
+func completeAuthIDs(raw any, entries []AuthEntry) (map[string]bool, bool) {
+	envelope, ok := raw.(map[string]any)
+	files, array := envelope["files"].([]any)
+	if !ok || len(envelope) != 1 || !array || files == nil || len(entries) != len(files) {
+		return nil, false
+	}
+	ids, indices := make(map[string]bool, len(files)), make(map[string]bool, len(files))
+	for i, file := range files {
+		row, _ := file.(map[string]any)
+		id, _ := row["id"].(string)
+		idx, _ := row["auth_index"].(string)
+		if id == "" || idx == "" || strings.TrimSpace(id) != id || strings.TrimSpace(idx) != idx ||
+			id != entries[i].ID || idx != entries[i].Index || ids[id] || indices[idx] {
+			return nil, false
+		}
+		// Do not authorize pruning on provider/name inference or conflicting fields.
+		provider := ""
+		for _, key := range []string{"provider", "type"} {
+			if value, present := row[key]; present {
+				p, ok := value.(string)
+				if !ok || strings.TrimSpace(p) == "" || (provider != "" && provider != p) {
+					return nil, false
+				}
+				provider = p
+			}
+		}
+		if provider == "" || normalizeProvider(provider) != entries[i].Provider {
+			return nil, false
+		}
+		for _, key := range []string{"name", "email", "status"} {
+			if v, exists := row[key]; exists {
+				if _, ok := v.(string); !ok {
+					return nil, false
+				}
+			}
+		}
+		if v, exists := row["disabled"]; exists {
+			if _, ok := v.(bool); !ok {
+				return nil, false
+			}
+		}
+		ids[id], indices[idx] = true, true
+	}
+	return ids, true
+}
+
+// Caller holds mu and exclusive refreshMu: no obsolete quota/error/refresh-state
+// writes can finish after a deletion. Names, index aliases, usage and forecasts
+// remain available for historical requests.
+func (e *Engine) pruneQuotasLocked(live map[string]bool) bool {
+	removed := false
+	for id := range e.quotas {
+		if !live[id] {
+			delete(e.quotas, id)
+			delete(e.accountRefresh, id)
+			removed = true
+		}
+	}
+	if len(e.quotas) == 0 {
+		e.authDiscoveryPending = false
+		e.quotaError = ""
+	}
+	return removed
+}
+
 func accountDisplayName(s string) string {
 	s = strings.TrimSpace(s)
 	if slash := strings.LastIndexAny(s, "/\\"); slash >= 0 {
