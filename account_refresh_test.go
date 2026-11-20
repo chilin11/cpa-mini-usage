@@ -278,6 +278,33 @@ func TestAccountRefreshFailuresComplete(t *testing.T) {
 	}
 }
 
+func TestAccountRefreshClearsOnlyRecoveredQuotaError(t *testing.T) {
+	for _, tc := range []struct {
+		name, before, want string
+		ok                 bool
+	}{
+		{"recovered", allQuotaReadsFailed, "", true},
+		{"still failing", allQuotaReadsFailed, allQuotaReadsFailed, false},
+		{"unrelated issue", "CPA credential callback is unavailable", "CPA credential callback is unavailable", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			e.quotaError = tc.before
+			e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}
+			rpc := func(string, any) (any, error) {
+				return map[string]any{"files": []any{map[string]any{"id": "a", "auth_index": "index", "provider": "codex"}}}, nil
+			}
+			if status, _, _ := e.beginAccountRefresh("a", rpc, func(AuthEntry) bool { return tc.ok }); status != 202 {
+				t.Fatalf("unexpected status: %d", status)
+			}
+			waitAccountRefresh(t, e, "a")
+			if got := e.snapshot().QuotaError; got != tc.want {
+				t.Fatalf("quota error = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAccountRefreshRejectsInvalidTargets(t *testing.T) {
 	e := newEngine()
 	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}

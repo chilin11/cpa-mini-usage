@@ -43,16 +43,25 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     createElement(tag) { const node=new Element(tag);node.focus=()=>{document.activeElement=node;};return node; },
   };
   for(const node of descendants(root))node.focus=()=>{document.activeElement=node;};
+  let alertTimeout;
   const context = vm.createContext({
     Intl, URL, URLSearchParams, AbortController, TextEncoder, TextDecoder, atob, Date:options.fakeClock?FakeDate:Date,
     location:{protocol:'https:',host:'cpa.test',origin:'https://cpa.test'}, navigator:{userAgent:'test-agent',language:options.language||'zh-CN',languages:options.languages},
-    document, localStorage:storage, sessionStorage:{getItem(){return null;}}, fetch:fetcher,
-    setInterval(callback,ms){intervals.push({callback,ms});}, setTimeout(callback,ms){if(ms===20000)return 1;if(options.fakeClock)fakeNow+=ms;callback();}, clearTimeout(){}, addEventListener(name,callback){events[name]=callback;},
+    document, localStorage:storage, sessionStorage:{getItem(){return null;}}, fetch:fetcher, performance:{now:()=>fakeNow},
+    setInterval(callback,ms){intervals.push({callback,ms});},
+    setTimeout(callback,ms){
+      if(callback.name==='renderAlerts')return alertTimeout={callback,at:fakeNow+ms};
+      if(ms===20000)return 1;if(options.fakeClock)fakeNow+=ms;callback();
+    },
+    clearTimeout(timer){if(timer===alertTimeout)alertTimeout=undefined;}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
   const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
-  return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){fakeNow+=ms;}};
+  return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){
+    fakeNow+=ms;
+    if(alertTimeout?.at<=fakeNow){const {callback}=alertTimeout;alertTimeout=undefined;callback();}
+  }};
 }
 const cases = [
   [0, '0'], [12, '12'], [999, '999'], [1000, '1k'], [1234, '1.23k'],
@@ -290,6 +299,20 @@ test('CPA language changes update the plugin until the user selects an override'
   assert.equal(d.elements.get('language').value,'zh');assert.deepEqual(d.writes,[]);
   d.api.setLanguage('en');stored['cli-proxy-language']='zh-CN';d.events.storage({key:'cli-proxy-language'});
   assert.equal(d.elements.get('language').value,'en');assert.deepEqual(d.writes,[['cpa-mini-usage-language','en']]);
+});
+
+test('persistent dashboard alerts expire after one minute without reappearing on poll',async()=>{
+  const failures={price_error:'Price catalog fetch failed',quota_error:'All OAuth quota reads failed'};
+  let issues=failures;
+  const d=dashboard(login(),async()=>reply({...twoAccounts(),...issues}),{fakeClock:true});
+  const alert=d.elements.get('alert');
+  await d.api.load();assert.equal(alert.textContent,'价格读取失败。 · 额度接口不可用。');
+  d.advanceTime(30000);await d.api.load();
+  d.advanceTime(29999);assert.equal(alert.classes.has('hide'),false);
+  d.advanceTime(1);assert.equal(alert.classes.has('hide'),true);
+  await d.api.load();assert.equal(alert.textContent,'');
+  issues={};await d.api.load();
+  issues=failures;await d.api.load();assert.equal(alert.classes.has('hide'),false);
 });
 
 for(const language of ['zh','en']){

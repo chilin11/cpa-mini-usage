@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.34"
+const pluginVersion = "0.1.35"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -231,6 +231,9 @@ func dispatch(method string, body []byte) []byte {
 			if !accepted {
 				return okEnvelope(httpResponse(409, "application/json", []byte(`{"error":"refresh_busy"}`)))
 			}
+			// The toolbar refresh also lets a failed price fetch recover immediately,
+			// without reloading a healthy catalog or blocking the quota refresh.
+			go tracker.refreshPrices(true)
 			body, _ := json.Marshal(map[string]any{"status": "refreshing", "quota_refresh_finished_at": previous})
 			return okEnvelope(httpResponse(202, "application/json; charset=utf-8", body))
 		}

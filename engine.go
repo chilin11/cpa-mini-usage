@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	eventDays       = 35
-	quotaInterval   = 15 * time.Minute
-	pricingInterval = 6 * time.Hour
+	eventDays            = 35
+	quotaInterval        = 15 * time.Minute
+	pricingInterval      = 6 * time.Hour
+	pricingRetryInterval = 5 * time.Minute
 )
 
 type Event struct {
@@ -209,6 +210,7 @@ type Engine struct {
 	quotaRefreshFinished time.Time
 	accountRefresh       map[string]AccountRefreshState
 	priceUpdated         time.Time
+	priceLastAttempt     time.Time
 	priceError           string
 	quotaError           string
 	storageError         string
@@ -218,6 +220,7 @@ type Engine struct {
 	done                 chan struct{}
 	stopOnce             sync.Once
 	refreshMu            sync.RWMutex
+	priceRefreshMu       sync.Mutex
 	consuming            map[string]bool
 	lastRefresh          time.Time
 }
@@ -239,19 +242,18 @@ func (e *Engine) start() {
 		// Begin collecting immediately; there is no fixed startup delay.
 		go e.refreshPrices(false)
 		e.kickRefresh(false)
-		tq := time.NewTicker(quotaInterval)
-		tp := time.NewTicker(pricingInterval)
+		// Check deadlines more often than their intervals so an attempt started
+		// just after a tick does not cost a whole extra refresh interval.
+		refreshTick := time.NewTicker(time.Minute)
 		tc := time.NewTicker(24 * time.Hour)
-		defer tq.Stop()
-		defer tp.Stop()
+		defer refreshTick.Stop()
 		defer tc.Stop()
 		for {
 			select {
 			case <-e.done:
 				return
-			case <-tq.C:
+			case <-refreshTick.C:
 				e.kickRefresh(false)
-			case <-tp.C:
 				go e.refreshPrices(false)
 			case <-tc.C:
 				e.mu.Lock()
@@ -871,17 +873,34 @@ func shortID(id string) string {
 	return id[:7] + "..." + id[len(id)-4:]
 }
 
-func (e *Engine) refreshPrices(force bool) {
-	e.mu.RLock()
-	last := e.priceUpdated
-	e.mu.RUnlock()
-	if !force && !last.IsZero() && time.Since(last) < pricingInterval {
+func (e *Engine) refreshPrices(retryFailed bool) {
+	client := &http.Client{Timeout: 20 * time.Second}
+	e.refreshPricesWith(retryFailed, client.Do)
+}
+
+func (e *Engine) refreshPricesWith(retryFailed bool, get func(*http.Request) (*http.Response, error)) {
+	// Manual and scheduled retries cannot overlap or overwrite a newer result.
+	if !e.priceRefreshMu.TryLock() {
 		return
 	}
-	client := &http.Client{Timeout: 20 * time.Second}
+	defer e.priceRefreshMu.Unlock()
+
+	e.mu.Lock()
+	if e.priceError != "" {
+		if !retryFailed && time.Since(e.priceLastAttempt) < pricingRetryInterval {
+			e.mu.Unlock()
+			return
+		}
+	} else if !e.priceUpdated.IsZero() && time.Since(e.priceUpdated) < pricingInterval {
+		e.mu.Unlock()
+		return
+	}
+	e.priceLastAttempt = time.Now()
+	e.mu.Unlock()
+
 	req, _ := http.NewRequest("GET", "https://models.dev/api.json", nil)
 	req.Header.Set("User-Agent", "cpa-mini-usage/0.1")
-	resp, err := client.Do(req)
+	resp, err := get(req)
 	if err != nil {
 		e.setPriceError("Price catalog fetch failed")
 		return

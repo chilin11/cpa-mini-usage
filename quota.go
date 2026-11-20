@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const allQuotaReadsFailed = "All OAuth quota reads failed; check the individual account messages"
+
 type AuthEntry struct {
 	Index    string
 	ID       string
@@ -68,8 +70,12 @@ func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, 
 	e.mu.Unlock()
 	go func() {
 		message := ""
+		succeeded := false
 		defer func() {
 			e.mu.Lock()
+			if succeeded && e.quotaError == allQuotaReadsFailed {
+				e.quotaError = ""
+			}
 			e.accountRefresh[authID] = AccountRefreshState{FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Error: message}
 			e.refreshMu.RUnlock()
 			e.mu.Unlock()
@@ -83,7 +89,8 @@ func (e *Engine) beginAccountRefresh(authID string, rpc func(string, any) (any, 
 			if entry.ID != authID || !quotaProvider(entry.Provider) {
 				continue
 			}
-			if !read(entry) {
+			succeeded = read(entry)
+			if !succeeded {
 				e.mu.RLock()
 				message = e.quotas[authID].Error
 				e.mu.RUnlock()
@@ -202,7 +209,7 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 	if attempted == 0 {
 		e.quotaFailure("No Claude, Codex or Antigravity OAuth credentials were found")
 	} else if successful == 0 {
-		e.quotaFailure("All OAuth quota reads failed; check the individual account messages")
+		e.quotaFailure(allQuotaReadsFailed)
 	}
 }
 

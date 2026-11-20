@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -23,6 +26,43 @@ func TestPrices(t *testing.T) {
 		t.Fatalf("cost=%f ok=%v", c, ok)
 	}
 }
+func TestPriceRefreshRecovery(t *testing.T) {
+	for _, mode := range []string{"scheduled", "manual"} {
+		t.Run(mode, func(t *testing.T) {
+			e := newEngine()
+			e.persistence.Enabled = false
+			e.priceUpdated = time.Now().Add(-pricingInterval)
+			e.prices["cached"] = ModelPrice{Input: 1}
+			calls := 0
+			fetch := func(*http.Request) (*http.Response, error) {
+				calls++
+				if calls == 1 {
+					return nil, errors.New("temporarily offline")
+				}
+				body := `{"openai":{"models":{"gpt-5.5":{"cost":{"input":2,"output":8}}}}}`
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}
+			e.refreshPricesWith(false, fetch)
+			e.refreshPricesWith(false, fetch)
+			if calls != 1 || e.snapshot().PriceError == "" || e.prices["cached"].Input != 1 {
+				t.Fatal("failed download must keep cached prices and back off")
+			}
+			if mode == "scheduled" {
+				e.priceLastAttempt = time.Now().Add(-pricingRetryInterval)
+			}
+			e.refreshPricesWith(mode == "manual", fetch)
+			if gotErr, gotInput := e.snapshot().PriceError, e.prices["openai/gpt-5.5"].Input; calls != 2 || gotErr != "" || gotInput != 2 {
+				t.Fatalf("successful retry: attempts=%d, price error=%q, input price=%v", calls, gotErr, gotInput)
+			}
+			e.refreshPricesWith(false, fetch)
+			e.refreshPricesWith(true, fetch)
+			if calls != 2 {
+				t.Fatal("a fresh price catalog should not be downloaded again")
+			}
+		})
+	}
+}
+
 func TestClaudeQuota(t *testing.T) {
 	raw := `{"five_hour":{"utilization":34.5,"resets_at":"2026-10-09T21:00:00Z"},"seven_day":{"utilization":67,"resets_at":"2026-10-13T00:00:00Z"}}`
 	five, week, err := parseClaudeQuota([]byte(raw))

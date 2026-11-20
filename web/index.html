@@ -285,7 +285,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.34</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.35</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -367,7 +367,9 @@ let key = '', data = null, tab = 'quota', filter = '', expanded = '';
 let loading = false, headerLoading = false, phase = 'waiting', loadSerial = 0, recentPage = 0;
 let quotaStamp='',requestStamp='',lastSyncAt=0, accountSnapshotSerial=0,appliedAccountSnapshotSerial=0,accountMutationSerial=0;
 const accountJobs=new Map();
-let statusKey='正在读取登录状态', alertKeys=[];
+let statusKey='正在读取登录状态', quotaAlertError='', alertTimer;
+const alertDuration=60000;
+const alertGroups={snapshot:new Map(),operation:new Map()};
 let settingsJob=null,settingsError=null;
 const cardCache=new Map(), accountErrors=new Map();
 // Per-account write actions: in-flight jobs, transient notes, and the redeem id (plus chosen
@@ -514,7 +516,7 @@ function applyLanguage(){
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
   $('account-search').placeholder=t('搜索账户（名称、邮箱或 ID）');
-  $('status').textContent=t(statusKey);setAlert(alertKeys);cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();
+  $('status').textContent=t(statusKey);renderAlerts();cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();
 }
 function setLanguage(value,persist=true){
   language=value==='en'?'en':'zh';if(persist){try{localStorage.setItem(languageStorage,language);}catch{}}
@@ -650,7 +652,36 @@ function noData(){
   if(phase==='error')return empty('暂时无法读取数据','为避免误读，已清除旧快照。请检查连接后点击右上角重试。');
   return empty('需要 CPA 登录','请在同源 CPA 管理页面登录并保存登录状态。');
 }
-function setAlert(messages){alertKeys=Array.isArray(messages)?messages:messages?[messages]:[];$('alert').textContent=alertKeys.map(message).join(' · ');$('alert').classList.toggle('hide',!alertKeys.length);}
+function setAlert(messages,group='operation'){
+  const values=Array.isArray(messages)?messages:messages?[messages]:[];
+  const previous=alertGroups[group],next=new Map(),until=performance.now()+alertDuration;
+  // Keep expired entries until they disappear from their source, so polls never re-arm them.
+  for(const value of values){
+    const id=JSON.stringify(value);
+    next.set(id,previous.get(id)??{value,until});
+  }
+  alertGroups[group]=next;
+  renderAlerts();
+}
+function renderAlerts(){
+  clearTimeout(alertTimer);
+  const now=performance.now(),visible=new Set();let nextExpiry=Infinity;
+  for(const group of Object.values(alertGroups))for(const {value,until} of group.values()){
+    if(until<=now)continue;
+    visible.add(message(value));nextExpiry=Math.min(nextExpiry,until);
+  }
+  const alert=$('alert'),text=[...visible].join(' · ');
+  if(alert.textContent!==text)alert.textContent=text;
+  alert.classList.toggle('hide',!text);
+  alertTimer=Number.isFinite(nextExpiry)?setTimeout(renderAlerts,Math.ceil(nextExpiry-now)):undefined;
+}
+function syncSnapshotStatus(snapshot,waiting=false,slow=false){
+  // The server can omit the previous batch error while a new batch is still in progress.
+  if(!snapshot.quota_refreshing||snapshot.quota_error)quotaAlertError=snapshot.quota_error||'';
+  const issues=[snapshot.storage_error&&errorKey(snapshot.storage_error,'存储读取失败。'),snapshot.price_error&&errorKey(snapshot.price_error,'价格读取失败。'),quotaAlertError&&errorKey(quotaAlertError,'额度接口不可用。'),slow?'额度接口响应较慢，稍后自动同步。':''].filter(Boolean);
+  setStatus(waiting?'正在刷新额度':snapshot.quota_refreshing?'额度刷新中':issues.length?'部分数据异常':'已连接');
+  alertGroups.operation.clear();setAlert(issues,'snapshot');
+}
 function readCPAStorage(storage,name){
   try {
     let raw=storage.getItem(name);if(!raw)return null;
@@ -720,7 +751,7 @@ function clearSnapshot(needsLogin,msg){
   data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();closeDisable();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
-  setAlert(msg);render();
+  quotaAlertError='';alertGroups.snapshot.clear();setAlert(msg);render();
 }
 function validSnapshot(snapshot){if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw failure('CPA 快照格式异常。');return snapshot;}
 const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));
@@ -729,7 +760,7 @@ async function load(force=false){
   const serial=++loadSerial,saved=guessKey();
   if(key!==saved){clearSnapshot(!saved,'');}
   const quiet=!force&&Boolean(data)&&key===saved;
-  key=saved;if(!quiet)setAlert('');
+  key=saved;
   if(!key){loading=false;clearSnapshot(true,'');syncControls();return;}
   loading=true;headerLoading=!quiet;phase='loading';$('dashboard').classList.remove('needs-login');$('gate').classList.add('hide');if(!quiet){setStatus(force?'正在刷新额度':'正在连接');syncControls();}
   if(!data)render();
@@ -742,12 +773,11 @@ async function load(force=false){
       if(guessKey()!==saved){await load();return;}
       acceptSnapshot(validSnapshot(snapshot));lastSyncAt=Date.now();
       waiting=force&&(snapshot.quota_refreshing||!snapshot.quota_refresh_finished_at||snapshot.quota_refresh_finished_at===finishedBefore);
-      if(!waiting)break;setStatus('正在刷新额度');await pause();if(serial!==loadSerial)return;
+      syncSnapshotStatus(snapshot,waiting);
+      if(!waiting)break;await pause();if(serial!==loadSerial)return;
     }while(Date.now()<deadline);
+    if(waiting)syncSnapshotStatus(data,false,true);
     if(tab==='requests'&&supportsHistory()&&!historyBusy&&historyIndex===0)await loadHistory(true);
-    if(serial!==loadSerial)return;
-    const issues=[data.storage_error&&errorKey(data.storage_error,'存储读取失败。'),data.price_error&&errorKey(data.price_error,'价格读取失败。'),data.quota_error&&errorKey(data.quota_error,'额度接口不可用。'),waiting?'额度接口响应较慢，稍后自动同步。':''].filter(Boolean);
-    setStatus(data.quota_refreshing?'额度刷新中':issues.length?'部分数据异常':'已连接');setAlert(issues);
   } catch(err) {
     if(serial!==loadSerial)return;
     if(guessKey()!==saved){await load();return;}
@@ -759,19 +789,19 @@ async function load(force=false){
 async function refreshRequests(){
   if(requestJob||loading||settingsJob)return;
   if(key!==guessKey()||!key){await load();return;}
-  const job={key,serial:loadSerial};requestJob=job;requestStatusKey='正在同步请求…';setAlert('');
+  const job={key,serial:loadSerial};requestJob=job;requestStatusKey='正在同步请求…';
   syncHeader();updateSyncInfo();$('page-requests').setAttribute('aria-busy','true');
   const current=()=>requestJob===job&&loadSerial===job.serial;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){requestJob=null;await load();}return true;}return !current();};
   try{
     const snapshot=await api('data');if(await authChanged())return;validSnapshot(snapshot);
+    syncSnapshotStatus(snapshot);
     const requests=requestContent({...data,credentials:snapshot.credentials,recent:snapshot.recent});
     data={...data,credentials:snapshot.credentials,recent:snapshot.recent,generated_at:snapshot.generated_at,history_available:snapshot.history_available};
     if(requests!==requestStamp){renderRequests();requestStamp=requests;}
     if(supportsHistory())await loadHistory(true);
     if(await authChanged())return;
     lastSyncAt=Date.now();requestStatusKey=historyError?'请求同步失败':'请求已同步';
-    const issues=[snapshot.storage_error&&errorKey(snapshot.storage_error,'存储读取失败。'),snapshot.price_error&&errorKey(snapshot.price_error,'价格读取失败。')].filter(Boolean);setAlert(issues);
   }catch(err){
     if(await authChanged())return;
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else{requestStatusKey='请求同步失败';setAlert(err.ui||errorKey(err.message));}
@@ -797,7 +827,7 @@ async function refreshAccount(id){
       await pause();if(await authChanged())return;
       const snapshotSerial=++accountSnapshotSerial,mutation=accountMutationSerial,snapshot=await api('data');if(await authChanged())return;
       if(mutation!==accountMutationSerial)continue; // Never apply a read straddling another card's write.
-      validSnapshot(snapshot);if(snapshotSerial>appliedAccountSnapshotSerial){appliedAccountSnapshotSerial=snapshotSerial;acceptSnapshot(snapshot);lastSyncAt=Date.now();}
+      validSnapshot(snapshot);if(snapshotSerial>appliedAccountSnapshotSerial){appliedAccountSnapshotSerial=snapshotSerial;acceptSnapshot(snapshot);syncSnapshotStatus(snapshot);lastSyncAt=Date.now();}
       const state=data?.account_refresh?.[id];
       if(state&&!state.refreshing&&state.finished_at&&state.finished_at!==baseline){if(state.error)showAccountError(id,errorKey(state.error,'账户额度刷新失败，请稍后重试。'));return;}
     }
