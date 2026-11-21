@@ -284,7 +284,7 @@ func billableOutput(ev Event) int64 {
 	return ev.Output
 }
 
-var antigravityTierSuffixes = []string{"-thinking", "-high", "-medium", "-low", "-minimal", "-tiered"}
+var antigravityTierSuffixes = []string{"-thinking", "-xhigh", "-high", "-medium", "-low", "-minimal", "-tiered"}
 
 // antigravityPriceKeys follows sub2api's lookup: exact model id first, then the
 // base model with the thinking-tier suffix removed (the tier selects reasoning

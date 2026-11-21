@@ -75,6 +75,7 @@ func TestAntigravityPriceKeys(t *testing.T) {
 		"claude-opus-4-6-thinking":   {"anthropic/claude-opus-4-6-thinking", "anthropic/claude-opus-4-6"},
 		"claude-sonnet-5-5-high":     {"anthropic/claude-sonnet-5-5-high", "anthropic/claude-sonnet-5-5"},
 		"gemini-3-flash":             {"google/gemini-3-flash", "google/gemini-3-flash-preview"},
+		"gemini-4-neon-xhigh":        {"google/gemini-4-neon-xhigh", "google/gemini-4-neon", "google/gemini-4-neon-preview"},
 		"models/gemini-4-argon-high": {"google/gemini-4-argon-high", "google/gemini-4-argon", "google/gemini-4-argon-preview"},
 		"gpt-oss-120b-medium":        {"openai/gpt-oss-120b-medium", "openai/gpt-oss-120b"},
 		"tab_flash_lite":             nil,
@@ -90,6 +91,27 @@ func TestAntigravityPriceKeys(t *testing.T) {
 	}
 	if _, ok := e.priceFor(Event{Provider: "antigravity", Model: "gpt-oss-120b-medium"}); ok {
 		t.Fatal("unknown model must stay unpriced, not guessed")
+	}
+}
+
+func TestAntigravityNeonXHighCost(t *testing.T) {
+	prices, err := decodePrices([]byte(`{"google":{"models":{"gemini-4-neon":{"cost":{"input":3,"output":15,"cache_read":0.15}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEngine()
+	e.prices = prices
+	for _, tc := range []struct {
+		input, output, cached int64
+		want                  float64
+	}{
+		{64790, 1520, 62460, 0.039159},
+		{62460, 1070, 0, 0.20343},
+	} {
+		ev := Event{Provider: "antigravity", Model: "gemini-4-neon-xhigh", Input: tc.input, Output: tc.output, CacheRead: tc.cached, Total: tc.input + tc.output}
+		if cost, ok := e.eventCost(ev); !ok || !near(&cost, tc.want) {
+			t.Errorf("cached=%d, cost=%v, ok=%v, want=%v", tc.cached, cost, ok, tc.want)
+		}
 	}
 }
 
