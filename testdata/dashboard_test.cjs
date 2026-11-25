@@ -56,7 +56,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     clearTimeout(timer){if(timer===alertTimeout)alertTimeout=undefined;}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, openWakeup, closeWakeup, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, openWakeup, closeWakeup, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, parseCronJS, nextCronRunsJS, buildCadenceCron, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){
     fakeNow+=ms;
@@ -1752,10 +1752,10 @@ for(const language of ['zh','en'])test(`${language}: pagination boundary, sortin
   assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 14 个，共 14 个账户':'Showing 1–12 / 14 matching, 14 accounts total');
 });
 
-test('scheduled wakeup dialog saves settings, validates daily times, closes on Escape and runs full/single wakeup', async () => {
+test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, model selects, validation and full/single wakeup', async () => {
   const calls = [];
   let savedConfig = {
-    enabled: false, mode: 'daily', times: ['07:00'], timezone_offset_min: 480, skip_active_window: true,
+    enabled: false, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, skip_active_window: true,
     providers: { claude: true, codex: true, antigravity: true }, excluded_auth_ids: [], models: {}, message: 'hi',
   };
   let runSeq = 0;
@@ -1776,14 +1776,15 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
       last_run_at: finishedAt,
       last_run_finished_at: finishedAt,
       last_run_trigger: runSeq ? 'manual' : '',
-      next_scheduled_at: savedConfig.enabled ? '2026-10-10T23:00:00Z' : '',
+      next_scheduled_at: savedConfig.enabled ? '2026-11-25T03:00:00Z' : '',
+      next_scheduled_runs: savedConfig.enabled ? ['2026-11-25T03:00:00Z', '2026-11-25T08:00:00Z'] : [],
       results,
     },
   });
   const d = dashboard({ managementKey: 'key' }, async (url, options = {}) => {
     calls.push({ url, options });
     if (url.startsWith('/v0/management/auth-files/models')) {
-      return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-haiku-4-5-20251001' }] }) };
+      return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-haiku-4-5-20251001' }, { id: 'claude-sonnet-4-6' }] }) };
     }
     if (url.endsWith('/wakeup/config')) {
       savedConfig = JSON.parse(options.body);
@@ -1797,7 +1798,7 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
     if (url.endsWith('/wakeup/run')) {
       const body = JSON.parse(options.body);
       runSeq++;
-      finishedAt = `2026-10-09T07:00:0${runSeq}Z`;
+      finishedAt = `2026-11-25T06:00:0${runSeq}Z`;
       running = false;
       runningAuths = [];
       results = {
@@ -1807,6 +1808,12 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
     }
     return { ok: true, status: 200, json: async () => snapshotPayload() };
   });
+
+  // Verify frontend Cron cadence builder and parser match 5-hour daytime schedule.
+  assert.equal(d.api.buildCadenceCron(6, 0, 5, 22, '*'), '0 6,11,16,21 * * *');
+  assert.equal(d.api.buildCadenceCron(6, 5, 5, 22, '1-5'), '5 6,11,16,21 * * 1-5');
+  assert(d.api.nextCronRunsJS('0 6,11,16,21 * * *', 480, 4).length === 4);
+  assert.equal(d.api.nextCronRunsJS('bad cron', 480, 4), null);
 
   await d.api.load();
   assert.equal(d.elements.get('wakeup-open').hidden, false);
@@ -1818,24 +1825,53 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
   d.api.setTab('quota');
   assert.equal(d.elements.get('wakeup-open').hidden, false);
 
-  // Open wakeup modal: background becomes inert, scope reflects enabled accounts.
+  // Open wakeup modal: background becomes inert, Cron preview renders upcoming chips.
   d.api.openWakeup();
   assert.equal(d.elements.get('wakeup-dialog').hidden, false);
   assert.equal(d.elements.get('dashboard').inert, true);
+  assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * *');
   assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
+  assert(descendants(d.elements.get('wakeup-cron-preview')).filter(n => n.className === 'wakeup-preview-chip').length === 4);
 
-  // Validation rejects invalid model name and enabled schedule with zero providers.
+  // Clicking a preset updates Cron expression immediately.
+  const weekdayPreset = d.elements.get('wakeup-presets').children.find(b => b.dataset.cron === '0 6,11,16,21 * * 1-5');
+  assert(weekdayPreset, 'expected weekday 6AM preset');
+  weekdayPreset.onclick();
+  assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * 1-5');
+
+  // Cadence builder generates 5-hour schedule automatically on change.
+  d.elements.get('wakeup-gen-start').value = '6';
+  d.elements.get('wakeup-gen-min').value = '5';
+  d.elements.get('wakeup-gen-step').value = '5';
+  d.elements.get('wakeup-gen-end').value = '22';
+  d.elements.get('wakeup-gen-days').value = '*';
+  d.elements.get('wakeup-gen-step').onchange();
+  assert.equal(d.elements.get('wakeup-cron').value, '5 6,11,16,21 * * *');
+
+  // Validation rejects invalid Cron and invalid custom model names.
   d.elements.get('wakeup-enabled').checked = true;
+  d.elements.get('wakeup-cron').value = 'invalid cron';
+  assert.equal(await d.api.saveWakeupConfig(), false);
+  assert.match(d.elements.get('wakeup-message-box').textContent, /Cron 表达式无效/);
+
+  d.elements.get('wakeup-cron').value = '0 6,11,16,21 * * *';
+  d.elements.get('wakeup-model-select-claude').value = '__custom__';
+  d.elements.get('wakeup-model-select-claude').onchange();
+  assert.equal(d.elements.get('wakeup-model-claude').hidden, false);
   d.elements.get('wakeup-model-claude').value = 'bad model name';
   assert.equal(await d.api.saveWakeupConfig(), false);
   assert.match(d.elements.get('wakeup-message-box').textContent, /模型名称格式无效/);
 
   // Draft input survives background acceptSnapshot without overwriting edited fields.
-  d.elements.get('wakeup-model-claude').value = 'claude-haiku-4-5-20251001';
-  d.elements.get('wakeup-text').value = 'ping';
-  d.elements.get('wakeup-text').oninput();
+  d.elements.get('wakeup-model-select-claude').value = 'claude-haiku-4-5-20251001';
+  d.elements.get('wakeup-model-select-claude').onchange();
+  assert.equal(d.elements.get('wakeup-model-claude').hidden, true);
+  const dotQuickBtn = d.elements.get('wakeup-text').parentNode.children.find(n => n.dataset?.msg === '.');
+  assert(dotQuickBtn, 'expected quick message button');
+  dotQuickBtn.onclick();
+  assert.equal(d.elements.get('wakeup-text').value, '.');
   d.api.acceptSnapshot(snapshotPayload());
-  assert.equal(d.elements.get('wakeup-text').value, 'ping');
+  assert.equal(d.elements.get('wakeup-text').value, '.');
 
   // Account selector in modal toggles exclusion and clears exclusion cleanly.
   d.elements.get('wakeup-accounts-toggle').onclick();
@@ -1846,19 +1882,17 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
   d.elements.get('wakeup-clear-excluded').onclick();
   assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
 
-  // Add second time slot and save valid config.
-  d.elements.get('wakeup-time-input').value = '12:05';
-  d.elements.get('wakeup-time-add').onclick();
+  // Save valid Cron config.
   assert.equal(await d.api.saveWakeupConfig(), true);
-
   const configCall = calls.find(c => c.url.endsWith('/wakeup/config'));
   assert(configCall, 'expected POST wakeup/config');
   const sentCfg = JSON.parse(configCall.options.body);
   assert.equal(sentCfg.enabled, true);
-  assert.deepEqual(sentCfg.times, ['07:00', '12:05']);
+  assert.equal(sentCfg.mode, 'daily');
+  assert.equal(sentCfg.cron, '0 6,11,16,21 * * *');
   assert.equal(sentCfg.models.claude, 'claude-haiku-4-5-20251001');
-  assert.equal(sentCfg.message, 'ping');
-  assert.equal(d.elements.get('wakeup-open-label').textContent, '定时唤醒 · 07:00 +1');
+  assert.equal(sentCfg.message, '.');
+  assert.match(d.elements.get('wakeup-open-label').textContent, /^定时唤醒 · 下次 \d{2}:\d{2}$/);
 
   // Run full wakeup from modal.
   await d.api.runWakeupAll();
@@ -1898,7 +1932,7 @@ test('scheduled wakeup dialog saves settings, validates daily times, closes on E
 
   // Language switch translates wakeup button and dialog labels.
   d.api.setLanguage('en', false);
-  assert.equal(d.elements.get('wakeup-open-label').textContent, 'Wakeup · 07:00 +1');
+  assert.match(d.elements.get('wakeup-open-label').textContent, /^Wakeup · Next \d{2}:\d{2}$/);
   assert.equal(d.elements.get('wakeup-title').textContent, 'Scheduled Wakeup · Lock 5h Window');
 });
 

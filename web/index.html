@@ -135,17 +135,43 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .wakeup-dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:var(--muted)}
 #wakeup-open.wakeup-on .wakeup-dot{background:var(--good)}
 #wakeup-open.wakeup-busy .wakeup-dot{background:var(--accent)}
-.wakeup-modal-card{width:min(600px,100%)}
-.wakeup-summary{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);font-size:11px;color:var(--muted)}
+.wakeup-modal-card{width:min(640px,100%);gap:10px}
+.wakeup-hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border:1px solid var(--edge);border-radius:9px;background:var(--subtle)}
+.wakeup-hero.on{border-color:var(--good);background:var(--good-soft)}
+.wakeup-hero-check{font-size:13px;font-weight:650}
+.wakeup-summary{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted)}
 .wakeup-summary strong{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums}
 .wakeup-form{display:flex;flex-direction:column;gap:10px}
-.wakeup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.wakeup-block{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--subtle)}
+.wakeup-block-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.wakeup-block-title{font-size:12px;font-weight:650;color:var(--ink)}
+.wakeup-block-hint{font-size:11px;color:var(--muted)}
+.wakeup-presets{display:flex;flex-wrap:wrap;gap:6px}
+.wakeup-preset{min-height:28px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:11px;font-weight:550}
+.wakeup-preset:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.wakeup-preset[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:650}
+.wakeup-builder{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted)}
+.wakeup-builder select{min-height:28px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:11px}
+.wakeup-cron-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px;align-items:end}
 .wakeup-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:11px;color:var(--muted)}
-.wakeup-field input[type=text],.wakeup-field input[type=time],.wakeup-field select{width:100%;min-height:32px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-size:12px}
+.wakeup-field input[type=text],.wakeup-field select{width:100%;min-height:32px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-size:12px}
+.wakeup-preview{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.wakeup-preview.invalid{color:var(--bad)}
+.wakeup-preview-chip{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font:550 11px/1.4 var(--mono);font-variant-numeric:tabular-nums}
+.wakeup-preview-chip:first-of-type{border-color:var(--edge);background:var(--accent-soft);color:var(--accent)}
 .wakeup-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink);cursor:pointer}
 .wakeup-check input{width:14px;height:14px;margin:0;accent-color:var(--accent);cursor:pointer}
-.wakeup-providers{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-.wakeup-scope-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--subtle);font-size:11px;color:var(--muted)}
+.wakeup-msg-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wakeup-msg-row input{flex:1;min-width:140px}
+.wakeup-quick-msg{min-height:30px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--muted);font:600 11px/1 var(--mono)}
+.wakeup-quick-msg:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.wakeup-provider-list{display:flex;flex-direction:column;gap:6px}
+.wakeup-provider-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:start;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+.wakeup-provider-row.off{opacity:.6;background:var(--subtle)}
+.wakeup-provider-models{display:flex;flex-direction:column;gap:6px;min-width:0}
+.wakeup-model-slot{display:flex;flex-direction:column;gap:4px;min-width:0}
+.wakeup-model-slot-label{font-size:10px;color:var(--muted);font-weight:600}
+.wakeup-scope-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:11px;color:var(--muted)}
 .wakeup-scope-bar strong{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums}
 .wakeup-scope-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .wakeup-scope-actions .button{min-height:26px;padding:2px 8px;font-size:11px}
@@ -157,13 +183,11 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .wakeup-account-check{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex-shrink:0;border:1px solid var(--edge);border-radius:4px;background:var(--panel);font:700 11px/1 var(--mono);color:var(--panel)}
 .wakeup-account-item[aria-checked=true] .wakeup-account-check{border-color:var(--good);background:var(--good)}
 .wakeup-account-provider{flex-shrink:0;font-family:var(--mono);font-size:10px;color:var(--muted)}
-.wakeup-times-list{display:flex;flex-wrap:wrap;gap:6px;min-height:24px;align-items:center}
-.wakeup-time-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--edge);border-radius:6px;background:var(--accent-soft);color:var(--accent);font:600 12px/1.4 var(--mono)}
-.wakeup-time-chip button{border:0;background:transparent;color:inherit;padding:0 2px;font-size:13px;line-height:1}
 .wakeup-inline{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.wakeup-inline select,.wakeup-inline input{flex:1;min-width:120px}
+.wakeup-inline select,.wakeup-inline input{flex:1;min-width:110px}
+.wakeup-tz-btn{min-height:32px;padding:4px 8px;font-size:11px;white-space:nowrap}
 .wakeup-section-title{font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
-.wakeup-results{display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;padding-right:2px}
+.wakeup-results{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto;padding-right:2px}
 .wakeup-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--subtle);font-size:11px;min-width:0}
 .wakeup-result-main{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .wakeup-result-name{font-weight:600;color:var(--ink)}
@@ -333,7 +357,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 .timing-unit{display:block;font-size:10px;line-height:1.5;color:var(--muted);font-weight:400}
 .request-timing .timing-line{display:block;font-size:11px;line-height:1.5}
 .request-timing .timing-label{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:10px;color:var(--muted);margin-right:5px;letter-spacing:0}
-@media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:44px;min-width:44px}.modal-actions .button{min-height:44px}.wakeup-grid{grid-template-columns:minmax(0,1fr)}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
+@media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:44px;min-width:44px}.modal-actions .button{min-height:44px}.wakeup-cron-row,.wakeup-provider-row{grid-template-columns:minmax(0,1fr)}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
 @media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{flex-wrap:nowrap}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
 @media(max-width:350px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.tabs button{padding:6px 8px}}
 .needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login #wakeup-open,.needs-login .statusbar,.needs-login #updated{display:none}
@@ -343,7 +367,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.39</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.40</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -422,59 +446,115 @@ tbody tr:focus-within>td{background:var(--hover)}
 <div id="wakeup-dialog" class="modal" hidden>
   <div id="wakeup-card" class="modal-card wakeup-modal-card" role="dialog" aria-modal="true" aria-labelledby="wakeup-title" aria-describedby="wakeup-subtitle" tabindex="-1">
     <h2 id="wakeup-title" data-i18n="定时唤醒 · 锁定 5 小时窗口">定时唤醒 · 锁定 5 小时窗口</h2>
-    <p id="wakeup-subtitle" class="modal-sub" data-i18n="按计划向每个已启用账户发送一条极简消息，提前开启并锁定 5 小时额度计时周期。通过 CPA 宿主直接定向执行，不泄露令牌。">按计划向每个已启用账户发送一条极简消息，提前开启并锁定 5 小时额度计时周期。通过 CPA 宿主直接定向执行，不泄露令牌。</p>
-    <div id="wakeup-summary" class="wakeup-summary" role="status" aria-live="polite"></div>
+    <p id="wakeup-subtitle" class="modal-sub" data-i18n="按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。">按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。</p>
+    <div id="wakeup-hero" class="wakeup-hero">
+      <label class="wakeup-check wakeup-hero-check" for="wakeup-enabled"><input id="wakeup-enabled" type="checkbox"><span data-i18n="启用定时唤醒">启用定时唤醒</span></label>
+      <div id="wakeup-summary" class="wakeup-summary" role="status" aria-live="polite"></div>
+    </div>
     <p id="wakeup-message-box" class="modal-message hide" role="status" aria-live="polite"></p>
     <div class="wakeup-form">
-      <div class="wakeup-inline">
-        <label class="wakeup-check" for="wakeup-enabled"><input id="wakeup-enabled" type="checkbox"><span data-i18n="启用定时唤醒">启用定时唤醒</span></label>
-        <label class="wakeup-check" for="wakeup-skip-active"><input id="wakeup-skip-active" type="checkbox"><span data-i18n="跳过已激活的 5 小时窗口">跳过已激活的 5 小时窗口</span></label>
-      </div>
-      <div class="wakeup-grid">
-        <label class="wakeup-field" for="wakeup-mode"><span data-i18n="触发模式">触发模式</span><select id="wakeup-mode"><option value="daily" data-i18n="每天固定时间">每天固定时间</option><option value="reset" data-i18n="5 小时窗口重置后自动">5 小时窗口重置后自动</option><option value="both" data-i18n="每天固定时间 + 重置后自动">每天固定时间 + 重置后自动</option></select></label>
-        <div class="wakeup-field"><span data-i18n="时区（用于每天固定时间）">时区（用于每天固定时间）</span><div class="wakeup-inline"><select id="wakeup-tz" aria-label="定时唤醒时区"></select><button class="button" type="button" id="wakeup-tz-local" data-i18n="同步本机">同步本机</button></div></div>
-      </div>
-      <div id="wakeup-times-group" class="wakeup-field">
-        <span data-i18n="每天执行时间（最多 12 个）">每天执行时间（最多 12 个）</span>
-        <div id="wakeup-times-list" class="wakeup-times-list"></div>
-        <div class="wakeup-inline"><input id="wakeup-time-input" type="time" value="07:00" aria-label="添加唤醒时间"><button class="button" type="button" id="wakeup-time-add" data-i18n="添加时间">添加时间</button></div>
-      </div>
-      <div class="wakeup-field">
-        <span data-i18n="参与定时唤醒的服务商">参与定时唤醒的服务商</span>
-        <div class="wakeup-providers">
-          <label class="wakeup-check" for="wakeup-provider-claude"><input id="wakeup-provider-claude" type="checkbox"><span>Claude</span></label>
-          <label class="wakeup-check" for="wakeup-provider-codex"><input id="wakeup-provider-codex" type="checkbox"><span>Codex</span></label>
-          <label class="wakeup-check" for="wakeup-provider-antigravity"><input id="wakeup-provider-antigravity" type="checkbox"><span>Antigravity</span></label>
+      <section class="wakeup-block" aria-label="定时计划（Cron）">
+        <div class="wakeup-block-head">
+          <span class="wakeup-block-title" data-i18n="1. 定时计划（Cron · 每 5 小时）">1. 定时计划（Cron · 每 5 小时）</span>
+          <span class="wakeup-block-hint" data-i18n="选预设、按周期生成，或直接输入 5 段 Cron">选预设、按周期生成，或直接输入 5 段 Cron</span>
         </div>
-      </div>
-      <div class="wakeup-field" id="wakeup-accounts-section">
-        <div class="wakeup-scope-bar">
-          <span id="wakeup-scope-text"></span>
-          <div class="wakeup-scope-actions">
-            <button class="button" type="button" id="wakeup-clear-excluded" data-i18n="清除排除" hidden>清除排除</button>
-            <button class="button" type="button" id="wakeup-accounts-toggle" aria-expanded="false" aria-controls="wakeup-accounts-list" data-i18n="选择账户">选择账户</button>
+        <div id="wakeup-presets" class="wakeup-presets">
+          <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * *" data-i18n="早 6 点每 5h（6/11/16/21）">早 6 点每 5h（6/11/16/21）</button>
+          <button class="wakeup-preset" type="button" data-cron="0 7,12,17,22 * * *" data-i18n="早 7 点每 5h（7/12/17/22）">早 7 点每 5h（7/12/17/22）</button>
+          <button class="wakeup-preset" type="button" data-cron="0 8,13,18 * * *" data-i18n="早 8 点每 5h（8/13/18）">早 8 点每 5h（8/13/18）</button>
+          <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * 1-5" data-i18n="工作日早 6 点">工作日早 6 点</button>
+          <button class="wakeup-preset" type="button" data-cron="0 */5 * * *" data-i18n="全天每 5h">全天每 5h</button>
+        </div>
+        <div class="wakeup-builder" aria-label="快速生成每 5 小时 Cron">
+          <span data-i18n="从">从</span>
+          <select id="wakeup-gen-start" aria-label="起始小时"></select>
+          <select id="wakeup-gen-min" aria-label="分钟"><option value="0">:00</option><option value="5">:05</option><option value="15">:15</option><option value="30">:30</option><option value="45">:45</option></select>
+          <span data-i18n="起，每">起，每</span>
+          <select id="wakeup-gen-step" aria-label="间隔小时"><option value="3" data-i18n="3 小时">3 小时</option><option value="4" data-i18n="4 小时">4 小时</option><option value="5" selected data-i18n="5 小时">5 小时</option><option value="6" data-i18n="6 小时">6 小时</option><option value="8" data-i18n="8 小时">8 小时</option><option value="12" data-i18n="12 小时">12 小时</option></select>
+          <span data-i18n="至">至</span>
+          <select id="wakeup-gen-end" aria-label="截止小时"></select>
+          <select id="wakeup-gen-days" aria-label="重复日期"><option value="*" data-i18n="每天">每天</option><option value="1-5" data-i18n="工作日">工作日</option><option value="0,6" data-i18n="周末">周末</option></select>
+        </div>
+        <div class="wakeup-cron-row">
+          <label class="wakeup-field" for="wakeup-cron"><span data-i18n="Cron 表达式（分 时 日 月 周）">Cron 表达式（分 时 日 月 周）</span><input id="wakeup-cron" type="text" class="tabnum" maxlength="128" autocomplete="off" placeholder="0 6,11,16,21 * * *"></label>
+          <div class="wakeup-field"><span data-i18n="时区">时区</span><div class="wakeup-inline"><select id="wakeup-tz" aria-label="定时唤醒时区"></select><button class="button wakeup-tz-btn" type="button" id="wakeup-tz-local" data-i18n="本机">本机</button></div></div>
+        </div>
+        <div id="wakeup-cron-preview" class="wakeup-preview" role="status" aria-live="polite"></div>
+      </section>
+      <section class="wakeup-block" aria-label="发送消息与模型">
+        <div class="wakeup-block-head">
+          <span class="wakeup-block-title" data-i18n="2. 消息内容与模型">2. 消息内容与模型</span>
+          <span class="wakeup-block-hint" data-i18n="勾选要唤醒的服务商，并选择使用的轻量模型">勾选要唤醒的服务商，并选择使用的轻量模型</span>
+        </div>
+        <div class="wakeup-field">
+          <span data-i18n="发送消息（越短越省额度）">发送消息（越短越省额度）</span>
+          <div class="wakeup-msg-row">
+            <input id="wakeup-text" type="text" maxlength="128" autocomplete="off" placeholder="hi">
+            <button class="wakeup-quick-msg" type="button" data-msg="hi">hi</button>
+            <button class="wakeup-quick-msg" type="button" data-msg=".">.</button>
+            <button class="wakeup-quick-msg" type="button" data-msg="OK">OK</button>
           </div>
         </div>
-        <div id="wakeup-accounts-list" class="wakeup-accounts-list" role="group" aria-label="选择参与定时唤醒的账户" hidden></div>
-      </div>
-      <label class="wakeup-field" for="wakeup-text"><span data-i18n="唤醒消息（越短消耗越少）">唤醒消息（越短消耗越少）</span><input id="wakeup-text" type="text" maxlength="128" autocomplete="off" placeholder="hi"></label>
-      <div class="wakeup-section-title" data-i18n="唤醒模型（留空则自动选择轻量模型）">唤醒模型（留空则自动选择轻量模型）</div>
-      <div class="wakeup-grid">
-        <label class="wakeup-field" for="wakeup-model-claude"><span>Claude</span><input id="wakeup-model-claude" type="text" maxlength="128" list="wakeup-list-claude" autocomplete="off" placeholder="自动（轻量模型）"></label>
-        <label class="wakeup-field" for="wakeup-model-codex"><span>Codex</span><input id="wakeup-model-codex" type="text" maxlength="128" list="wakeup-list-codex" autocomplete="off" placeholder="自动（轻量模型）"></label>
-        <label class="wakeup-field" for="wakeup-model-ag-gemini"><span data-i18n="Antigravity · Gemini 模型组">Antigravity · Gemini 模型组</span><input id="wakeup-model-ag-gemini" type="text" maxlength="128" list="wakeup-list-ag-gemini" autocomplete="off" placeholder="自动（轻量模型）"></label>
-        <label class="wakeup-field" for="wakeup-model-ag-claude"><span data-i18n="Antigravity · Claude / GPT 组">Antigravity · Claude / GPT 组</span><input id="wakeup-model-ag-claude" type="text" maxlength="128" list="wakeup-list-ag-claude" autocomplete="off" placeholder="自动（轻量模型）"></label>
-      </div>
-      <datalist id="wakeup-list-claude"></datalist>
-      <datalist id="wakeup-list-codex"></datalist>
-      <datalist id="wakeup-list-ag-gemini"></datalist>
-      <datalist id="wakeup-list-ag-claude"></datalist>
+        <div class="wakeup-provider-list">
+          <div class="wakeup-provider-row" id="wakeup-row-claude">
+            <label class="wakeup-check" for="wakeup-provider-claude"><input id="wakeup-provider-claude" type="checkbox"><span>Claude</span></label>
+            <div class="wakeup-provider-models">
+              <div class="wakeup-model-slot">
+                <select id="wakeup-model-select-claude" aria-label="Claude 唤醒模型"></select>
+                <input id="wakeup-model-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+              </div>
+            </div>
+          </div>
+          <div class="wakeup-provider-row" id="wakeup-row-codex">
+            <label class="wakeup-check" for="wakeup-provider-codex"><input id="wakeup-provider-codex" type="checkbox"><span>Codex</span></label>
+            <div class="wakeup-provider-models">
+              <div class="wakeup-model-slot">
+                <select id="wakeup-model-select-codex" aria-label="Codex 唤醒模型"></select>
+                <input id="wakeup-model-codex" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+              </div>
+            </div>
+          </div>
+          <div class="wakeup-provider-row" id="wakeup-row-antigravity">
+            <label class="wakeup-check" for="wakeup-provider-antigravity"><input id="wakeup-provider-antigravity" type="checkbox"><span>Antigravity</span></label>
+            <div class="wakeup-provider-models">
+              <div class="wakeup-model-slot">
+                <span class="wakeup-model-slot-label" data-i18n="Gemini 模型组">Gemini 模型组</span>
+                <select id="wakeup-model-select-ag-gemini" aria-label="Antigravity Gemini 组唤醒模型"></select>
+                <input id="wakeup-model-ag-gemini" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+              </div>
+              <div class="wakeup-model-slot">
+                <span class="wakeup-model-slot-label" data-i18n="Claude / GPT 模型组">Claude / GPT 模型组</span>
+                <select id="wakeup-model-select-ag-claude" aria-label="Antigravity Claude / GPT 组唤醒模型"></select>
+                <input id="wakeup-model-ag-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="wakeup-block" aria-label="策略与账户范围">
+        <div class="wakeup-block-head">
+          <span class="wakeup-block-title" data-i18n="3. 策略与账户范围">3. 策略与账户范围</span>
+        </div>
+        <div class="wakeup-inline">
+          <label class="wakeup-check" for="wakeup-skip-active"><input id="wakeup-skip-active" type="checkbox"><span data-i18n="跳过已激活的 5 小时窗口">跳过已激活的 5 小时窗口</span></label>
+          <label class="wakeup-check" for="wakeup-auto-reset"><input id="wakeup-auto-reset" type="checkbox"><span data-i18n="5 小时窗口重置后也自动补发">5 小时窗口重置后也自动补发</span></label>
+        </div>
+        <div class="wakeup-field" id="wakeup-accounts-section">
+          <div class="wakeup-scope-bar">
+            <span id="wakeup-scope-text"></span>
+            <div class="wakeup-scope-actions">
+              <button class="button" type="button" id="wakeup-clear-excluded" data-i18n="清除排除" hidden>清除排除</button>
+              <button class="button" type="button" id="wakeup-accounts-toggle" aria-expanded="false" aria-controls="wakeup-accounts-list" data-i18n="选择账户">选择账户</button>
+            </div>
+          </div>
+          <div id="wakeup-accounts-list" class="wakeup-accounts-list" role="group" aria-label="选择参与定时唤醒的账户" hidden></div>
+        </div>
+      </section>
     </div>
     <div id="wakeup-results-wrap" hidden>
       <div class="wakeup-section-title" data-i18n="最近唤醒记录">最近唤醒记录</div>
       <div id="wakeup-results" class="wakeup-results"></div>
     </div>
-    <p class="modal-warning" data-i18n="定时唤醒仅向已启用且未排除的账户发送极简请求，会消耗极少量 token 并计入请求历史。单账户卡片上的“唤醒”按钮可随时单独测试。">定时唤醒仅向已启用且未排除的账户发送极简请求，会消耗极少量 token 并计入请求历史。单账户卡片上的“唤醒”按钮可随时单独测试。</p>
     <div class="modal-actions wakeup-actions">
       <button class="button" type="button" id="wakeup-run-now" data-i18n="立即唤醒全部">立即唤醒全部</button>
       <div class="wakeup-actions-right">
@@ -650,7 +730,23 @@ const translations={
   '参与账户：{included} / {total} 个已启用（已排除 {excluded}）':'Included: {included} / {total} enabled ({excluded} excluded)','参与账户：{included} / {total} 个已启用':'Included: {included} / {total} enabled',
   '暂无已启用账户':'No enabled accounts','选择账户':'Manage accounts','收起账户':'Hide accounts','清除排除':'Clear exclusions','选择参与定时唤醒的账户':'Choose accounts included in scheduled wakeup',
   '按当前配置立即唤醒（已勾选跳过已激活窗口）':'Run now using current settings (skips active 5h windows)','按当前配置立即唤醒全部符合条件的账户':'Run now for all eligible accounts',
-  '最近结果统计':'Latest results','上次唤醒：已唤醒':'Last wakeup: Sent','上次唤醒：已跳过':'Last wakeup: Skipped','上次唤醒：失败':'Last wakeup: Failed','唤醒失败':'Wakeup failed'
+  '最近结果统计':'Latest results','上次唤醒：已唤醒':'Last wakeup: Sent','上次唤醒：已跳过':'Last wakeup: Skipped','上次唤醒：失败':'Last wakeup: Failed','唤醒失败':'Wakeup failed',
+  '按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。':'Send a minimal message to each enabled account on a Cron schedule (e.g. 6:00, 11:00, 16:00, 21:00) to lock more daytime 5-hour windows.',
+  '定时计划（Cron）':'Cron schedule','1. 定时计划（Cron · 每 5 小时）':'1. Schedule (Cron · every 5h)','选预设、按周期生成，或直接输入 5 段 Cron':'Pick a preset, generate a 5h cadence, or edit 5-field Cron',
+  '早 6 点每 5h（6/11/16/21）':'6 AM / 5h (6,11,16,21)','早 7 点每 5h（7/12/17/22）':'7 AM / 5h (7,12,17,22)','早 8 点每 5h（8/13/18）':'8 AM / 5h (8,13,18)','工作日早 6 点':'Weekdays 6 AM / 5h','全天每 5h':'All day / 5h',
+  '快速生成每 5 小时 Cron':'Quick 5-hour Cron generator','从':'From','起始小时':'Start hour','分钟':'Minute','起，每':'every','间隔小时':'Interval hours','3 小时':'3h','4 小时':'4h','5 小时':'5h','6 小时':'6h','8 小时':'8h','12 小时':'12h',
+  '至':'until','截止小时':'End hour','重复日期':'Days','每天':'Every day','工作日':'Weekdays','周末':'Weekends',
+  'Cron 表达式（分 时 日 月 周）':'Cron expression (min hour day month dow)','时区':'Timezone','本机':'Local',
+  '接下来执行：':'Next runs:','今天':'Today','明天':'Tomorrow','周日':'Sun','周一':'Mon','周二':'Tue','周三':'Wed','周四':'Thu','周五':'Fri','周六':'Sat',
+  'Cron 表达式无效（需要 5 段：分 时 日 月 周，例如 0 6,11,16,21 * * *）。':'Invalid Cron expression (5 fields required: min hour day month dow, e.g. 0 6,11,16,21 * * *).',
+  '仅在 5 小时窗口重置后自动唤醒（未设置 Cron）。':'Will only wake automatically after 5-hour windows reset (no Cron set).',
+  '请填写有效的 5 段 Cron 表达式，或勾选“5 小时窗口重置后也自动补发”。':'Enter a valid 5-field Cron expression or enable post-reset auto wakeup.',
+  '发送消息与模型':'Message and models','2. 消息内容与模型':'2. Message & models','勾选要唤醒的服务商，并选择使用的轻量模型':'Toggle providers and pick the lightweight model for each',
+  '发送消息（越短越省额度）':'Message text (shorter uses fewer tokens)','Claude 唤醒模型':'Claude wakeup model','Codex 唤醒模型':'Codex wakeup model',
+  'Gemini 模型组':'Gemini group','Claude / GPT 模型组':'Claude / GPT group','Antigravity Gemini 组唤醒模型':'Antigravity Gemini wakeup model','Antigravity Claude / GPT 组唤醒模型':'Antigravity Claude/GPT wakeup model',
+  '自动（轻量，如 {model}）':'Auto (lightweight, e.g. {model})','自定义模型…':'Custom model…','输入自定义模型名':'Enter custom model name',
+  '策略与账户范围':'Rules and account scope','3. 策略与账户范围':'3. Rules & account scope','5 小时窗口重置后也自动补发':'Also auto-wake after 5h window resets',
+  '下次 {time}':'Next {time}','Cron 定时':'Cron schedule','Cron 定时 + 重置补发':'Cron + post-reset'
 };
 function initialLanguage(){
   try{
@@ -689,7 +785,7 @@ function applyLanguage(){
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
   $('account-search').placeholder=t('搜索账户（名称、邮箱或 ID）');
-  for(const id of ['wakeup-model-claude','wakeup-model-codex','wakeup-model-ag-gemini','wakeup-model-ag-claude'])$(id).placeholder=t('自动（轻量模型）');
+  for(const id of ['wakeup-model-claude','wakeup-model-codex','wakeup-model-ag-gemini','wakeup-model-ag-claude'])$(id).placeholder=t('输入自定义模型名');
   $('status').textContent=t(statusKey);renderAlerts();cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();renderWakeupDialog();
 }
 function setLanguage(value,persist=true){
@@ -1108,23 +1204,139 @@ function formatUtcOffset(min){
   const sign=min>=0?'+':'-',abs=Math.abs(min),h=Math.floor(abs/60),m=abs%60;
   return 'UTC'+sign+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
 }
+const defaultCronExpr='0 6,11,16,21 * * *';
+const wakeupModelSlots=[
+  {key:'claude',selectId:'wakeup-model-select-claude',inputId:'wakeup-model-claude',provider:'claude',defaults:['claude-haiku-4-5-20251001','claude-sonnet-4-6','claude-sonnet-4-5-20250929','claude-3-5-haiku-20241022']},
+  {key:'codex',selectId:'wakeup-model-select-codex',inputId:'wakeup-model-codex',provider:'codex',defaults:['gpt-5.6-luna','gpt-6-luna','gpt-5.5','gpt-5.1-codex-mini','gpt-5.4-mini','gpt-5.3-codex']},
+  {key:'antigravity:gemini',selectId:'wakeup-model-select-ag-gemini',inputId:'wakeup-model-ag-gemini',provider:'antigravity',defaults:['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash']},
+  {key:'antigravity:claude-gpt',selectId:'wakeup-model-select-ag-claude',inputId:'wakeup-model-ag-claude',provider:'antigravity',defaults:['claude-sonnet-4-6','gpt-oss-120b-medium','claude-opus-4-6-thinking']}
+];
+function legacyTimesToCron(times){
+  const valid=list(times).map(v=>String(v).trim()).filter(v=>/^([01][0-9]|2[0-3]):([0-5][0-9])$/.test(v)).sort();
+  if(!valid.length)return '';
+  const mins=[...new Set(valid.map(v=>Number(v.slice(3,5))))];
+  if(mins.length===1){
+    const hours=[...new Set(valid.map(v=>Number(v.slice(0,2))))].sort((a,b)=>a-b);
+    return `${mins[0]} ${hours.join(',')} * * *`;
+  }
+  return '';
+}
+function parseCronFieldJS(field,minVal,maxVal,wrapSunday=false){
+  if(!field)return null;
+  if(field==='*'){const set=new Set();for(let v=minVal;v<=maxVal;v++)set.add(wrapSunday&&v===7?0:v);return {set,wild:true};}
+  const set=new Set();
+  for(const part of field.split(',')){
+    if(!part)return null;
+    const pieces=part.split('/');
+    if(pieces.length>2)return null;
+    let step=1;
+    if(pieces.length===2){
+      if(!/^\d{1,2}$/.test(pieces[1]))return null;
+      step=Number(pieces[1]);if(!Number.isInteger(step)||step<=0||step>maxVal-minVal+1)return null;
+    }
+    const rp=pieces[0];let start,end;
+    if(rp==='*'){start=minVal;end=maxVal;}
+    else if(rp.includes('-')){
+      const bounds=rp.split('-');if(bounds.length!==2||!/^\d{1,2}$/.test(bounds[0])||!/^\d{1,2}$/.test(bounds[1]))return null;
+      start=Number(bounds[0]);end=Number(bounds[1]);
+      if(start<minVal||end>maxVal||start>end)return null;
+    }else{
+      if(!/^\d{1,2}$/.test(rp))return null;
+      start=Number(rp);if(start<minVal||start>maxVal)return null;
+      end=pieces.length===2?maxVal:start;
+    }
+    for(let v=start;v<=end;v+=step)set.add(wrapSunday&&v===7?0:v);
+  }
+  return set.size?{set,wild:false}:null;
+}
+function parseCronJS(expr){
+  const norm=String(expr||'').trim().replace(/\s+/g,' ');
+  if(!norm||norm.length>128)return null;
+  const fields=norm.split(' ');if(fields.length!==5)return null;
+  const minute=parseCronFieldJS(fields[0],0,59,false);
+  const hour=parseCronFieldJS(fields[1],0,23,false);
+  const dom=parseCronFieldJS(fields[2],1,31,false);
+  const month=parseCronFieldJS(fields[3],1,12,false);
+  const dow=parseCronFieldJS(fields[4],0,7,true);
+  if(!minute||!hour||!dom||!month||!dow)return null;
+  return {norm,minute,hour,dom,month,dow};
+}
+function nextCronRunsJS(expr,offsetMin,count=5,nowMs=Date.now()){
+  const spec=parseCronJS(expr);if(!spec)return null;
+  const offsetMs=(Number(offsetMin)||0)*60000;
+  // Represent target-timezone clock using UTC fields of shifted Date so browser TZ never skews preview.
+  let curMs=Math.ceil((nowMs+offsetMs)/60000)*60000;
+  const limitMs=curMs+4*366*86400000;
+  const runs=[];
+  while(curMs<limitMs&&runs.length<count){
+    const d=new Date(curMs),mo=d.getUTCMonth()+1,day=d.getUTCDate(),wd=d.getUTCDay(),h=d.getUTCHours(),m=d.getUTCMinutes();
+    if(!spec.month.set.has(mo)){curMs=Date.UTC(d.getUTCFullYear(),mo,1,0,0);continue;}
+    const dayOk=(spec.dom.wild&&spec.dow.wild)||(spec.dom.wild?spec.dow.set.has(wd):spec.dow.wild?spec.dom.set.has(day):(spec.dom.set.has(day)||spec.dow.set.has(wd)));
+    if(!dayOk){curMs=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),day+1,0,0);continue;}
+    if(!spec.hour.set.has(h)){curMs=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),day,h+1,0);continue;}
+    if(!spec.minute.set.has(m)){curMs+=60000;continue;}
+    runs.push(curMs-offsetMs);curMs+=60000;
+  }
+  return runs.length?runs:null;
+}
+function formatCronRunChip(utcMs,offsetMin,nowMs=Date.now()){
+  const offMs=(Number(offsetMin)||0)*60000;
+  const d=new Date(utcMs+offMs),n=new Date(nowMs+offMs);
+  const dayDiff=Math.round((Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())-Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate()))/86400000);
+  const hhmm=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+  const wdays=['周日','周一','周二','周三','周四','周五','周六'];
+  if(dayDiff===0)return t('今天')+' '+hhmm;
+  if(dayDiff===1)return t('明天')+' '+hhmm;
+  const md=String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  return md+' '+t(wdays[d.getUTCDay()])+' '+hhmm;
+}
+function buildCadenceCron(startHour,minute,stepHours,endHour,dow){
+  const s=Math.max(0,Math.min(23,Number(startHour)||0));
+  const m=Math.max(0,Math.min(59,Number(minute)||0));
+  const step=Math.max(1,Math.min(24,Number(stepHours)||5));
+  const e=Math.max(s,Math.min(23,Number(endHour)||23));
+  const hours=[];
+  for(let h=s;h<=e;h+=step)hours.push(h);
+  if(!hours.length)hours.push(s);
+  return `${m} ${hours.join(',')} * * ${dow||'*'}`;
+}
+function syncBuilderFromCron(expr){
+  const spec=parseCronJS(expr);if(!spec||!spec.dom.wild||!spec.month.wild)return;
+  const mins=[...spec.minute.set],hours=[...spec.hour.set].sort((a,b)=>a-b);
+  if(mins.length!==1||!hours.length)return;
+  const step=hours.length>1?hours[1]-hours[0]:5;
+  const uniform=hours.every((h,i)=>i===0||h-hours[i-1]===step);
+  if(!uniform||![3,4,5,6,8,12].includes(step))return;
+  const start=hours[0],end=hours.at(-1);
+  if([0,5,15,30,45].includes(mins[0]))$('wakeup-gen-min').value=String(mins[0]);
+  $('wakeup-gen-start').value=String(start);
+  $('wakeup-gen-step').value=String(step);
+  if(end>=18&&end<=23)$('wakeup-gen-end').value=String(end);
+  const dowField=spec.norm.split(' ')[4];
+  if(['*','1-5','0,6'].includes(dowField))$('wakeup-gen-days').value=dowField;
+}
 function defaultWakeupDraft(source){
   const cfg=source&&typeof source==='object'?source:{};
   const providers=cfg.providers&&typeof cfg.providers==='object'?cfg.providers:{};
   const models=cfg.models&&typeof cfg.models==='object'?cfg.models:{};
+  const mode=['daily','reset','both'].includes(cfg.mode)?cfg.mode:'daily';
+  const rawCron=String(cfg.cron||'').trim();
+  const cron=rawCron||legacyTimesToCron(cfg.times)||(mode==='reset'?'':defaultCronExpr);
   return {
     enabled:Boolean(cfg.enabled),
-    mode:['daily','reset','both'].includes(cfg.mode)?cfg.mode:'daily',
+    cron,
+    auto_reset:mode==='reset'||mode==='both',
     times:list(cfg.times).filter(v=>/^\d{2}:\d{2}$/.test(String(v))),
     timezone_offset_min:Number.isInteger(cfg.timezone_offset_min)?cfg.timezone_offset_min:browserTimezoneOffsetMin(),
     skip_active_window:typeof cfg.skip_active_window==='boolean'?cfg.skip_active_window:true,
     providers:{claude:providers.claude!==false,codex:providers.codex!==false,antigravity:providers.antigravity!==false},
     excluded_auth_ids:list(cfg.excluded_auth_ids).map(String),
     models:{claude:String(models.claude||''),codex:String(models.codex||''),'antigravity:gemini':String(models['antigravity:gemini']||''),'antigravity:claude-gpt':String(models['antigravity:claude-gpt']||'')},
+    customModelMode:{},
     message:String(cfg.message||'hi')
   };
 }
-const wakeupModeLabel=mode=>mode==='reset'?t('5 小时窗口重置后自动'):mode==='both'?t('每天固定时间 + 重置后自动'):t('每天固定时间');
+const wakeupModeLabel=mode=>mode==='reset'?t('5 小时窗口重置后自动'):mode==='both'?t('Cron 定时 + 重置补发'):t('Cron 定时');
 const wakeupTriggerLabel=trigger=>({schedule:'触发：定时',reset:'触发：重置',manual:'触发：手动',account:'触发：单账户'}[trigger]||'');
 function wakeupReasonText(reason){return reason?message(errorKey(reason,'唤醒请求失败，请稍后重试。')):'';}
 function formatAccountWakeupSummary(res){
@@ -1146,14 +1358,34 @@ function syncWakeupButton(){
   let text=t('定时唤醒');
   if(busy)text=t('唤醒中…');
   else if(enabled){
-    const summary=cfg.mode==='reset'?t('重置时'):list(cfg.times).length?list(cfg.times)[0]+(list(cfg.times).length>1?' +'+String(list(cfg.times).length-1):''):t('重置时');
+    let summary=t('重置时');
+    if(state?.next_scheduled_at){
+      const d=new Date(state.next_scheduled_at);
+      if(Number.isFinite(d.getTime()))summary=t('下次 {time}',{time:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')});
+    }else if(cfg.mode!=='reset'&&cfg.cron){
+      summary=cfg.cron;
+    }else if(cfg.mode!=='reset'&&list(cfg.times).length){
+      summary=list(cfg.times)[0]+(list(cfg.times).length>1?' +'+String(list(cfg.times).length-1):'');
+    }
     text=t('定时唤醒 · {summary}',{summary});
   }
   if(label.textContent!==text)label.textContent=text;
   const tips=[enabled?t('已启用（{mode}）',{mode:wakeupModeLabel(cfg.mode)}):t('未启用')];
+  if(cfg?.cron)tips.push('Cron: '+cfg.cron+' ('+formatUtcOffset(cfg.timezone_offset_min||0)+')');
   if(state?.next_scheduled_at)tips.push(t('下次计划：{time}',{time:when(state.next_scheduled_at)}));
   if(state?.last_run_at)tips.push(t('最近执行：{time}',{time:when(state.last_run_at)}));
   btn.title=tips.join('\n');btn.setAttribute('aria-label',text);btn.setAttribute('aria-busy',String(busy));
+}
+function populateWakeupGenSelects(){
+  const startSel=$('wakeup-gen-start'),endSel=$('wakeup-gen-end');
+  if(!startSel.children.length){
+    const startOpts=Array.from({length:24},(_,h)=>{const opt=document.createElement('option');opt.value=String(h);opt.textContent=String(h).padStart(2,'0');return opt;});
+    startSel.replaceChildren(...startOpts);startSel.value='6';
+  }
+  if(!endSel.children.length){
+    const endOpts=Array.from({length:12},(_,i)=>{const h=12+i,opt=document.createElement('option');opt.value=String(h);opt.textContent=String(h).padStart(2,'0')+':00';return opt;});
+    endSel.replaceChildren(...endOpts);endSel.value='22';
+  }
 }
 function populateWakeupTimezoneOptions(selectedMin){
   const sel=$('wakeup-tz'),localMin=browserTimezoneOffsetMin();
@@ -1166,18 +1398,33 @@ function populateWakeupTimezoneOptions(selectedMin){
   });
   sel.replaceChildren(...nodes);sel.value=String(selectedMin);
 }
-function populateWakeupDatalists(){
-  const defaults={
-    claude:['claude-haiku-4-5-20251001','claude-sonnet-4-6','claude-sonnet-4-5-20250929','claude-3-5-haiku-20241022'],
-    codex:['gpt-5.6-luna','gpt-6-luna','gpt-5.5','gpt-5.1-codex-mini','gpt-5.4-mini','gpt-5.3-codex'],
-    'antigravity:gemini':['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash'],
-    'antigravity:claude-gpt':['claude-sonnet-4-6','gpt-oss-120b-medium','claude-opus-4-6-thinking']
-  };
-  const map=[['wakeup-list-claude','claude'],['wakeup-list-codex','codex'],['wakeup-list-ag-gemini','antigravity:gemini'],['wakeup-list-ag-claude','antigravity:claude-gpt']];
-  for(const [id,keyName] of map){
-    const merged=[...new Set([...list(wakeupModelHints[keyName]),...defaults[keyName]])];
-    const opts=merged.map(m=>{const opt=document.createElement('option');opt.value=m;opt.textContent=m;return opt;});
-    $(id).replaceChildren(...opts);
+function wakeupSlotModelOptions(slot){
+  return [...new Set([...list(wakeupModelHints[slot.key]),...slot.defaults])];
+}
+function populateWakeupModelSelects(){
+  if(!wakeupDialog)return;
+  const d=wakeupDialog.draft,readOnly=Boolean(data?.persistence?.read_only);
+  const busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(data?.wakeup?.running);
+  for(const slot of wakeupModelSlots){
+    const sel=$(slot.selectId),input=$(slot.inputId),providerOn=d.providers[slot.provider]!==false;
+    const options=wakeupSlotModelOptions(slot),current=String(d.models[slot.key]||'');
+    const isCustom=Boolean(d.customModelMode?.[slot.key])||(Boolean(current)&&!options.includes(current));
+    const nodes=[];
+    const autoOpt=document.createElement('option');autoOpt.value='';
+    autoOpt.textContent=t('自动（轻量，如 {model}）',{model:options[0]||slot.defaults[0]});
+    nodes.push(autoOpt);
+    for(const m of options){const opt=document.createElement('option');opt.value=m;opt.textContent=m;nodes.push(opt);}
+    const customOpt=document.createElement('option');customOpt.value='__custom__';customOpt.textContent=t('自定义模型…');
+    nodes.push(customOpt);
+    sel.replaceChildren(...nodes);
+    sel.value=isCustom?'__custom__':current;
+    sel.disabled=busy||readOnly||!providerOn;
+    input.hidden=!isCustom;
+    input.value=current;
+    input.disabled=busy||readOnly||!providerOn;
+  }
+  for(const p of ['claude','codex','antigravity']){
+    $('wakeup-row-'+p).classList.toggle('off',d.providers[p]===false);
   }
 }
 async function loadWakeupModelHints(){
@@ -1198,21 +1445,33 @@ async function loadWakeupModelHints(){
       }else{
         wakeupModelHints[q.provider]=ids;
       }
-      if(wakeupDialog)populateWakeupDatalists();
+      if(wakeupDialog)populateWakeupModelSelects();
     }catch{}
   }
 }
-function renderWakeupTimes(){
+function renderWakeupCronPreview(){
   if(!wakeupDialog)return;
-  const box=$('wakeup-times-list'),times=wakeupDialog.draft.times;
-  if(!times.length){box.replaceChildren(el('span','muted',t('暂无时间点')));return;}
-  const chips=times.map(timeStr=>{
-    const chip=el('span','wakeup-time-chip');add(chip,'span','',timeStr);
-    const rm=add(chip,'button','','×');rm.type='button';rm.setAttribute('aria-label',t('移除 {time}',{time:timeStr}));
-    rm.onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;readWakeupFormIntoDraft();wakeupDialog.draft.times=wakeupDialog.draft.times.filter(v=>v!==timeStr);wakeupDialog.dirty=true;wakeupDialog.error=null;renderWakeupDialog();};
-    return chip;
-  });
-  box.replaceChildren(...chips);
+  const d=wakeupDialog.draft,box=$('wakeup-cron-preview'),cron=String(d.cron||'').trim();
+  const normalized=cron.replace(/\s+/g,' ');
+  for(const btn of $('wakeup-presets').children){
+    btn.setAttribute('aria-pressed',String(btn.dataset.cron===normalized));
+  }
+  if(!cron){
+    box.className='wakeup-preview'+(d.auto_reset?'':' invalid');
+    box.replaceChildren(el('span','',t(d.auto_reset?'仅在 5 小时窗口重置后自动唤醒（未设置 Cron）。':'请填写有效的 5 段 Cron 表达式，或勾选“5 小时窗口重置后也自动补发”。')));
+    return;
+  }
+  const runs=nextCronRunsJS(cron,d.timezone_offset_min,4);
+  if(!runs){
+    box.className='wakeup-preview invalid';
+    box.replaceChildren(el('span','',t('Cron 表达式无效（需要 5 段：分 时 日 月 周，例如 0 6,11,16,21 * * *）。')));
+    return;
+  }
+  box.className='wakeup-preview';
+  const nodes=[el('span','',t('接下来执行：'))];
+  for(const ms of runs)nodes.push(el('span','wakeup-preview-chip',formatCronRunChip(ms,d.timezone_offset_min)));
+  nodes.push(el('span','',formatUtcOffset(d.timezone_offset_min)));
+  box.replaceChildren(...nodes);
 }
 function renderWakeupResults(){
   const wrap=$('wakeup-results-wrap'),box=$('wakeup-results'),results=Object.values(data?.wakeup?.results||{});
@@ -1312,25 +1571,25 @@ function renderWakeupDialog(syncFields=true){
   if(syncFields){
     const d=wakeupDialog.draft,state=data?.wakeup||{},readOnly=Boolean(data?.persistence?.read_only);
     const busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(state.running);
+    $('wakeup-hero').classList.toggle('on',d.enabled);
     $('wakeup-enabled').checked=d.enabled;$('wakeup-enabled').disabled=busy||readOnly;
     $('wakeup-skip-active').checked=d.skip_active_window;$('wakeup-skip-active').disabled=busy||readOnly;
-    $('wakeup-mode').value=d.mode;$('wakeup-mode').disabled=busy||readOnly;
-    $('wakeup-times-group').hidden=d.mode==='reset';
+    $('wakeup-auto-reset').checked=Boolean(d.auto_reset);$('wakeup-auto-reset').disabled=busy||readOnly;
+    populateWakeupGenSelects();
+    for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).disabled=busy||readOnly;
+    for(const btn of $('wakeup-presets').children)btn.disabled=busy||readOnly;
+    $('wakeup-cron').value=d.cron||'';$('wakeup-cron').disabled=busy||readOnly;
+    syncBuilderFromCron(d.cron);
     populateWakeupTimezoneOptions(d.timezone_offset_min);
-    $('wakeup-tz').disabled=busy||readOnly||d.mode==='reset';
-    $('wakeup-tz-local').disabled=busy||readOnly||d.mode==='reset';
-    $('wakeup-time-input').disabled=busy||readOnly||d.times.length>=12;
-    $('wakeup-time-add').disabled=busy||readOnly||d.times.length>=12;
-    renderWakeupTimes();
+    $('wakeup-tz').disabled=busy||readOnly;
+    $('wakeup-tz-local').disabled=busy||readOnly;
+    renderWakeupCronPreview();
     $('wakeup-provider-claude').checked=d.providers.claude!==false;$('wakeup-provider-claude').disabled=busy||readOnly;
     $('wakeup-provider-codex').checked=d.providers.codex!==false;$('wakeup-provider-codex').disabled=busy||readOnly;
     $('wakeup-provider-antigravity').checked=d.providers.antigravity!==false;$('wakeup-provider-antigravity').disabled=busy||readOnly;
     $('wakeup-text').value=d.message;$('wakeup-text').disabled=busy||readOnly;
-    $('wakeup-model-claude').value=d.models.claude||'';$('wakeup-model-claude').disabled=busy||readOnly;
-    $('wakeup-model-codex').value=d.models.codex||'';$('wakeup-model-codex').disabled=busy||readOnly;
-    $('wakeup-model-ag-gemini').value=d.models['antigravity:gemini']||'';$('wakeup-model-ag-gemini').disabled=busy||readOnly;
-    $('wakeup-model-ag-claude').value=d.models['antigravity:claude-gpt']||'';$('wakeup-model-ag-claude').disabled=busy||readOnly;
-    populateWakeupDatalists();
+    for(const btn of $('wakeup-text').parentNode.children)if(btn.tagName==='BUTTON'||btn.tag==='button')btn.disabled=busy||readOnly;
+    populateWakeupModelSelects();
     renderWakeupAccounts();
   }
   renderWakeupStatusAndResults();
@@ -1351,20 +1610,32 @@ function readWakeupFormIntoDraft(){
   const d=wakeupDialog.draft;
   d.enabled=Boolean($('wakeup-enabled').checked);
   d.skip_active_window=Boolean($('wakeup-skip-active').checked);
-  d.mode=$('wakeup-mode').value;
+  d.auto_reset=Boolean($('wakeup-auto-reset').checked);
+  d.cron=String($('wakeup-cron').value??'');
   d.timezone_offset_min=Number($('wakeup-tz').value)||0;
   d.providers={claude:Boolean($('wakeup-provider-claude').checked),codex:Boolean($('wakeup-provider-codex').checked),antigravity:Boolean($('wakeup-provider-antigravity').checked)};
   d.message=String($('wakeup-text').value??'');
-  d.models={
-    claude:String($('wakeup-model-claude').value??''),
-    codex:String($('wakeup-model-codex').value??''),
-    'antigravity:gemini':String($('wakeup-model-ag-gemini').value??''),
-    'antigravity:claude-gpt':String($('wakeup-model-ag-claude').value??'')
-  };
+  for(const slot of wakeupModelSlots){
+    const selVal=String($(slot.selectId).value||'');
+    if(selVal==='__custom__'){
+      d.customModelMode[slot.key]=true;
+      d.models[slot.key]=String($(slot.inputId).value??'');
+    }else{
+      d.customModelMode[slot.key]=false;
+      d.models[slot.key]=selVal;
+    }
+  }
   wakeupDialog.dirty=true;
 }
 function buildWakeupPayload(d){
-  if((d.mode==='daily'||d.mode==='both')&&!d.times.length)throw failure('每天固定时间模式至少需要一个时间点。');
+  const cron=String(d.cron||'').trim().replace(/\s+/g,' ');
+  const autoReset=Boolean(d.auto_reset);
+  if(cron){
+    if(!nextCronRunsJS(cron,d.timezone_offset_min,1))throw failure('Cron 表达式无效（需要 5 段：分 时 日 月 周，例如 0 6,11,16,21 * * *）。');
+  }else if(!autoReset){
+    throw failure('请填写有效的 5 段 Cron 表达式，或勾选“5 小时窗口重置后也自动补发”。');
+  }
+  const mode=cron?(autoReset?'both':'daily'):'reset';
   const providers={claude:Boolean(d.providers.claude),codex:Boolean(d.providers.codex),antigravity:Boolean(d.providers.antigravity)};
   if(d.enabled&&!providers.claude&&!providers.codex&&!providers.antigravity)throw failure('请至少选择一个参与定时唤醒的服务商。');
   const models={};
@@ -1378,8 +1649,8 @@ function buildWakeupPayload(d){
   if([...msg].length>128||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(msg))throw failure('唤醒消息过长或包含非法字符。');
   return {
     enabled:Boolean(d.enabled),
-    mode:d.mode,
-    times:[...d.times].sort(),
+    mode,
+    cron,
     timezone_offset_min:Number(d.timezone_offset_min)||0,
     skip_active_window:Boolean(d.skip_active_window),
     providers,
@@ -2001,25 +2272,50 @@ $('wakeup-save').onclick=()=>saveWakeupConfig(false);
 $('wakeup-run-now').onclick=runWakeupAll;
 $('wakeup-dialog').onclick=e=>{if(e.target===$('wakeup-dialog'))closeWakeup();};
 $('wakeup-tz-local').onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;readWakeupFormIntoDraft();wakeupDialog.draft.timezone_offset_min=browserTimezoneOffsetMin();wakeupDialog.dirty=true;renderWakeupDialog(true);};
-function addWakeupTimeFromInput(){
+for(const btn of $('wakeup-presets').children){
+  btn.onclick=()=>{
+    if(!wakeupDialog||wakeupDialog.saving)return;
+    readWakeupFormIntoDraft();
+    wakeupDialog.draft.cron=btn.dataset.cron||defaultCronExpr;
+    wakeupDialog.dirty=true;wakeupDialog.error=null;
+    renderWakeupDialog(true);
+  };
+}
+function applyWakeupBuilder(){
   if(!wakeupDialog||wakeupDialog.saving)return;
   readWakeupFormIntoDraft();
-  const raw=String($('wakeup-time-input').value||'').trim();
-  if(!/^([01][0-9]|2[0-3]):([0-5][0-9])$/.test(raw)){wakeupDialog.error='时间点格式无效（需 HH:MM）。';renderWakeupDialog(true);return;}
-  if(wakeupDialog.draft.times.length>=12){wakeupDialog.error='最多可添加 12 个时间点。';renderWakeupDialog(true);return;}
-  if(!wakeupDialog.draft.times.includes(raw)){wakeupDialog.draft.times=[...wakeupDialog.draft.times,raw].sort();wakeupDialog.dirty=true;}
-  wakeupDialog.error=null;renderWakeupDialog(true);
+  const start=Number($('wakeup-gen-start').value)||0;
+  let end=Number($('wakeup-gen-end').value)||22;
+  if(end<start){end=23;$('wakeup-gen-end').value='23';}
+  wakeupDialog.draft.cron=buildCadenceCron(start,$('wakeup-gen-min').value,$('wakeup-gen-step').value,end,$('wakeup-gen-days').value);
+  wakeupDialog.dirty=true;wakeupDialog.error=null;
+  $('wakeup-cron').value=wakeupDialog.draft.cron;
+  renderWakeupCronPreview();renderWakeupStatusAndResults();
 }
-$('wakeup-time-add').onclick=addWakeupTimeFromInput;
-$('wakeup-time-input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addWakeupTimeFromInput();}});
+for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).onchange=applyWakeupBuilder;
+$('wakeup-cron').oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;syncBuilderFromCron(wakeupDialog.draft.cron);renderWakeupCronPreview();};
+for(const btn of $('wakeup-text').parentNode.children){
+  if(btn.dataset?.msg){
+    btn.onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;$('wakeup-text').value=btn.dataset.msg;readWakeupFormIntoDraft();wakeupDialog.error=null;};
+  }
+}
+for(const slot of wakeupModelSlots){
+  $(slot.selectId).onchange=()=>{
+    if(!wakeupDialog)return;
+    readWakeupFormIntoDraft();
+    const isCustom=$(slot.selectId).value==='__custom__';
+    $(slot.inputId).hidden=!isCustom;
+    if(isCustom)$(slot.inputId).focus();
+    wakeupDialog.error=null;
+  };
+  $(slot.inputId).oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;};
+}
 $('wakeup-accounts-toggle').onclick=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.showAccounts=!wakeupDialog.showAccounts;renderWakeupAccounts();};
 $('wakeup-clear-excluded').onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;readWakeupFormIntoDraft();wakeupDialog.draft.excluded_auth_ids=[];wakeupDialog.dirty=true;wakeupDialog.error=null;renderWakeupAccounts();renderWakeupStatusAndResults();};
-for(const id of ['wakeup-enabled','wakeup-skip-active','wakeup-mode','wakeup-tz','wakeup-provider-claude','wakeup-provider-codex','wakeup-provider-antigravity']){
+for(const id of ['wakeup-enabled','wakeup-skip-active','wakeup-auto-reset','wakeup-tz','wakeup-provider-claude','wakeup-provider-codex','wakeup-provider-antigravity']){
   $(id).onchange=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;renderWakeupDialog(true);};
 }
-for(const id of ['wakeup-text','wakeup-model-claude','wakeup-model-codex','wakeup-model-ag-gemini','wakeup-model-ag-claude']){
-  $(id).oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;};
-}
+$('wakeup-text').oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;};
 window.addEventListener('keydown',resetDialogKey);
 window.addEventListener('storage',e=>{if(e.key===languageStorage||e.key===cpaLanguageStorage){setLanguage(initialLanguage(),false);return;}load();});
 window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});

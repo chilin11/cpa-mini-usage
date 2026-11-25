@@ -61,7 +61,8 @@ var wakeupAllowedModelKeys = map[string]bool{
 type WakeupConfig struct {
 	Enabled           bool              `json:"enabled"`
 	Mode              string            `json:"mode"` // "daily" | "reset" | "both"
-	Times             []string          `json:"times"`
+	Cron              string            `json:"cron,omitempty"`
+	Times             []string          `json:"times,omitempty"`
 	TimezoneOffsetMin int               `json:"timezone_offset_min"`
 	SkipActiveWindow  bool              `json:"skip_active_window"`
 	Providers         map[string]bool   `json:"providers"`
@@ -95,9 +96,10 @@ type WakeupState struct {
 	RunningAuthIDs  []string                       `json:"running_auth_ids,omitempty"`
 	LastRunAt       string                         `json:"last_run_at,omitempty"`
 	LastRunTrigger  string                         `json:"last_run_trigger,omitempty"`
-	LastRunFinished string                         `json:"last_run_finished_at,omitempty"`
-	NextScheduledAt string                         `json:"next_scheduled_at,omitempty"`
-	Results         map[string]WakeupAccountResult `json:"results,omitempty"`
+	LastRunFinished   string                         `json:"last_run_finished_at,omitempty"`
+	NextScheduledAt   string                         `json:"next_scheduled_at,omitempty"`
+	NextScheduledRuns []string                       `json:"next_scheduled_runs,omitempty"`
+	Results           map[string]WakeupAccountResult `json:"results,omitempty"`
 	LastError       string                         `json:"last_error,omitempty"`
 }
 
@@ -130,7 +132,8 @@ func defaultWakeupConfig() WakeupConfig {
 	return WakeupConfig{
 		Enabled:           false,
 		Mode:              "daily",
-		Times:             []string{"07:00"},
+		Cron:              wakeupDefaultCron,
+		Times:             []string{"06:00", "11:00", "16:00", "21:00"},
 		TimezoneOffsetMin: offsetMin,
 		SkipActiveWindow:  true,
 		Providers: map[string]bool{
@@ -182,6 +185,12 @@ func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
 	if raw.TimezoneOffsetMin < -720 || raw.TimezoneOffsetMin > 840 {
 		return WakeupConfig{}, errors.New("invalid timezone offset")
 	}
+	cronExpr := strings.Join(strings.Fields(raw.Cron), " ")
+	if cronExpr != "" {
+		if _, err := parseCron(cronExpr); err != nil {
+			return WakeupConfig{}, err
+		}
+	}
 	if len(raw.Times) > wakeupMaxTimes {
 		return WakeupConfig{}, errors.New("too many wakeup times")
 	}
@@ -198,8 +207,8 @@ func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
 		}
 	}
 	sort.Strings(times)
-	if (mode == "daily" || mode == "both") && len(times) == 0 {
-		return WakeupConfig{}, errors.New("wakeup times required for daily mode")
+	if (mode == "daily" || mode == "both") && cronExpr == "" && len(times) == 0 {
+		return WakeupConfig{}, errors.New("cron expression or wakeup times required")
 	}
 	providers := map[string]bool{
 		"claude":      true,
@@ -268,6 +277,7 @@ func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
 	return WakeupConfig{
 		Enabled:           raw.Enabled,
 		Mode:              mode,
+		Cron:              cronExpr,
 		Times:             times,
 		TimezoneOffsetMin: raw.TimezoneOffsetMin,
 		SkipActiveWindow:  raw.SkipActiveWindow,
@@ -486,10 +496,16 @@ func wakeupZone(offsetMin int) *time.Location {
 	return time.FixedZone("wakeup", offsetMin*60)
 }
 
-// Mark already-past daily slots for today as fired when configuration changes so
-// enabling a schedule does not immediately fire an already-elapsed time slot.
+// Mark already-past recent slots as fired when configuration changes so
+// enabling a schedule does not immediately fire an already-elapsed slot.
 func (e *Engine) markPastSlotsFiredLocked(cfg WakeupConfig, now time.Time) {
 	if cfg.Mode != "daily" && cfg.Mode != "both" {
+		return
+	}
+	if strings.TrimSpace(cfg.Cron) != "" {
+		if sched, err := parseCron(cfg.Cron); err == nil {
+			sched.markRecentFired(now, wakeupSlotGrace, e.wakeupFiredSlots, cfg.TimezoneOffsetMin)
+		}
 		return
 	}
 	loc := wakeupZone(cfg.TimezoneOffsetMin)
@@ -507,13 +523,24 @@ func (e *Engine) markPastSlotsFiredLocked(cfg WakeupConfig, now time.Time) {
 	}
 }
 
-func nextWakeupSlot(cfg WakeupConfig, fired map[string]time.Time, now time.Time) time.Time {
-	if !cfg.Enabled || (cfg.Mode != "daily" && cfg.Mode != "both") || len(cfg.Times) == 0 {
-		return time.Time{}
+func nextWakeupRuns(cfg WakeupConfig, fired map[string]time.Time, now time.Time, count int) []time.Time {
+	if !cfg.Enabled || (cfg.Mode != "daily" && cfg.Mode != "both") || count <= 0 {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Cron) != "" {
+		sched, err := parseCron(cfg.Cron)
+		if err != nil {
+			return nil
+		}
+		return sched.nextRuns(now, count, fired, cfg.TimezoneOffsetMin)
+	}
+	if len(cfg.Times) == 0 {
+		return nil
 	}
 	loc := wakeupZone(cfg.TimezoneOffsetMin)
 	localNow := now.In(loc)
-	for dayOffset := 0; dayOffset <= 2; dayOffset++ {
+	out := make([]time.Time, 0, count)
+	for dayOffset := 0; dayOffset <= 7 && len(out) < count; dayOffset++ {
 		base := time.Date(localNow.Year(), localNow.Month(), localNow.Day()+dayOffset, 0, 0, 0, 0, loc)
 		day := base.Format("2006-01-02")
 		for _, hhmm := range cfg.Times {
@@ -527,11 +554,22 @@ func nextWakeupSlot(cfg WakeupConfig, fired map[string]time.Time, now time.Time)
 				continue
 			}
 			if slot.After(localNow) || (!localNow.Before(slot) && localNow.Sub(slot) < wakeupSlotGrace) {
-				return slot.UTC()
+				out = append(out, slot.UTC())
+				if len(out) >= count {
+					break
+				}
 			}
 		}
 	}
-	return time.Time{}
+	return out
+}
+
+func nextWakeupSlot(cfg WakeupConfig, fired map[string]time.Time, now time.Time) time.Time {
+	runs := nextWakeupRuns(cfg, fired, now, 1)
+	if len(runs) == 0 {
+		return time.Time{}
+	}
+	return runs[0]
 }
 
 func (e *Engine) setWakeupConfig(raw WakeupConfig) (WakeupState, int, string) {
@@ -628,8 +666,13 @@ func (e *Engine) wakeupStateLocked(now time.Time) WakeupState {
 	if !e.wakeupLastRunFinished.IsZero() {
 		state.LastRunFinished = e.wakeupLastRunFinished.UTC().Format(time.RFC3339Nano)
 	}
-	if next := nextWakeupSlot(e.wakeupConfig, e.wakeupFiredSlots, now); !next.IsZero() {
-		state.NextScheduledAt = next.Format(time.RFC3339)
+	if runs := nextWakeupRuns(e.wakeupConfig, e.wakeupFiredSlots, now, 5); len(runs) > 0 {
+		state.NextScheduledAt = runs[0].Format(time.RFC3339)
+		formatted := make([]string, len(runs))
+		for i, run := range runs {
+			formatted[i] = run.Format(time.RFC3339)
+		}
+		state.NextScheduledRuns = formatted
 	}
 	if len(e.wakeupResults) > 0 {
 		results := make(map[string]WakeupAccountResult, len(e.wakeupResults))
@@ -746,26 +789,35 @@ func (e *Engine) checkWakeupScheduleWith(
 		return
 	}
 
-	// 1. Check daily fixed time slots.
+	// 1. Check scheduled cron expression (or legacy fixed daily times).
 	var dueSlotKey string
 	if cfg.Mode == "daily" || cfg.Mode == "both" {
-		loc := wakeupZone(cfg.TimezoneOffsetMin)
-		localNow := now.In(loc)
-		day := localNow.Format("2006-01-02")
-		for _, hhmm := range cfg.Times {
-			h, m, ok := parseHHMM(hhmm)
-			if !ok {
-				continue
+		if strings.TrimSpace(cfg.Cron) != "" {
+			if sched, err := parseCron(cfg.Cron); err == nil {
+				if key, _, ok := sched.dueSlot(now, wakeupSlotGrace, e.wakeupFiredSlots, cfg.TimezoneOffsetMin); ok {
+					dueSlotKey = key
+					e.wakeupFiredSlots[key] = now.UTC()
+				}
 			}
-			slot := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), h, m, 0, 0, loc)
-			key := wakeupSlotKey(day, hhmm, cfg.TimezoneOffsetMin)
-			if _, fired := e.wakeupFiredSlots[key]; fired {
-				continue
-			}
-			if !localNow.Before(slot) && localNow.Sub(slot) < wakeupSlotGrace {
-				dueSlotKey = key
-				e.wakeupFiredSlots[key] = now.UTC()
-				break
+		} else {
+			loc := wakeupZone(cfg.TimezoneOffsetMin)
+			localNow := now.In(loc)
+			day := localNow.Format("2006-01-02")
+			for _, hhmm := range cfg.Times {
+				h, m, ok := parseHHMM(hhmm)
+				if !ok {
+					continue
+				}
+				slot := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), h, m, 0, 0, loc)
+				key := wakeupSlotKey(day, hhmm, cfg.TimezoneOffsetMin)
+				if _, fired := e.wakeupFiredSlots[key]; fired {
+					continue
+				}
+				if !localNow.Before(slot) && localNow.Sub(slot) < wakeupSlotGrace {
+					dueSlotKey = key
+					e.wakeupFiredSlots[key] = now.UTC()
+					break
+				}
 			}
 		}
 	}

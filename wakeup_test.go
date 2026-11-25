@@ -525,3 +525,93 @@ func waitWakeupIdle(t *testing.T, e *Engine) {
 	}
 	t.Fatal("wakeup run did not finish in time")
 }
+
+func TestWakeupCronParsingScheduleAndWeekdays(t *testing.T) {
+	// 1. Validate 5-field cron parsing, including 6/5 and invalid dates like Feb 31.
+	sched, err := parseCron("5 6/5 * * *")
+	if err != nil {
+		t.Fatalf("parseCron(5 6/5 * * *) failed: %v", err)
+	}
+	loc := wakeupZone(480) // UTC+8
+	base := time.Date(2026, 11, 25, 5, 50, 0, 0, loc).UTC()
+	runs := sched.nextRuns(base, 4, nil, 480)
+	if len(runs) != 4 {
+		t.Fatalf("got %d runs, want 4", len(runs))
+	}
+	wantHours := []int{6, 11, 16, 21}
+	for i, run := range runs {
+		lt := run.In(loc)
+		if lt.Hour() != wantHours[i] || lt.Minute() != 5 {
+			t.Fatalf("run[%d] = %v, want %02d:05", i, lt, wantHours[i])
+		}
+	}
+
+	// Weekday-only cron skips Saturday/Sunday and jumps to Monday 06:00.
+	weekdaySched, err := parseCron("0 6,11,16,21 * * 1-5")
+	if err != nil {
+		t.Fatalf("parseCron weekday failed: %v", err)
+	}
+	// 2026-11-28 is Saturday.
+	satMorning := time.Date(2026, 11, 28, 5, 0, 0, 0, loc).UTC()
+	nextWeekday := weekdaySched.nextRuns(satMorning, 2, nil, 480)
+	if len(nextWeekday) != 2 {
+		t.Fatalf("weekday runs = %v", nextWeekday)
+	}
+	if first := nextWeekday[0].In(loc); first.Weekday() != time.Monday || first.Day() != 30 || first.Hour() != 6 || first.Minute() != 0 {
+		t.Fatalf("first weekday run = %v, want Mon Nov 30 06:00", first)
+	}
+
+	for _, bad := range []string{"", "* * *", "0 6 * * * *", "60 6 * * *", "0 24 * * *", "0 6/0 * * *", "0 0 31 2 *", "0 10-5 * * *"} {
+		if _, err := parseCron(bad); err == nil {
+			t.Fatalf("expected invalid cron %q to fail", bad)
+		}
+	}
+
+	// 2. End-to-end Cron schedule trigger inside grace window with no duplicate firing and 5 upcoming runs.
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.load()
+	e.wakeupConfig = WakeupConfig{
+		Enabled:           true,
+		Mode:              "daily",
+		Cron:              "0 6,11,16,21 * * *",
+		TimezoneOffsetMin: 480,
+		SkipActiveWindow:  true,
+		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
+		Message:           "hi",
+	}
+
+	var mu sync.Mutex
+	calls := 0
+	rpc := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{
+				map[string]any{"id": "c1", "auth_index": "i1", "provider": "claude", "email": "a@example.com"},
+			}}, nil
+		}
+		return nil, nil
+	}
+	exec := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return model, ""
+	}
+
+	at0602 := time.Date(2026, 11, 25, 6, 2, 0, 0, loc).UTC()
+	e.checkWakeupScheduleWith(at0602, rpc, exec, nil)
+	waitWakeupIdle(t, e)
+	// Second check 2 minutes later must not re-fire 06:00 slot.
+	e.checkWakeupScheduleWith(at0602.Add(2*time.Minute), rpc, exec, nil)
+	waitWakeupIdle(t, e)
+	if calls != 1 {
+		t.Fatalf("expected 1 cron execution for 06:00 slot, got %d", calls)
+	}
+
+	e.mu.RLock()
+	upcoming := nextWakeupRuns(e.wakeupConfig, e.wakeupFiredSlots, at0602.Add(3*time.Minute), 5)
+	e.mu.RUnlock()
+	if len(upcoming) != 5 || upcoming[0].In(loc).Hour() != 11 || upcoming[1].In(loc).Hour() != 16 || upcoming[2].In(loc).Hour() != 21 || upcoming[3].In(loc).Hour() != 6 {
+		t.Fatalf("unexpected upcoming runs after 06:00: %v", upcoming)
+	}
+}
