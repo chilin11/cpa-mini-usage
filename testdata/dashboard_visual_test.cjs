@@ -93,8 +93,8 @@ const offlineFetch=window.fetch;
 window.visualFixture = {
   show(state='ready') {
     window.fetch=offlineFetch;window.__fixtureKey='';
-    actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();if(typeof closeDisable==='function')closeDisable();
-    accountJobs.clear();accountErrors.clear();cardCache.clear();
+    actionJobs.clear();accountNotes.clear();pendingRedeem.clear();closeReset();if(typeof closeDisable==='function')closeDisable();if(typeof closeWakeup==='function')closeWakeup();
+    accountJobs.clear();accountErrors.clear();cardCache.clear();if(typeof wakeupAccountJobs!=='undefined')wakeupAccountJobs.clear();if(typeof wakeupExcludeJobs!=='undefined')wakeupExcludeJobs.clear();if(typeof wakeupJob!=='undefined')wakeupJob=null;
     settingsJob=null;settingsError=null;requestJob=null;loading=false;headerLoading=false;
     filter='';$('provider').value='';phase='ready';key='';expanded='';recentPage=0;
     accountSearch='';accountState='';accountSort='default';accountPage=0;accountSize=12;
@@ -116,6 +116,17 @@ window.visualFixture = {
       data.quotas[0].five_hour.estimated_total_cost=123456789012.34;
       data.quotas[0].five_hour.estimated_total_tokens=123456789012345;
       data.recent[0].requested_model='demo-model-'.repeat(35);
+    }
+    if(state==='wakeup'){
+      data.wakeup={
+        config:{enabled:true,mode:'both',times:['07:00','12:05'],timezone_offset_min:480,skip_active_window:true,providers:{claude:true,codex:true,antigravity:true},excluded_auth_ids:[],models:{claude:'claude-haiku-4-5-20251001'},message:'hi'},
+        running:false,last_run_at:'2026-10-09T07:00:04Z',last_run_finished_at:'2026-10-09T07:00:08Z',last_run_trigger:'schedule',next_scheduled_at:'2026-10-09T12:05:00Z',
+        results:{
+          'demo-claude':{auth_id:'demo-claude',provider:'claude',name:'demo-team@example.test',status:'sent',model:'claude-haiku-4-5-20251001',at:'2026-10-09T07:00:05Z'},
+          'demo-codex':{auth_id:'demo-codex',provider:'codex',name:'demo-lab@example.test',status:'skipped',reason:'window_active',at:'2026-10-09T07:00:06Z'},
+          'demo-long':{auth_id:'demo-long',provider:'codex',name:'demo-very-long-account-identifier-for-responsive-check@example.test',status:'failed',reason:'rate_limited',at:'2026-10-09T07:00:07Z'}
+        }
+      };
     }
     setStatus(state==='loading'?'正在连接':state==='error'?'连接失败':'已连接');
     render();syncControls();

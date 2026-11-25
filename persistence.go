@@ -71,6 +71,7 @@ func (e *Engine) loadPersistence() {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		e.blockStorageWrites("Quota history could not be read")
 	}
+	e.loadWakeupPersistence()
 }
 
 func (e *Engine) writeQuotasLocked() error {

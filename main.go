@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.38"
+const pluginVersion = "0.1.39"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -109,6 +109,17 @@ func writeBuffer(b *C.cliproxy_buffer, body []byte) {
 	}
 }
 
+type hostRPCError struct {
+	Method     string
+	Code       string
+	Detail     string
+	StatusCode int
+}
+
+func (e *hostRPCError) Error() string {
+	return fmt.Sprintf("host callback %s rejected request", e.Method)
+}
+
 func hostRPC(name string, arg any) (any, error) {
 	if host == nil || host.call == nil {
 		return nil, fmt.Errorf("host callbacks unavailable")
@@ -142,7 +153,13 @@ func hostRPC(name string, arg any) (any, error) {
 	if m, ok := v.(map[string]any); ok {
 		if okv, present := m["ok"].(bool); present {
 			if !okv {
-				return nil, fmt.Errorf("host callback %s rejected request", name)
+				rpcErr := &hostRPCError{Method: name}
+				if errObj, ok := m["error"].(map[string]any); ok {
+					rpcErr.Code = str(errObj, "code", "Code")
+					rpcErr.Detail = str(errObj, "message", "Message")
+					rpcErr.StatusCode = int(number(errObj, "status_code", "StatusCode", "statusCode", "status"))
+				}
+				return nil, rpcErr
 			}
 			if name == "host.auth.list" && len(m) != 2 {
 				// Only the official {ok:true,result:...} envelope vouches for
@@ -180,6 +197,9 @@ func dispatch(method string, body []byte) []byte {
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/consume-reset"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/reset-credits"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/config"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/exclude"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/run"},
 			},
 			"Resources": []map[string]string{
 				{"Path": "/dashboard", "Menu": "Mini Usage", "Description": "Quotas and credential usage"},
@@ -300,6 +320,57 @@ func dispatch(method string, body []byte) []byte {
 			}
 			body, _ := json.Marshal(map[string]any{"persistence": settings})
 			return okEnvelope(httpResponse(200, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/wakeup/config") {
+			var input WakeupConfig
+			if len(req.Body) > 128*1024 || json.Unmarshal(req.Body, &input) != nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_wakeup_config"}`)))
+			}
+			state, status, failure := tracker.setWakeupConfig(input)
+			var body []byte
+			if failure != "" {
+				body, _ = json.Marshal(map[string]any{"error": failure})
+			} else {
+				body, _ = json.Marshal(map[string]any{"wakeup": state})
+			}
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/wakeup/exclude") {
+			var input struct {
+				AuthID   string `json:"auth_id"`
+				Excluded *bool  `json:"excluded"`
+			}
+			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil || input.Excluded == nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_wakeup_config"}`)))
+			}
+			state, status, failure := tracker.setWakeupExcluded(input.AuthID, *input.Excluded)
+			var body []byte
+			if failure != "" {
+				body, _ = json.Marshal(map[string]any{"error": failure})
+			} else {
+				body, _ = json.Marshal(map[string]any{"wakeup": state})
+			}
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/wakeup/run") {
+			var input struct {
+				AuthID string `json:"auth_id"`
+				Force  bool   `json:"force"`
+			}
+			if len(req.Body) > 4096 || (len(strings.TrimSpace(string(req.Body))) > 0 && json.Unmarshal(req.Body, &input) != nil) {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_wakeup_config"}`)))
+			}
+			status, accepted, failure := tracker.kickWakeupRun(input.AuthID, input.Force)
+			result := map[string]any{"status": "running", "last_run_finished_at": accepted.LastRunFinished}
+			if input.AuthID != "" {
+				result["auth_id"] = input.AuthID
+				result["account_result_at"] = accepted.AccountResultAt
+			}
+			if failure != "" {
+				result = map[string]any{"error": failure}
+			}
+			body, _ := json.Marshal(result)
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
 		}
 		return okEnvelope(httpResponse(404, "application/json", []byte(`{"error":"not_found"}`)))
 	case "usage.handle":

@@ -183,6 +183,7 @@ type Snapshot struct {
 	QuotaRefreshFinishedAt string                         `json:"quota_refresh_finished_at,omitempty"`
 	AccountRefresh         map[string]AccountRefreshState `json:"account_refresh"`
 	Persistence            PersistenceSettings            `json:"persistence"`
+	Wakeup                 WakeupState                    `json:"wakeup"`
 	StorageError           string                         `json:"storage_error,omitempty"`
 	PriceError             string                         `json:"price_error,omitempty"`
 	QuotaError             string                         `json:"quota_error,omitempty"`
@@ -224,6 +225,17 @@ type Engine struct {
 	consuming            map[string]bool
 	resetBindings        map[string]resetBinding // Indexed by random confirmation token; never persisted.
 	lastRefresh          time.Time
+	wakeupConfig         WakeupConfig
+	wakeupRunning        bool
+	wakeupRunningAuths   map[string]bool
+	wakeupLastRunAt      time.Time
+	wakeupLastRunTrigger string
+	wakeupLastRunFinished time.Time
+	wakeupLastError      string
+	wakeupResults        map[string]WakeupAccountResult
+	wakeupLastSent       map[string]wakeupSentRecord
+	wakeupLastFail       map[string]time.Time
+	wakeupFiredSlots     map[string]time.Time
 }
 
 func newEngine() *Engine {
@@ -234,7 +246,25 @@ func newEngine() *Engine {
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), consuming: make(map[string]bool), resetBindings: make(map[string]resetBinding), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
+	return &Engine{
+		quotas:             make(map[string]AccountQuota),
+		forecasts:          make(map[string]SavedForecast),
+		accountRefresh:     make(map[string]AccountRefreshState),
+		consuming:          make(map[string]bool),
+		resetBindings:      make(map[string]resetBinding),
+		names:              make(map[string]string),
+		aliases:            make(map[string]string),
+		prices:             make(map[string]ModelPrice),
+		dir:                dir,
+		persistence:        PersistenceSettings{Enabled: true, Directory: dir},
+		done:               make(chan struct{}),
+		wakeupConfig:       defaultWakeupConfig(),
+		wakeupRunningAuths: make(map[string]bool),
+		wakeupResults:      make(map[string]WakeupAccountResult),
+		wakeupLastSent:     make(map[string]wakeupSentRecord),
+		wakeupLastFail:     make(map[string]time.Time),
+		wakeupFiredSlots:   make(map[string]time.Time),
+	}
 }
 
 func (e *Engine) start() {
@@ -246,8 +276,10 @@ func (e *Engine) start() {
 		// Check deadlines more often than their intervals so an attempt started
 		// just after a tick does not cost a whole extra refresh interval.
 		refreshTick := time.NewTicker(time.Minute)
+		wakeupTick := time.NewTicker(wakeupCheckInterval)
 		tc := time.NewTicker(24 * time.Hour)
 		defer refreshTick.Stop()
+		defer wakeupTick.Stop()
 		defer tc.Stop()
 		for {
 			select {
@@ -256,6 +288,8 @@ func (e *Engine) start() {
 			case <-refreshTick.C:
 				e.kickRefresh(false)
 				go e.refreshPrices(false)
+			case <-wakeupTick.C:
+				e.checkWakeupSchedule()
 			case <-tc.C:
 				e.mu.Lock()
 				e.compact()
@@ -743,6 +777,7 @@ func (e *Engine) snapshot() Snapshot {
 	result := Snapshot{HistoryAvailable: true, Quotas: make([]QuotaView, 0, len(e.quotas)), Credentials: []CredentialView{}, Recent: []RecentEvent{}, PriceUpdatedAt: e.priceUpdated.Format(time.RFC3339), QuotaUpdatedAt: e.quotaUpdated.Format(time.RFC3339), PriceError: e.priceError, QuotaError: e.quotaError, StorageError: e.storageError, GeneratedAt: now.Format(time.RFC3339)}
 	result.QuotaRefreshing = e.quotaRefreshing
 	result.Persistence = e.persistence
+	result.Wakeup = e.wakeupStateLocked(now)
 	if !e.quotaRefreshFinished.IsZero() {
 		result.QuotaRefreshFinishedAt = e.quotaRefreshFinished.Format(time.RFC3339Nano)
 	}

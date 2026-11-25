@@ -15,11 +15,12 @@ import (
 const allQuotaReadsFailed = "All OAuth quota reads failed; check the individual account messages"
 
 type AuthEntry struct {
-	Index    string
-	ID       string
-	Name     string
-	Provider string
-	Disabled bool
+	Index       string
+	ID          string
+	Name        string
+	Provider    string
+	RawProvider string
+	Disabled    bool
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
@@ -268,6 +269,7 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, ManualResetDiagnostic: resetDiagnostic, Disabled: entry.Disabled}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
+	e.updateWakeupObservedResetLocked(e.quotas[entry.ID])
 	if state, ok := e.accountRefresh[entry.ID]; ok {
 		state.Error = ""
 		e.accountRefresh[entry.ID] = state
@@ -296,6 +298,7 @@ func (e *Engine) refreshAntigravityQuota(entry AuthEntry, headers http.Header, c
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Groups: groups, FetchedAt: observedAt.Format(time.RFC3339Nano), Disabled: entry.Disabled}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
+	e.updateWakeupObservedResetLocked(e.quotas[entry.ID])
 	if state, ok := e.accountRefresh[entry.ID]; ok {
 		state.Error = ""
 		e.accountRefresh[entry.ID] = state
@@ -392,7 +395,8 @@ func parseAuthList(v any) []AuthEntry {
 		if !ok {
 			continue
 		}
-		provider := normalizeProvider(str(r, "provider", "Provider", "type", "Type", "auth_type", "AuthType"))
+		rawProvider := strings.ToLower(strings.TrimSpace(str(r, "provider", "Provider", "type", "Type", "auth_type", "AuthType")))
+		provider := normalizeProvider(rawProvider)
 		name := str(r, "email", "Email")
 		if name == "" {
 			name = str(r, "name", "Name", "file_name", "fileName", "filename", "Filename")
@@ -416,7 +420,7 @@ func parseAuthList(v any) []AuthEntry {
 		if strings.EqualFold(str(r, "status", "Status"), "disabled") {
 			disabled = true
 		}
-		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, Disabled: disabled})
+		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled})
 	}
 	return entries
 }
@@ -481,6 +485,8 @@ func (e *Engine) pruneQuotasLocked(live map[string]bool) bool {
 			delete(e.quotas, id)
 			e.removeResetBindingsLocked(id)
 			delete(e.accountRefresh, id)
+			delete(e.wakeupResults, id)
+			delete(e.wakeupLastFail, id)
 			removed = true
 		}
 	}

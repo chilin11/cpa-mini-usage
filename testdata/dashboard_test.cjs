@@ -56,7 +56,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     clearTimeout(timer){if(timer===alertTimeout)alertTimeout=undefined;}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, openWakeup, closeWakeup, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){
     fakeNow+=ms;
@@ -149,7 +149,8 @@ for(const version of [1,2]) test(`reuse CPA v${version} encoded login without in
   assert.equal(requests[0].url,'/v0/management/plugins/cpa-mini-usage/data');
   assert.equal(requests[0].options.headers.Authorization,'Bearer test-only-key');
   assert.equal(requests[0].options.redirect,'error');
-  assert.equal((html.match(/<input\b/g)||[]).length,4);assert.match(html,/<input id="account-search" type="search"/);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="(?:password|text)"/.test(html));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
+  const outsideWakeup=html.split('<div id="wakeup-dialog"')[0];
+  assert.equal((outsideWakeup.match(/<input\b/g)||[]).length,4);assert.match(html,/<input id="account-search" type="search"/);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="password"/.test(html));assert(!/type="(?:password|text)"/.test(outsideWakeup));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
 });
 test('cross-origin or corrupt CPA credentials are not reused', () => {
   for(const version of [1,2]){
@@ -1750,3 +1751,154 @@ for(const language of ['zh','en'])test(`${language}: pagination boundary, sortin
   assert.equal(d.elements.get('quota-count').textContent,'14');
   assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 14 个，共 14 个账户':'Showing 1–12 / 14 matching, 14 accounts total');
 });
+
+test('scheduled wakeup dialog saves settings, validates daily times, closes on Escape and runs full/single wakeup', async () => {
+  const calls = [];
+  let savedConfig = {
+    enabled: false, mode: 'daily', times: ['07:00'], timezone_offset_min: 480, skip_active_window: true,
+    providers: { claude: true, codex: true, antigravity: true }, excluded_auth_ids: [], models: {}, message: 'hi',
+  };
+  let runSeq = 0;
+  let results = {};
+  let running = false;
+  let runningAuths = [];
+  let finishedAt = '';
+  const snapshotPayload = () => ({
+    quotas: [
+      { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', five_hour: { used_percent: 0 } },
+      { auth_id: 'codex-b', provider: 'codex', name: 'bob@example.com', disabled: true, five_hour: { used_percent: 0 } },
+    ],
+    persistence: { enabled: true, directory: '/tmp/cpa' },
+    wakeup: {
+      config: savedConfig,
+      running,
+      running_auth_ids: runningAuths,
+      last_run_at: finishedAt,
+      last_run_finished_at: finishedAt,
+      last_run_trigger: runSeq ? 'manual' : '',
+      next_scheduled_at: savedConfig.enabled ? '2026-10-10T23:00:00Z' : '',
+      results,
+    },
+  });
+  const d = dashboard({ managementKey: 'key' }, async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.startsWith('/v0/management/auth-files/models')) {
+      return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-haiku-4-5-20251001' }] }) };
+    }
+    if (url.endsWith('/wakeup/config')) {
+      savedConfig = JSON.parse(options.body);
+      return { ok: true, status: 200, json: async () => ({ wakeup: snapshotPayload().wakeup }) };
+    }
+    if (url.endsWith('/wakeup/exclude')) {
+      const body = JSON.parse(options.body);
+      savedConfig = { ...savedConfig, excluded_auth_ids: body.excluded ? [body.auth_id] : [] };
+      return { ok: true, status: 200, json: async () => ({ wakeup: snapshotPayload().wakeup }) };
+    }
+    if (url.endsWith('/wakeup/run')) {
+      const body = JSON.parse(options.body);
+      runSeq++;
+      finishedAt = `2026-10-09T07:00:0${runSeq}Z`;
+      running = false;
+      runningAuths = [];
+      results = {
+        'claude-a': { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', status: 'sent', model: 'claude-haiku-4-5-20251001', at: finishedAt },
+      };
+      return { ok: true, status: 202, json: async () => ({ status: 'running', auth_id: body.auth_id || '', last_run_finished_at: '', account_result_at: '' }) };
+    }
+    return { ok: true, status: 200, json: async () => snapshotPayload() };
+  });
+
+  await d.api.load();
+  assert.equal(d.elements.get('wakeup-open').hidden, false);
+  assert.equal(d.elements.get('wakeup-open-label').textContent, '定时唤醒');
+
+  // Switch to requests tab hides wakeup button; switch back restores it.
+  d.api.setTab('requests');
+  assert.equal(d.elements.get('wakeup-open').hidden, true);
+  d.api.setTab('quota');
+  assert.equal(d.elements.get('wakeup-open').hidden, false);
+
+  // Open wakeup modal: background becomes inert, scope reflects enabled accounts.
+  d.api.openWakeup();
+  assert.equal(d.elements.get('wakeup-dialog').hidden, false);
+  assert.equal(d.elements.get('dashboard').inert, true);
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
+
+  // Validation rejects invalid model name and enabled schedule with zero providers.
+  d.elements.get('wakeup-enabled').checked = true;
+  d.elements.get('wakeup-model-claude').value = 'bad model name';
+  assert.equal(await d.api.saveWakeupConfig(), false);
+  assert.match(d.elements.get('wakeup-message-box').textContent, /模型名称格式无效/);
+
+  // Draft input survives background acceptSnapshot without overwriting edited fields.
+  d.elements.get('wakeup-model-claude').value = 'claude-haiku-4-5-20251001';
+  d.elements.get('wakeup-text').value = 'ping';
+  d.elements.get('wakeup-text').oninput();
+  d.api.acceptSnapshot(snapshotPayload());
+  assert.equal(d.elements.get('wakeup-text').value, 'ping');
+
+  // Account selector in modal toggles exclusion and clears exclusion cleanly.
+  d.elements.get('wakeup-accounts-toggle').onclick();
+  assert.equal(d.elements.get('wakeup-accounts-list').hidden, false);
+  const accItem = d.elements.get('wakeup-accounts-list').children[0];
+  accItem.onclick();
+  assert.match(d.elements.get('wakeup-scope-text').textContent, /已排除 1/);
+  d.elements.get('wakeup-clear-excluded').onclick();
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
+
+  // Add second time slot and save valid config.
+  d.elements.get('wakeup-time-input').value = '12:05';
+  d.elements.get('wakeup-time-add').onclick();
+  assert.equal(await d.api.saveWakeupConfig(), true);
+
+  const configCall = calls.find(c => c.url.endsWith('/wakeup/config'));
+  assert(configCall, 'expected POST wakeup/config');
+  const sentCfg = JSON.parse(configCall.options.body);
+  assert.equal(sentCfg.enabled, true);
+  assert.deepEqual(sentCfg.times, ['07:00', '12:05']);
+  assert.equal(sentCfg.models.claude, 'claude-haiku-4-5-20251001');
+  assert.equal(sentCfg.message, 'ping');
+  assert.equal(d.elements.get('wakeup-open-label').textContent, '定时唤醒 · 07:00 +1');
+
+  // Run full wakeup from modal.
+  await d.api.runWakeupAll();
+  assert(calls.some(c => c.url.endsWith('/wakeup/run')));
+  assert.equal(d.elements.get('wakeup-results-wrap').hidden, false);
+
+  // Escape closes wakeup dialog and restores inert=false.
+  d.events.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(d.elements.get('wakeup-dialog').hidden, true);
+  assert.equal(d.elements.get('dashboard').inert, false);
+
+  // Enabled account card exposes single-account wake button, schedule exclude toggle and inline status strip.
+  const cards = visibleAccounts(d);
+  const claudeCard = cards.find(c => c.dataset.authId === 'claude-a');
+  const disabledCard = cards.find(c => c.dataset.authId === 'codex-b');
+  const wakeBtn = descendants(claudeCard).find(n => n.className === 'button account-action account-wakeup');
+  const toggleBtn = descendants(claudeCard).find(n => n.className === 'button account-action account-wakeup-toggle');
+  const statusStrip = descendants(claudeCard).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  assert(wakeBtn, 'enabled card should have Wake button');
+  assert(toggleBtn, 'enabled card should show Auto toggle when schedule is enabled');
+  assert(statusStrip && statusStrip.hidden === false && statusStrip.textContent.includes('claude-haiku-4-5-20251001'));
+  assert.equal(descendants(disabledCard).find(n => n.className === 'button account-action account-wakeup'), undefined);
+
+  // Toggle exclusion for claude-a.
+  await toggleBtn.onclick();
+  const excludeCall = calls.find(c => c.url.endsWith('/wakeup/exclude'));
+  assert(excludeCall);
+  assert.deepEqual(JSON.parse(excludeCall.options.body), { auth_id: 'claude-a', excluded: true });
+
+  // Single-account wake button sends force=true and reports synced quota note on the current card.
+  await d.api.runAccountWakeup('claude-a');
+  const singleRun = calls.filter(c => c.url.endsWith('/wakeup/run')).at(-1);
+  assert.deepEqual(JSON.parse(singleRun.options.body), { auth_id: 'claude-a', force: true });
+  const latestClaudeCard = visibleAccounts(d).find(c => c.dataset.authId === 'claude-a');
+  const noteNode = descendants(latestClaudeCard).find(n => n.className === 'account-note');
+  assert(noteNode && noteNode.textContent.includes('额度已同步'));
+
+  // Language switch translates wakeup button and dialog labels.
+  d.api.setLanguage('en', false);
+  assert.equal(d.elements.get('wakeup-open-label').textContent, 'Wakeup · 07:00 +1');
+  assert.equal(d.elements.get('wakeup-title').textContent, 'Scheduled Wakeup · Lock 5h Window');
+});
+
