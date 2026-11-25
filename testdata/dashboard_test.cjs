@@ -1767,6 +1767,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   const snapshotPayload = () => ({
     quotas: [
       { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', five_hour: { used_percent: 0 } },
+      { auth_id: 'codex-full', provider: 'codex', name: 'full@example.com', five_hour: { used_percent: 100 } },
       { auth_id: 'codex-b', provider: 'codex', name: 'bob@example.com', disabled: true, five_hour: { used_percent: 0 } },
     ],
     persistence: { enabled: true, directory: '/tmp/cpa' },
@@ -1778,16 +1779,20 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
       running_auth_ids: runningAuths,
       last_run_at: finishedAt,
       last_run_finished_at: finishedAt,
-      last_run_trigger: runSeq ? 'manual' : '',
+      last_run_trigger: runSeq ? (lastForce ? 'test' : 'manual') : '',
       next_scheduled_at: savedConfig.enabled ? '2026-11-25T03:00:00Z' : '',
       next_scheduled_runs: savedConfig.enabled ? ['2026-11-25T03:00:00Z', '2026-11-25T08:00:00Z'] : [],
       results,
     },
   });
+  let lastForce = false;
   const d = dashboard({ managementKey: 'key' }, async (url, options = {}) => {
     calls.push({ url, options });
     if (url.startsWith('/v0/management/auth-files/models')) {
-      return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-haiku-4-5-20251001' }, { id: 'claude-sonnet-4-6' }] }) };
+      if (url.includes('codex-full')) {
+        return { ok: true, status: 200, json: async () => ({ models: [{ id: 'gpt-6-astra' }, { id: 'codex-auto-review' }, { id: 'gpt-6-luna' }, { id: 'gpt-5.1-codex-mini' }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ models: [{ id: 'claude-opus-4-6' }, { id: 'claude-haiku-4-5-20251001' }, { id: 'claude-sonnet-4-6' }] }) };
     }
     if (url.endsWith('/wakeup/config')) {
       savedConfig = JSON.parse(options.body);
@@ -1802,12 +1807,14 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
     }
     if (url.endsWith('/wakeup/run')) {
       const body = JSON.parse(options.body);
+      lastForce = Boolean(body.force);
       runSeq++;
       finishedAt = `2026-11-25T06:00:0${runSeq}Z`;
       running = false;
       runningAuths = [];
       results = {
         'claude-a': { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', status: 'sent', model: 'claude-haiku-4-5-20251001', at: finishedAt },
+        'codex-full': { auth_id: 'codex-full', provider: 'codex', name: 'full@example.com', status: 'exhausted', reason: 'quota_exhausted', at: finishedAt },
       };
       return { ok: true, status: 202, json: async () => ({ status: 'running', auth_id: body.auth_id || '', last_run_finished_at: '', account_result_at: '' }) };
     }
@@ -1832,8 +1839,16 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert(d.elements.get('page-quota').classes.has('hide'));
   assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * *');
   assert.match(d.elements.get('wakeup-persist').textContent, /\/tmp\/cpa\/wakeup\.json/);
-  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：2 / 2 个已启用');
   assert(descendants(d.elements.get('wakeup-cron-preview')).filter(n => n.className === 'wakeup-preview-chip').length === 4);
+
+  // Wait a microtask for model hints fetch: auto recommendation prefers lightweight mini/haiku, never astra or auto-review.
+  await new Promise(resolve => setImmediate(resolve));
+  const codexOpts = d.elements.get('wakeup-model-select-codex').children;
+  assert.match(codexOpts[0].textContent, /gpt-5\.1-codex-mini/);
+  assert(!codexOpts[0].textContent.includes('astra'));
+  assert(!codexOpts.some(o => o.value === 'codex-auto-review'));
+  assert.match(d.elements.get('wakeup-model-select-claude').children[0].textContent, /claude-haiku-4-5-20251001/);
 
   // Clicking a preset updates Cron expression immediately.
   const weekdayPreset = d.elements.get('wakeup-presets').children.find(b => b.dataset.cron === '0 6,11,16,21 * * 1-5');
@@ -1882,7 +1897,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   accCheckbox.onclick();
   assert.match(d.elements.get('wakeup-scope-text').textContent, /已排除 1/);
   d.elements.get('wakeup-clear-excluded').onclick();
-  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：2 / 2 个已启用');
 
   // Save valid Cron config: persistence banner confirms durable disk save across CPA updates.
   assert.equal(await d.api.saveWakeupConfig(), true);
@@ -1897,9 +1912,14 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert.match(d.elements.get('wakeup-tab-badge').textContent, /^下次 \d{2}:\d{2}$/);
   assert.match(d.elements.get('wakeup-persist').textContent, /已持久保存/);
 
-  // Run full wakeup from wakeup tab.
-  await d.api.runWakeupAll();
-  assert(calls.some(c => c.url.endsWith('/wakeup/run')));
+  // Test all accounts button sends force=true and renders inline OK (green) & exhausted (amber) badges per account row.
+  await d.elements.get('wakeup-test-all').onclick();
+  const testAllCall = calls.filter(c => c.url.endsWith('/wakeup/run')).at(-1);
+  assert.deepEqual(JSON.parse(testAllCall.options.body), { force: true });
+  assert.match(d.elements.get('wakeup-message-box').textContent, /测试完成：OK 1，额度已用完 1，失败 0/);
+  const rowBadges = descendants(d.elements.get('wakeup-accounts-list')).filter(n => String(n.className || '').startsWith('wakeup-badge '));
+  assert(rowBadges.some(b => b.className === 'wakeup-badge sent' && descendants(b).some(c => c.textContent === 'OK')));
+  assert(rowBadges.some(b => b.className === 'wakeup-badge exhausted' && descendants(b).some(c => c.textContent === '额度已用完')));
   assert(descendants(d.elements.get('wakeup-results')).some(n => n.textContent.includes('claude-haiku-4-5-20251001')));
 
   // Switch back to quota tab: enabled account card exposes wake button, schedule exclude toggle and inline status strip.

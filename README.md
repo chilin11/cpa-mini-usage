@@ -278,6 +278,10 @@ Upgrade scheduled wakeup to standard 5-field Cron scheduling (default `0 6,11,16
 
 Move scheduled wakeup into its own dedicated third tab (**Scheduled wakeup**) with a two-column layout, flat per-account inclusion/test controls, and a live persistence banner showing the exact `data/cpa-mini-usage/wakeup.json` path. Harden schedule continuity across CPA upgrades and restarts with a 5-second startup schedule check, automatic slot rollback when `host.auth.list` is transiently unavailable during CPA boot, and persisted wakeup tracking synced alongside the shared CPA `data` directory. Upgrade the plugin and restart CPA while keeping the persistent data directory mounted.
 
+### v0.1.42
+
+Refine scheduled wakeup feedback and model selection: distinguish exhausted accounts (100% used 5-hour/7-day window, CPA runtime cooldown/unavailable state, or HTTP 429 rate limits) with a dedicated amber `exhausted` (`额度已用完`) status instead of misreporting `failed` or missing wakeup models; render inline color-coded status dot badges (`OK`, `Quota exhausted`, `Testing…`, `Skipped`, `Failed`) directly on every account row in the wakeup tab; add a **Test all accounts** (`测试全部账户`) button (`force: true`) alongside **Wake now**; and rank lightweight chat models (`mini`, `nano`, `haiku`, `flash-lite`, `spark`, `luna`) ahead of heavy flagship models (`astra`, `opus`, `thinking`, `xhigh`, `pro`) while filtering out non-chat models on both backend and frontend dropdowns. Upgrade the plugin and restart CPA while keeping the persistent data directory mounted.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

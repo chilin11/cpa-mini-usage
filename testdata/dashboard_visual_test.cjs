@@ -125,7 +125,7 @@ window.visualFixture = {
         results:{
           'demo-claude':{auth_id:'demo-claude',provider:'claude',name:'demo-team@example.test',status:'sent',model:'claude-haiku-4-5-20251001',at:'2026-10-09T06:00:05Z'},
           'demo-codex':{auth_id:'demo-codex',provider:'codex',name:'demo-lab@example.test',status:'skipped',reason:'window_active',at:'2026-10-09T06:00:06Z'},
-          'demo-long':{auth_id:'demo-long',provider:'codex',name:'demo-very-long-account-identifier-for-responsive-check@example.test',status:'failed',reason:'rate_limited',at:'2026-10-09T06:00:07Z'}
+          'demo-long':{auth_id:'demo-long',provider:'codex',name:'demo-very-long-account-identifier-for-responsive-check@example.test',status:'exhausted',reason:'rate_limited',at:'2026-10-09T06:00:07Z'}
         }
       };
     }

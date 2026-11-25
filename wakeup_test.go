@@ -353,7 +353,7 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 	if _, stale := snap.Results["removed-old"]; stale {
 		t.Fatalf("full wakeup batch should clear stale results from prior runs: %+v", snap.Results)
 	}
-	if snap.Results["claude-1"].Status != "sent" || snap.Results["claude-1"].Model != "claude-3-5-haiku-20241022" {
+	if snap.Results["claude-1"].Status != "sent" || snap.Results["claude-1"].Model != "claude-haiku-4-5" {
 		t.Fatalf("claude fallback unexpected: %+v", snap.Results["claude-1"])
 	}
 
@@ -361,7 +361,7 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 	restored := newEngine()
 	restored.dir = e.dir
 	restored.load()
-	if got := restored.snapshot().Wakeup.Results["claude-1"]; got.Status != "sent" || got.Model != "claude-3-5-haiku-20241022" {
+	if got := restored.snapshot().Wakeup.Results["claude-1"]; got.Status != "sent" || got.Model != "claude-haiku-4-5" {
 		t.Fatalf("restored wakeup result mismatch: %+v", got)
 	}
 	if snap.Results["dis-1"].Status != "skipped" || snap.Results["dis-1"].Reason != wakeupReasonDisabled {
@@ -415,7 +415,7 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		t.Fatalf("explicit user model must not silently fall back: attempts=%d res=%+v", attempts, res)
 	}
 
-	// Rate limit must stop immediately without trying other candidates.
+	// Rate limit (429) must stop immediately and report status=exhausted (not generic failed).
 	e.wakeupConfig.Models = map[string]string{}
 	attempts = 0
 	exec429 := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
@@ -423,8 +423,8 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		return model, wakeupErrRateLimited
 	}
 	res = e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, true, time.Now().UTC(), nil, exec429)
-	if attempts != 1 || res.Reason != wakeupErrRateLimited {
-		t.Fatalf("429 must stop immediately: attempts=%d res=%+v", attempts, res)
+	if attempts != 1 || res.Status != "exhausted" || res.Reason != wakeupErrRateLimited {
+		t.Fatalf("429 must stop immediately as exhausted: attempts=%d res=%+v", attempts, res)
 	}
 
 	// Verify error classification never leaks raw secret detail.
@@ -682,5 +682,73 @@ func TestWakeupSurvivesCPAUpgradeAndRestartWithoutUI(t *testing.T) {
 	waitWakeupIdle(t, after)
 	if calls != 1 {
 		t.Fatalf("expected rolled-back slot to fire once CPA became ready, got %d", calls)
+	}
+}
+
+func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
+	now := time.Now().UTC()
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.load()
+
+	// 1. Account with observed 100% five-hour usage reports exhausted even under force=true test,
+	// without issuing a model call or misreporting model_unavailable.
+	e.quotas["codex-full"] = AccountQuota{
+		AuthID: "codex-full", Provider: "codex", Name: "full@example.com",
+		Five: &QuotaWindow{Used: 100, ResetAt: now.Add(2 * time.Hour).Format(time.RFC3339)},
+	}
+	called := false
+	execShouldNotRun := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		called = true
+		return model, ""
+	}
+	res := e.wakeupEntry(AuthEntry{ID: "codex-full", Provider: "codex"}, e.wakeupConfig, true, now, nil, execShouldNotRun)
+	if called || res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
+		t.Fatalf("expected 100%% used account to report exhausted without calling model: called=%v res=%+v", called, res)
+	}
+
+	// 2. Account marked cooling/unavailable by CPA host.auth.list whose pinned execute returns auth_not_found
+	// reports exhausted instead of model_unavailable.
+	rawList := map[string]any{"files": []any{
+		map[string]any{
+			"id":               "codex-cool",
+			"auth_index":       "i-cool",
+			"provider":         "codex",
+			"email":            "cool@example.com",
+			"unavailable":      true,
+			"next_retry_after": now.Add(30 * time.Minute).Format(time.RFC3339),
+		},
+	}}
+	entries := parseAuthList(rawList)
+	if len(entries) != 1 || !entries[0].QuotaCooling {
+		t.Fatalf("expected parseAuthList to detect CPA cooling state: %+v", entries)
+	}
+	execAuthNotFound := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		return model, wakeupErrModelUnavail
+	}
+	res = e.wakeupEntry(entries[0], e.wakeupConfig, true, now, nil, execAuthNotFound)
+	if res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
+		t.Fatalf("expected cooling account auth_not_found to report exhausted, got %+v", res)
+	}
+
+	// 3. Lightweight model ordering never prefers heavy flagship models (e.g. astra) or non-chat models.
+	e.events = []Event{
+		{At: now, AuthID: "codex-a", Provider: "codex", Model: "gpt-6-astra"},
+		{At: now, AuthID: "codex-a", Provider: "codex", Model: "codex-auto-review"},
+		{At: now, AuthID: "codex-a", Provider: "codex", Model: "gpt-image-2"},
+	}
+	e.mu.RLock()
+	candidates := e.wakeupCandidateModelsLocked(AuthEntry{ID: "codex-a", Provider: "codex"}, "", e.wakeupConfig)
+	e.mu.RUnlock()
+	if len(candidates) == 0 || candidates[0] != "gpt-5.1-codex-mini" {
+		t.Fatalf("expected lightweight mini model first, got %v", candidates)
+	}
+	for _, m := range candidates {
+		if m == "codex-auto-review" || m == "gpt-image-2" {
+			t.Fatalf("non-chat model %q must not be in wakeup candidates: %v", m, candidates)
+		}
+	}
+	if candidates[len(candidates)-1] != "gpt-6-astra" {
+		t.Fatalf("heavy flagship model gpt-6-astra should only appear last as fallback: %v", candidates)
 	}
 }

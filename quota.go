@@ -15,12 +15,13 @@ import (
 const allQuotaReadsFailed = "All OAuth quota reads failed; check the individual account messages"
 
 type AuthEntry struct {
-	Index       string
-	ID          string
-	Name        string
-	Provider    string
-	RawProvider string
-	Disabled    bool
+	Index        string
+	ID           string
+	Name         string
+	Provider     string
+	RawProvider  string
+	Disabled     bool
+	QuotaCooling bool
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
@@ -420,7 +421,21 @@ func parseAuthList(v any) []AuthEntry {
 		if strings.EqualFold(str(r, "status", "Status"), "disabled") {
 			disabled = true
 		}
-		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled})
+		cooling := false
+		if unavail, _ := getAny(r, "unavailable", "Unavailable").(bool); unavail {
+			cooling = true
+		}
+		if retryStr := str(r, "next_retry_after", "NextRetryAfter"); retryStr != "" {
+			if retryAt, ok := parseWindowResetTime(retryStr); ok && retryAt.After(time.Now().UTC()) {
+				cooling = true
+			}
+		}
+		if msg := strings.ToLower(str(r, "status_message", "StatusMessage")); msg != "" {
+			if strings.Contains(msg, "429") || strings.Contains(msg, "quota") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit") || strings.Contains(msg, "cooldown") || strings.Contains(msg, "exhausted") || strings.Contains(msg, "usage limit") {
+				cooling = true
+			}
+		}
+		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled, QuotaCooling: cooling})
 	}
 	return entries
 }

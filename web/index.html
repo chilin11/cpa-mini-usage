@@ -128,6 +128,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account-wakeup-toggle.excluded{color:var(--warm);background:var(--warm-soft);border-color:var(--warm)}
 .account-wakeup-status{margin:0;padding:4px 8px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);background:var(--subtle);overflow-wrap:anywhere}
 .account-wakeup-status.sent{color:var(--good);background:var(--good-soft)}
+.account-wakeup-status.exhausted{color:var(--warm);background:var(--warm-soft)}
 .account-wakeup-status.failed{color:var(--bad);background:var(--bad-soft)}
 .tab-count.wakeup-on{color:var(--good);background:var(--good-soft);border-color:var(--edge)}
 .tab-count.wakeup-busy{color:var(--accent);background:var(--accent-soft);border-color:var(--edge)}
@@ -200,8 +201,11 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .wakeup-result-main{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .wakeup-result-name{font-weight:600;color:var(--ink)}
 .wakeup-result-meta{color:var(--muted);font-family:var(--mono);font-size:10px}
-.wakeup-badge{flex-shrink:0;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+.wakeup-badge{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:650;border:1px solid var(--line);background:var(--panel);color:var(--muted);white-space:nowrap}
+.wakeup-badge-dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:currentColor}
 .wakeup-badge.sent{color:var(--good);background:var(--good-soft);border-color:var(--edge)}
+.wakeup-badge.exhausted{color:var(--warm);background:var(--warm-soft);border-color:var(--warm)}
+.wakeup-badge.busy{color:var(--accent);background:var(--accent-soft);border-color:var(--edge)}
 .wakeup-badge.failed{color:var(--bad);background:var(--bad-soft);border-color:var(--bad)}
 .wakeup-badge.skipped{color:var(--muted);background:var(--panel)}
 .wakeup-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
@@ -375,7 +379,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.41</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.42</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -443,7 +447,8 @@ tbody tr:focus-within>td{background:var(--hover)}
         <div id="wakeup-persist" class="wakeup-persist" role="status" aria-live="polite"></div>
       </div>
       <div class="wakeup-hero-actions">
-        <button class="button" type="button" id="wakeup-run-now" data-i18n="立即唤醒全部">立即唤醒全部</button>
+        <button class="button" type="button" id="wakeup-test-all" data-i18n="测试全部账户">测试全部账户</button>
+        <button class="button" type="button" id="wakeup-run-now" data-i18n="立即唤醒">立即唤醒</button>
         <button class="button modal-primary" type="button" id="wakeup-save" data-i18n="保存设置">保存设置</button>
       </div>
     </div>
@@ -765,13 +770,20 @@ const translations={
   '关':'Off','开':'On','运行中':'Running','刷新状态':'Refresh status',
   '防重策略':'Deduplication rules','3. 防重与补发策略':'3. Deduplication & retry rules',
   '参与唤醒的账户':'Accounts included in wakeup','全部参与':'Include all','测试':'Test',
-  '尚无唤醒记录，点击“立即唤醒全部”或单账户“测试”即可验证。':'No wakeup records yet. Click “Wake all now” or “Test” on an account to verify.',
+  '尚无唤醒记录，点击“测试全部账户”或单账户“测试”即可验证。':'No wakeup records yet. Click “Test all accounts” or “Test” on an account to verify.',
   '5h 剩 {pct}%':'5h {pct}% left','5h 未知':'5h unknown',
   '已持久保存（更新 CPA / 重启后自动保留，后台独立运行）':'Saved persistently (survives CPA updates/restarts; runs server-side)',
   '尚未保存到磁盘，点击“保存设置”后跨 CPA 更新持久生效':'Not yet saved to disk; click “Save settings” to persist across CPA updates',
   '有未保存更改，点击“保存设置”写入持久文件':'Unsaved changes; click “Save settings” to persist',
   '存储处于只读保护状态，暂不可修改设置':'Storage is read-only; settings cannot be modified',
-  '配置文件：':'Config file:'
+  '配置文件：':'Config file:',
+  '测试全部账户':'Test all accounts','立即唤醒':'Wake now','测试中…':'Testing…','OK':'OK','额度已用完':'Quota exhausted','用完':'Exhausted',
+  '触发：测试全部':'Trigger: Test all','该账户额度已用完（429 / 冷却中）。':'Quota exhausted (HTTP 429 / cooling down).',
+  '该账户当前周期额度已用完。':'Account quota is exhausted for the current window.',
+  'OK {sent} · 用完 {exhausted} · 跳过 {skipped} · 失败 {failed}':'OK {sent} · Exhausted {exhausted} · Skipped {skipped} · Failed {failed}',
+  '测试完成：OK {sent}，额度已用完 {exhausted}，失败 {failed}。':'Test finished: {sent} OK, {exhausted} exhausted, {failed} failed.',
+  '唤醒完成：OK {sent}，用完 {exhausted}，跳过 {skipped}，失败 {failed}。':'Wakeup finished: {sent} OK, {exhausted} exhausted, {skipped} skipped, {failed} failed.',
+  '强制给每个符合条件的已启用账户发一次测试消息（不跳过已激活的 5 小时窗口；已满额账户将显示“额度已用完”）':'Send a live test message to every eligible enabled account (ignores active-window skip; 100% used accounts report Quota exhausted)'
 };
 function initialLanguage(){
   try{
@@ -796,7 +808,7 @@ function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
-  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','reset_rate_limited':'重置请求过于频繁，请稍后重试。','invalid_confirmation_token':'重置确认凭据无效，请重新打开弹窗后再试。','account_disabled':'账户已禁用，无法使用重置卡。','reset_auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','reset_account_changed':'该账户凭证已变更，请重新打开重置弹窗核对后再试。','reset_unconfirmed':'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。','reset organization unavailable':'无法读取账户所属组织信息，请稍后重试。','claude_reset_cli_version':'客户端版本过旧，暂不支持读取 Claude 重置卡。','claude_reset_surface':'当前请求身份未获 Claude 重置卡接口认可。','claude_reset_not_eligible':'当前账户不符合 Claude 重置卡使用条件。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。','invalid_wakeup_config':'唤醒配置无效，请检查时间点与模型名称。','wakeup_busy':'已有唤醒任务正在进行，请稍后重试。','wakeup_unsupported':'此账户不支持定时唤醒。','host_unsupported':'当前 CPA 版本不支持模型执行回调，请升级 CPA 后重试。','host_list_unavailable':'主机接口不可用。','model_unavailable':'该账户下未找到可用唤醒模型，请在定时唤醒设置中指定模型。','rate_limited':'该账户当前被限流或处于冷却中。','auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','request_failed':'唤醒请求失败，请稍后重试。','window_active':'5 小时窗口已激活，已跳过。','disabled':'该账户未启用，已跳过。','excluded':'该账户已排除定时唤醒。','provider_disabled':'该服务商未开启定时唤醒。'};
+  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','reset_rate_limited':'重置请求过于频繁，请稍后重试。','invalid_confirmation_token':'重置确认凭据无效，请重新打开弹窗后再试。','account_disabled':'账户已禁用，无法使用重置卡。','reset_auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','reset_account_changed':'该账户凭证已变更，请重新打开重置弹窗核对后再试。','reset_unconfirmed':'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。','reset organization unavailable':'无法读取账户所属组织信息，请稍后重试。','claude_reset_cli_version':'客户端版本过旧，暂不支持读取 Claude 重置卡。','claude_reset_surface':'当前请求身份未获 Claude 重置卡接口认可。','claude_reset_not_eligible':'当前账户不符合 Claude 重置卡使用条件。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。','invalid_wakeup_config':'唤醒配置无效，请检查时间点与模型名称。','wakeup_busy':'已有唤醒任务正在进行，请稍后重试。','wakeup_unsupported':'此账户不支持定时唤醒。','host_unsupported':'当前 CPA 版本不支持模型执行回调，请升级 CPA 后重试。','host_list_unavailable':'主机接口不可用。','model_unavailable':'该账户下未找到可用唤醒模型，请在定时唤醒设置中指定模型。','rate_limited':'该账户额度已用完（429 / 冷却中）。','quota_exhausted':'该账户当前周期额度已用完。','auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','request_failed':'唤醒请求失败，请稍后重试。','window_active':'5 小时窗口已激活，已跳过。','disabled':'该账户未启用，已跳过。','excluded':'该账户已排除定时唤醒。','provider_disabled':'该服务商未开启定时唤醒。'};
   if(text==='storage_write_failed')return '无法保存设置，请稍后重试。';
   if(known[text])return known[text];
   if(/host callback|invalid host response/.test(text))return '主机接口请求失败。';
@@ -1229,11 +1241,23 @@ function formatUtcOffset(min){
 }
 const defaultCronExpr='0 6,11,16,21 * * *';
 const wakeupModelSlots=[
-  {key:'claude',selectId:'wakeup-model-select-claude',inputId:'wakeup-model-claude',provider:'claude',defaults:['claude-haiku-4-5-20251001','claude-sonnet-4-6','claude-sonnet-4-5-20250929','claude-3-5-haiku-20241022']},
-  {key:'codex',selectId:'wakeup-model-select-codex',inputId:'wakeup-model-codex',provider:'codex',defaults:['gpt-5.6-luna','gpt-6-luna','gpt-5.5','gpt-5.1-codex-mini','gpt-5.4-mini','gpt-5.3-codex']},
-  {key:'antigravity:gemini',selectId:'wakeup-model-select-ag-gemini',inputId:'wakeup-model-ag-gemini',provider:'antigravity',defaults:['gemini-3-flash','gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash']},
-  {key:'antigravity:claude-gpt',selectId:'wakeup-model-select-ag-claude',inputId:'wakeup-model-ag-claude',provider:'antigravity',defaults:['claude-sonnet-4-6','gpt-oss-120b-medium','claude-opus-4-6-thinking']}
+  {key:'claude',selectId:'wakeup-model-select-claude',inputId:'wakeup-model-claude',provider:'claude',defaults:['claude-haiku-4-5-20251001','claude-haiku-4-5','claude-3-5-haiku-20241022','claude-sonnet-4-6','claude-sonnet-4-5-20250929']},
+  {key:'codex',selectId:'wakeup-model-select-codex',inputId:'wakeup-model-codex',provider:'codex',defaults:['gpt-5.1-codex-mini','gpt-5.4-mini','gpt-5.3-codex-spark','gpt-5.4-nano','gpt-5-mini','gpt-5.6-luna','gpt-6-luna','gpt-5.5','gpt-5.2-codex','gpt-5.3-codex','gpt-5.4']},
+  {key:'antigravity:gemini',selectId:'wakeup-model-select-ag-gemini',inputId:'wakeup-model-ag-gemini',provider:'antigravity',defaults:['gemini-2.5-flash-lite','gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3-flash','gemini-2.5-flash']},
+  {key:'antigravity:claude-gpt',selectId:'wakeup-model-select-ag-claude',inputId:'wakeup-model-ag-claude',provider:'antigravity',defaults:['gpt-oss-120b-medium','claude-sonnet-4-6']}
 ];
+function isNonChatWakeupModelJS(model){
+  const l=String(model||'').toLowerCase();
+  return ['image','video','tts','speech','audio','whisper','embedding','auto-review','reserve'].some(k=>l.includes(k));
+}
+function wakeupModelWeight(model){
+  const l=String(model||'').toLowerCase();
+  if(isNonChatWakeupModelJS(l))return 100;
+  if(['astra','opus','fable','xhigh','thinking','-pro','pro-','sol','terra','research','max'].some(k=>l.includes(k)))return 80;
+  if(['haiku','nano','mini','flash-lite','lite','spark'].some(k=>l.includes(k)))return 10;
+  if(['flash','luna','fast'].some(k=>l.includes(k)))return 20;
+  return 30;
+}
 function legacyTimesToCron(times){
   const valid=list(times).map(v=>String(v).trim()).filter(v=>/^([01][0-9]|2[0-3]):([0-5][0-9])$/.test(v)).sort();
   if(!valid.length)return '';
@@ -1360,12 +1384,27 @@ function defaultWakeupDraft(source){
   };
 }
 const wakeupModeLabel=mode=>mode==='reset'?t('5 小时窗口重置后自动'):mode==='both'?t('Cron 定时 + 重置补发'):t('Cron 定时');
-const wakeupTriggerLabel=trigger=>({schedule:'触发：定时',reset:'触发：重置',manual:'触发：手动',account:'触发：单账户'}[trigger]||'');
+const wakeupTriggerLabel=trigger=>({schedule:'触发：定时',reset:'触发：重置',manual:'触发：手动',test:'触发：测试全部',account:'触发：单账户'}[trigger]||'');
 function wakeupReasonText(reason){return reason?message(errorKey(reason,'唤醒请求失败，请稍后重试。')):'';}
+function wakeupStatusLabel(status){
+  if(status==='sent')return t('OK');
+  if(status==='exhausted')return t('额度已用完');
+  if(status==='busy')return t('测试中…');
+  if(status==='skipped')return t('已跳过');
+  return t('失败');
+}
+function makeWakeupBadge(status,title=''){
+  const badge=el('span','wakeup-badge '+(status||'skipped'));
+  const dot=add(badge,'span','wakeup-badge-dot');dot.setAttribute('aria-hidden','true');
+  add(badge,'span','',wakeupStatusLabel(status));
+  if(title)badge.title=title;
+  return badge;
+}
 function formatAccountWakeupSummary(res){
-  const prefix=(res.at?clock(res.at)+' ':'')+(res.status==='sent'?t('已唤醒'):res.status==='skipped'?t('已跳过'):t('唤醒失败'));
+  const label=res.status==='sent'?t('OK'):res.status==='exhausted'?t('额度已用完'):res.status==='skipped'?t('已跳过'):t('唤醒失败');
+  const prefix=(res.at?clock(res.at)+' ':'')+label;
   if(list(res.groups).length){
-    const detail=res.groups.map(g=>groupName({key:g.group})+': '+(g.status==='sent'?(g.model||t('已唤醒')):g.status==='skipped'?t('已跳过'):wakeupReasonText(g.reason))).join(' | ');
+    const detail=res.groups.map(g=>groupName({key:g.group})+': '+(g.status==='sent'?(g.model||t('OK')):g.status==='exhausted'?t('额度已用完'):g.status==='skipped'?t('已跳过'):wakeupReasonText(g.reason))).join(' | ');
     return prefix+' · '+detail;
   }
   const tail=[];
@@ -1417,7 +1456,17 @@ function populateWakeupTimezoneOptions(selectedMin){
   sel.replaceChildren(...nodes);sel.value=String(selectedMin);
 }
 function wakeupSlotModelOptions(slot){
-  return [...new Set([...list(wakeupModelHints[slot.key]),...slot.defaults])];
+  const hints=list(wakeupModelHints[slot.key]).filter(m=>!isNonChatWakeupModelJS(m));
+  const merged=[...new Set([...hints,...slot.defaults])];
+  const hintSet=new Set(hints);
+  // Sort lightest models first; prefer models actually exposed by CPA within the same weight tier.
+  return merged.sort((a,b)=>{
+    const diff=wakeupModelWeight(a)-wakeupModelWeight(b);
+    if(diff!==0)return diff;
+    const ha=hintSet.has(a)?0:1,hb=hintSet.has(b)?0:1;
+    if(ha!==hb)return ha-hb;
+    return 0;
+  });
 }
 function ensureWakeupDraft(){
   if(!wakeupForm.draft)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
@@ -1430,9 +1479,10 @@ function populateWakeupModelSelects(){
     const sel=$(slot.selectId),input=$(slot.inputId),providerOn=d.providers[slot.provider]!==false;
     const options=wakeupSlotModelOptions(slot),current=String(d.models[slot.key]||'');
     const isCustom=Boolean(d.customModelMode?.[slot.key])||(Boolean(current)&&!options.includes(current));
+    const recommended=options.find(m=>wakeupModelWeight(m)<50)||slot.defaults[0];
     const nodes=[];
     const autoOpt=document.createElement('option');autoOpt.value='';
-    autoOpt.textContent=t('自动（轻量，如 {model}）',{model:options[0]||slot.defaults[0]});
+    autoOpt.textContent=t('自动（轻量，如 {model}）',{model:recommended});
     nodes.push(autoOpt);
     for(const m of options){const opt=document.createElement('option');opt.value=m;opt.textContent=m;nodes.push(opt);}
     const customOpt=document.createElement('option');customOpt.value='__custom__';customOpt.textContent=t('自定义模型…');
@@ -1496,7 +1546,7 @@ function renderWakeupCronPreview(){
 }
 function renderWakeupResults(){
   const box=$('wakeup-results'),results=Object.values(data?.wakeup?.results||{});
-  if(!results.length){box.replaceChildren(el('p','muted',t('尚无唤醒记录，点击“立即唤醒全部”或单账户“测试”即可验证。')));return;}
+  if(!results.length){box.replaceChildren(el('p','muted',t('尚无唤醒记录，点击“测试全部账户”或单账户“测试”即可验证。')));return;}
   results.sort((a,b)=>String(b.at||'').localeCompare(String(a.at||''))||String(a.name||a.auth_id).localeCompare(String(b.name||b.auth_id)));
   const rows=results.map(item=>{
     const row=el('div','wakeup-result-row'),main=add(row,'div','wakeup-result-main');
@@ -1504,15 +1554,14 @@ function renderWakeupResults(){
     add(main,'span','wakeup-result-name',credentialName(q)+' · '+providerName(item.provider||q.provider));
     const parts=[];
     if(list(item.groups).length){
-      parts.push(item.groups.map(g=>groupName({key:g.group})+': '+(g.status==='sent'?(g.model||t('已唤醒')):g.status==='skipped'?t('已跳过'):wakeupReasonText(g.reason))).join(' | '));
+      parts.push(item.groups.map(g=>groupName({key:g.group})+': '+(g.status==='sent'?(g.model||t('OK')):g.status==='exhausted'?t('额度已用完'):g.status==='skipped'?t('已跳过'):wakeupReasonText(g.reason))).join(' | '));
     }else{
       if(item.model)parts.push(item.model);
       if(item.reason)parts.push(wakeupReasonText(item.reason));
     }
     if(item.at)parts.push(clock(item.at));
     add(main,'span','wakeup-result-meta',parts.join(' · '));
-    const statusLabel=item.status==='sent'?t('已唤醒'):item.status==='skipped'?t('已跳过'):t('失败');
-    add(row,'span','wakeup-badge '+(item.status||'skipped'),statusLabel);
+    row.append(makeWakeupBadge(item.status||'skipped',formatAccountWakeupSummary(item)));
     return row;
   });
   box.replaceChildren(...rows);
@@ -1541,6 +1590,7 @@ function renderWakeupAccounts(){
   const rows=enabledAccounts.map(q=>{
     const checked=!excludedSet.has(q.auth_id),providerOn=d.providers[q.provider]!==false;
     const waking=wakeupAccountJobs.has(q.auth_id)||list(data?.wakeup?.running_auth_ids).includes(q.auth_id);
+    const res=data?.wakeup?.results?.[q.auth_id];
     const wrap=el('div','wakeup-account-row');
     const item=add(wrap,'button','wakeup-account-item');item.type='button';item.setAttribute('role','checkbox');item.setAttribute('aria-checked',String(checked));
     item.disabled=busy||readOnly||!providerOn;
@@ -1559,7 +1609,12 @@ function renderWakeupAccounts(){
       wakeupForm.dirty=true;wakeupForm.error=null;
       renderWakeupAccounts();renderWakeupStatusAndResults();
     };
-    const testBtn=add(wrap,'button','button wakeup-account-test',waking?'唤醒中…':'测试');
+    if(waking){
+      wrap.append(makeWakeupBadge('busy'));
+    }else if(res){
+      wrap.append(makeWakeupBadge(res.status||'skipped',formatAccountWakeupSummary(res)));
+    }
+    const testBtn=add(wrap,'button','button wakeup-account-test',waking?'测试中…':'测试');
     testBtn.type='button';testBtn.disabled=busy||waking||accountBusy(q.auth_id);
     testBtn.title=t('唤醒 {name}（立即发送极简消息锁定 5 小时窗口）',{name:credentialName(q)});
     testBtn.setAttribute('aria-label',testBtn.title);
@@ -1577,9 +1632,9 @@ function renderWakeupStatusAndResults(){
   if(state.next_scheduled_at){const nx=el('span','',t('下次计划：{time}',{time:when(state.next_scheduled_at)}));items.push(nx);}
   if(state.last_run_at){
     const resList=Object.values(state.results||{});
-    const sent=resList.filter(r=>r.status==='sent').length,skipped=resList.filter(r=>r.status==='skipped').length,failed=resList.filter(r=>r.status==='failed').length;
+    const sent=resList.filter(r=>r.status==='sent').length,exhausted=resList.filter(r=>r.status==='exhausted').length,skipped=resList.filter(r=>r.status==='skipped').length,failed=resList.filter(r=>r.status==='failed').length;
     const trig=wakeupTriggerLabel(state.last_run_trigger);
-    items.push(el('span','',t('最近执行：{time}',{time:when(state.last_run_at)})+(trig?' · '+t(trig):'')+(resList.length?' · '+t('已唤醒 {sent} · 跳过 {skipped} · 失败 {failed}',{sent,skipped,failed}):'')));
+    items.push(el('span','',t('最近执行：{time}',{time:when(state.last_run_at)})+(trig?' · '+t(trig):'')+(resList.length?' · '+t('OK {sent} · 用完 {exhausted} · 跳过 {skipped} · 失败 {failed}',{sent,exhausted,skipped,failed}):'')));
   }
   summary.replaceChildren(...items);
 
@@ -1602,8 +1657,12 @@ function renderWakeupStatusAndResults(){
   $('wakeup-save').disabled=busy||readOnly||!data;
   $('wakeup-save').textContent=t(wakeupForm.saving?'保存中…':'保存设置');
   const hasEnabled=list(data?.quotas).some(q=>!q.disabled);
+  const runningTest=(wakeupJob?.force)||state.running&&state.last_run_trigger==='test';
+  $('wakeup-test-all').disabled=busy||!hasEnabled||!data;
+  $('wakeup-test-all').textContent=t(runningTest?'测试中…':'测试全部账户');
+  $('wakeup-test-all').title=t('强制给每个符合条件的已启用账户发一次测试消息（不跳过已激活的 5 小时窗口；已满额账户将显示“额度已用完”）');
   $('wakeup-run-now').disabled=busy||!hasEnabled||!data;
-  $('wakeup-run-now').textContent=t((wakeupJob||state.running)?'唤醒中…':'立即唤醒全部');
+  $('wakeup-run-now').textContent=t(((wakeupJob&&!wakeupJob.force)||(state.running&&state.last_run_trigger!=='test'))?'唤醒中…':'立即唤醒');
   $('wakeup-run-now').title=t(d.skip_active_window?'按当前配置立即唤醒（已勾选跳过已激活窗口）':'按当前配置立即唤醒全部符合条件的账户');
   syncWakeupTabBadge();
 }
@@ -1709,19 +1768,19 @@ async function saveWakeupConfig(silentNotice=false){
     return false;
   }
 }
-async function runWakeupAll(){
+async function runWakeupAll(force=false){
   if(wakeupJob||data?.wakeup?.running)return;
   if(key!==guessKey()){await load();return;}
   if(wakeupForm.dirty){
     const ok=await saveWakeupConfig(true);if(!ok)return;
   }
-  const job={key,serial:loadSerial};wakeupJob=job;
+  const job={key,serial:loadSerial,force:Boolean(force)};wakeupJob=job;
   wakeupForm.error=null;wakeupForm.notice=null;renderWakeupPage(true);
   syncAccountControls();
   const current=()=>wakeupJob===job&&loadSerial===job.serial;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){wakeupJob=null;await load();}return true;}return !current();};
   try{
-    const accepted=await api('wakeup/run','POST',{force:false});if(await authChanged())return;
+    const accepted=await api('wakeup/run','POST',{force:Boolean(force)});if(await authChanged())return;
     const baseline=accepted?.last_run_finished_at,deadline=Date.now()+180000;
     while(Date.now()<deadline){
       await pause();if(await authChanged())return;
@@ -1730,8 +1789,10 @@ async function runWakeupAll(){
       const state=snapshot.wakeup;
       if(state&&!state.running&&state.last_run_finished_at&&state.last_run_finished_at!==baseline){
         const results=Object.values(state.results||{});
-        const sent=results.filter(r=>r.status==='sent').length,skipped=results.filter(r=>r.status==='skipped').length,failed=results.filter(r=>r.status==='failed').length;
-        wakeupForm.notice={text:'唤醒完成：已发送 {sent}，跳过 {skipped}，失败 {failed}。',values:{sent,skipped,failed}};
+        const sent=results.filter(r=>r.status==='sent').length,exhausted=results.filter(r=>r.status==='exhausted').length,skipped=results.filter(r=>r.status==='skipped').length,failed=results.filter(r=>r.status==='failed').length;
+        wakeupForm.notice=force
+          ?{text:'测试完成：OK {sent}，额度已用完 {exhausted}，失败 {failed}。',values:{sent,exhausted,failed}}
+          :{text:'唤醒完成：OK {sent}，用完 {exhausted}，跳过 {skipped}，失败 {failed}。',values:{sent,exhausted,skipped,failed}};
         return;
       }
     }
@@ -1766,6 +1827,9 @@ async function runAccountWakeup(id){
       if(!running&&(accountDone||fallbackDone)){
         if(res?.status==='sent'){
           const note=res.model?{text:'已发送唤醒消息（{model}），额度已同步。',values:{model:res.model}}:'已发送唤醒消息，额度已同步。';
+          showAccountNote(id,note);if(tab==='wakeup'){wakeupForm.notice=note;wakeupForm.error=null;}
+        }else if(res?.status==='exhausted'){
+          const note=errorKey(res.reason,'该账户额度已用完（429 / 冷却中）。');
           showAccountNote(id,note);if(tab==='wakeup'){wakeupForm.notice=note;wakeupForm.error=null;}
         }else if(res?.status==='skipped'){
           const note=errorKey(res.reason,'5 小时窗口已激活，已跳过。');
@@ -2311,7 +2375,8 @@ $('reset-dialog').onclick=e=>{if(e.target===$('reset-dialog'))closeReset();};
 $('disable-cancel').onclick=closeDisable;$('disable-confirm').onclick=confirmDisable;
 $('disable-dialog').onclick=e=>{if(e.target===$('disable-dialog'))closeDisable();};
 $('wakeup-save').onclick=()=>saveWakeupConfig(false);
-$('wakeup-run-now').onclick=runWakeupAll;
+$('wakeup-test-all').onclick=()=>runWakeupAll(true);
+$('wakeup-run-now').onclick=()=>runWakeupAll(false);
 $('wakeup-tz-local').onclick=()=>{if(wakeupForm.saving)return;readWakeupFormIntoDraft();wakeupForm.draft.timezone_offset_min=browserTimezoneOffsetMin();wakeupForm.dirty=true;renderWakeupPage(true);};
 for(const btn of $('wakeup-presets').children){
   btn.onclick=()=>{

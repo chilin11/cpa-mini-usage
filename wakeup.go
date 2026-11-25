@@ -35,6 +35,7 @@ const (
 	wakeupReasonDisabled    = "disabled"
 	wakeupReasonExcluded    = "excluded"
 	wakeupReasonProviderOff = "provider_disabled"
+	wakeupReasonExhausted   = "quota_exhausted"
 	wakeupErrHostUnavail    = "host_list_unavailable"
 	wakeupErrHostUnsupp     = "host_unsupported"
 	wakeupErrModelUnavail   = "model_unavailable"
@@ -331,14 +332,14 @@ func (e *Engine) loadWakeupPersistence() {
 		e.wakeupLastRunFinished = parsed.UTC()
 	}
 	switch saved.LastRunTrigger {
-	case "schedule", "reset", "manual", "account":
+	case "schedule", "reset", "manual", "test", "account":
 		e.wakeupLastRunTrigger = saved.LastRunTrigger
 	}
 	for id, res := range saved.Results {
 		if id == "" || len(e.wakeupResults) >= wakeupMaxSentRecords {
 			continue
 		}
-		if res.Status != "sent" && res.Status != "skipped" && res.Status != "failed" {
+		if res.Status != "sent" && res.Status != "skipped" && res.Status != "exhausted" && res.Status != "failed" {
 			continue
 		}
 		res.AuthID = id
@@ -349,7 +350,7 @@ func (e *Engine) loadWakeupPersistence() {
 		if len(res.Groups) > 0 {
 			cleanGroups := make([]WakeupGroupResult, 0, len(res.Groups))
 			for _, g := range res.Groups {
-				if g.Status != "sent" && g.Status != "skipped" && g.Status != "failed" {
+				if g.Status != "sent" && g.Status != "skipped" && g.Status != "exhausted" && g.Status != "failed" {
 					continue
 				}
 				g.Reason = sanitizeWakeupReason(g.Reason)
@@ -366,7 +367,7 @@ func (e *Engine) loadWakeupPersistence() {
 
 func sanitizeWakeupReason(reason string) string {
 	switch reason {
-	case "", wakeupReasonWindow, wakeupReasonDisabled, wakeupReasonExcluded, wakeupReasonProviderOff,
+	case "", wakeupReasonWindow, wakeupReasonDisabled, wakeupReasonExcluded, wakeupReasonProviderOff, wakeupReasonExhausted,
 		wakeupErrHostUnavail, wakeupErrHostUnsupp, wakeupErrModelUnavail, wakeupErrRateLimited,
 		wakeupErrAuthFailed, wakeupErrRequestFailed, wakeupErrAccountDis, wakeupErrAccountMiss:
 		return reason
@@ -951,12 +952,16 @@ func (e *Engine) kickWakeupRunWith(
 		e.mu.Unlock()
 		return 409, wakeupRunAccepted{}, "wakeup_busy"
 	}
+	trigger := "manual"
+	if force {
+		trigger = "test"
+	}
 	e.wakeupRunning = true
 	e.wakeupLastRunAt = now.UTC()
-	e.wakeupLastRunTrigger = "manual"
+	e.wakeupLastRunTrigger = trigger
 	e.wakeupLastError = ""
 	e.mu.Unlock()
-	go e.runWakeupBatchLockedClaimed(cfg, force, "manual", "", now, rpc, exec, refresh)
+	go e.runWakeupBatchLockedClaimed(cfg, force, trigger, "", now, rpc, exec, refresh)
 	return 202, accepted, ""
 }
 
@@ -1238,7 +1243,7 @@ func (e *Engine) recordWakeupResult(res WakeupAccountResult, failed bool) {
 		}
 	}
 	e.wakeupResults[res.AuthID] = res
-	if failed {
+	if failed || res.Status == "exhausted" {
 		e.wakeupLastFail[res.AuthID] = now
 	} else if res.Status == "sent" {
 		delete(e.wakeupLastFail, res.AuthID)
@@ -1260,6 +1265,16 @@ func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) boo
 	}
 }
 
+func isQuotaWindowExhausted(win *QuotaWindow, now time.Time) bool {
+	if win == nil || win.Used < 100 {
+		return false
+	}
+	if resetAt, ok := parseWindowResetTime(win.ResetAt); ok {
+		return resetAt.After(now)
+	}
+	return true
+}
+
 func (e *Engine) wakeupEntry(
 	entry AuthEntry,
 	cfg WakeupConfig,
@@ -1278,6 +1293,16 @@ func (e *Engine) wakeupEntry(
 	candidates := e.wakeupCandidateModelsLocked(entry, "", cfg)
 	e.mu.RUnlock()
 
+	if hasQuota && (isQuotaWindowExhausted(quota.Five, now) || isQuotaWindowExhausted(quota.Week, now)) {
+		return WakeupAccountResult{
+			AuthID:   entry.ID,
+			Provider: entry.Provider,
+			Name:     entry.Name,
+			Status:   "exhausted",
+			Reason:   wakeupReasonExhausted,
+			At:       ts,
+		}
+	}
 	if !force && cfg.SkipActiveWindow {
 		var five *QuotaWindow
 		if hasQuota {
@@ -1296,11 +1321,20 @@ func (e *Engine) wakeupEntry(
 	}
 	usedModel, failure := tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
 	if failure != "" {
+		status := "failed"
+		if failure == wakeupErrRateLimited {
+			status = "exhausted"
+		} else if entry.QuotaCooling && failure == wakeupErrModelUnavail {
+			// CPA skips cooling/quota-exhausted credentials during pinned auth selection and returns auth_not_found.
+			status = "exhausted"
+			failure = wakeupReasonExhausted
+			usedModel = ""
+		}
 		return WakeupAccountResult{
 			AuthID:   entry.ID,
 			Provider: entry.Provider,
 			Name:     entry.Name,
-			Status:   "failed",
+			Status:   status,
 			Reason:   failure,
 			Model:    usedModel,
 			At:       ts,
@@ -1331,6 +1365,7 @@ func (e *Engine) wakeupAntigravityEntry(
 	type groupTarget struct {
 		key  string
 		five *QuotaWindow
+		week *QuotaWindow
 	}
 	e.mu.RLock()
 	quota, hasQuota := e.quotas[entry.ID]
@@ -1338,7 +1373,7 @@ func (e *Engine) wakeupAntigravityEntry(
 	if hasQuota && len(quota.Groups) > 0 {
 		for _, g := range quota.Groups {
 			if g.Key == "gemini" || g.Key == "claude-gpt" {
-				targets = append(targets, groupTarget{key: g.Key, five: g.Five})
+				targets = append(targets, groupTarget{key: g.Key, five: g.Five, week: g.Week})
 			}
 		}
 	}
@@ -1348,14 +1383,27 @@ func (e *Engine) wakeupAntigravityEntry(
 	e.mu.RUnlock()
 
 	results := make([]WakeupGroupResult, 0, len(targets))
-	sentCount, skippedCount, failedCount := 0, 0, 0
-	var firstSentModel, firstReason string
+	sentCount, skippedCount, exhaustedCount, failedCount := 0, 0, 0, 0
+	var firstSentModel, firstReason, firstExhaustedReason string
 	for _, target := range targets {
 		e.mu.RLock()
 		sent := e.wakeupLastSent[wakeupSentKey(entry.ID, target.key)]
 		candidates := e.wakeupCandidateModelsLocked(entry, target.key, cfg)
 		e.mu.RUnlock()
 
+		if isQuotaWindowExhausted(target.five, now) || isQuotaWindowExhausted(target.week, now) {
+			exhaustedCount++
+			if firstExhaustedReason == "" {
+				firstExhaustedReason = wakeupReasonExhausted
+			}
+			results = append(results, WakeupGroupResult{
+				Group:  target.key,
+				Status: "exhausted",
+				Reason: wakeupReasonExhausted,
+				At:     ts,
+			})
+			continue
+		}
 		if !force && cfg.SkipActiveWindow && isFiveHourWindowActive(target.five, sent, now) {
 			skippedCount++
 			results = append(results, WakeupGroupResult{
@@ -1368,13 +1416,30 @@ func (e *Engine) wakeupAntigravityEntry(
 		}
 		usedModel, failure := tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
 		if failure != "" {
-			failedCount++
-			if firstReason == "" {
-				firstReason = failure
+			gStatus := "failed"
+			if failure == wakeupErrRateLimited {
+				gStatus = "exhausted"
+				exhaustedCount++
+				if firstExhaustedReason == "" {
+					firstExhaustedReason = failure
+				}
+			} else if entry.QuotaCooling && failure == wakeupErrModelUnavail {
+				gStatus = "exhausted"
+				failure = wakeupReasonExhausted
+				usedModel = ""
+				exhaustedCount++
+				if firstExhaustedReason == "" {
+					firstExhaustedReason = failure
+				}
+			} else {
+				failedCount++
+				if firstReason == "" {
+					firstReason = failure
+				}
 			}
 			results = append(results, WakeupGroupResult{
 				Group:  target.key,
-				Status: "failed",
+				Status: gStatus,
 				Reason: failure,
 				Model:  usedModel,
 				At:     ts,
@@ -1407,22 +1472,58 @@ func (e *Engine) wakeupAntigravityEntry(
 		Groups:   results,
 	}
 	switch {
-	case failedCount > 0 && sentCount == 0:
-		out.Status = "failed"
-		out.Reason = firstReason
-	case sentCount > 0 && failedCount > 0:
-		// Partial success: surface failure reason while keeping group details and refreshing quota.
-		out.Status = "sent"
-		out.Model = firstSentModel
-		out.Reason = firstReason
 	case sentCount > 0:
 		out.Status = "sent"
 		out.Model = firstSentModel
+		if firstReason != "" {
+			out.Reason = firstReason
+		} else if firstExhaustedReason != "" {
+			out.Reason = firstExhaustedReason
+		}
+	case failedCount > 0:
+		out.Status = "failed"
+		out.Reason = firstReason
+	case exhaustedCount > 0:
+		out.Status = "exhausted"
+		out.Reason = firstExhaustedReason
 	default:
 		out.Status = "skipped"
 		out.Reason = wakeupReasonWindow
 	}
 	return out
+}
+
+func isNonChatWakeupModel(model string) bool {
+	l := strings.ToLower(model)
+	for _, token := range []string{"image", "video", "tts", "speech", "audio", "whisper", "embedding", "auto-review", "reserve"} {
+		if strings.Contains(l, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHeavyWakeupModel(model string) bool {
+	l := strings.ToLower(model)
+	for _, token := range []string{"astra", "opus", "fable", "xhigh", "thinking", "-pro", "pro-", "sol", "terra", "research", "max"} {
+		if strings.Contains(l, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLightWakeupModel(model string) bool {
+	if isNonChatWakeupModel(model) || isHeavyWakeupModel(model) {
+		return false
+	}
+	l := strings.ToLower(model)
+	for _, token := range []string{"haiku", "nano", "mini", "flash-lite", "lite", "spark", "flash", "luna", "fast"} {
+		if strings.Contains(l, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg WakeupConfig) []string {
@@ -1452,11 +1553,12 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 		models = append(models, m)
 	}
 
-	// Prefer lightweight defaults first, then observed successful models for this credential.
+	// Prefer true lightweight models first; avoid heavy flagship models (e.g. astra/opus) by default.
 	switch entry.Provider {
 	case "claude":
 		for _, m := range []string{
 			"claude-haiku-4-5-20251001",
+			"claude-haiku-4-5",
 			"claude-3-5-haiku-20241022",
 			"claude-sonnet-4-6",
 			"claude-sonnet-4-5-20250929",
@@ -1465,13 +1567,16 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 		}
 	case "codex":
 		for _, m := range []string{
+			"gpt-5.1-codex-mini",
+			"gpt-5.4-mini",
+			"gpt-5.3-codex-spark",
+			"gpt-5.4-nano",
+			"gpt-5-mini",
 			"gpt-5.6-luna",
 			"gpt-6-luna",
 			"gpt-5.5",
-			"gpt-5.1-codex-mini",
-			"gpt-5.4-mini",
-			"gpt-5.3-codex",
 			"gpt-5.2-codex",
+			"gpt-5.3-codex",
 			"gpt-5.4",
 		} {
 			addModel(m)
@@ -1479,72 +1584,66 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 	case "antigravity":
 		if group == "claude-gpt" {
 			for _, m := range []string{
-				"claude-sonnet-4-6",
 				"gpt-oss-120b-medium",
-				"claude-opus-4-6-thinking",
+				"claude-sonnet-4-6",
 			} {
 				addModel(m)
 			}
 		} else {
 			for _, m := range []string{
-				"gemini-3-flash",
+				"gemini-2.5-flash-lite",
 				"gemini-3.1-flash-lite",
 				"gemini-3.5-flash-lite",
-				"gemini-2.5-flash-lite",
+				"gemini-3-flash",
 				"gemini-2.5-flash",
-				"gemini-3.8-flash-high",
 			} {
 				addModel(m)
 			}
 		}
 	}
 
-	// Append recently succeeded models observed on this exact credential as fallback
-	// (prioritizing lightweight names first).
+	// Append recently succeeded lightweight observed models for this exact credential,
+	// keeping non-chat models out and placing heavy flagship models last as fallback only.
 	canonical := e.canonicalAuth(entry.ID)
-	var lightObserved, otherObserved []string
+	var lightObserved, normalObserved, heavyObserved []string
 	obsSeen := make(map[string]bool)
-	for i := len(e.events) - 1; i >= 0 && len(obsSeen) < 12; i-- {
+	for i := len(e.events) - 1; i >= 0 && len(obsSeen) < 16; i-- {
 		ev := e.events[i]
 		if ev.Failed || e.canonicalAuth(ev.AuthID) != canonical || normalizeProvider(ev.Provider) != entry.Provider {
 			continue
 		}
 		m := strings.TrimSpace(ev.Model)
-		if m == "" || obsSeen[m] {
+		if m == "" || obsSeen[m] || isNonChatWakeupModel(m) {
 			continue
 		}
 		if entry.Provider == "antigravity" && group != "" && antigravityModelGroup(m) != group {
 			continue
 		}
 		obsSeen[m] = true
-		lower := strings.ToLower(m)
-		if strings.Contains(lower, "haiku") || strings.Contains(lower, "mini") || strings.Contains(lower, "flash") || strings.Contains(lower, "lite") || strings.Contains(lower, "luna") {
+		switch {
+		case isLightWakeupModel(m):
 			lightObserved = append(lightObserved, m)
-		} else {
-			otherObserved = append(otherObserved, m)
+		case isHeavyWakeupModel(m):
+			heavyObserved = append(heavyObserved, m)
+		default:
+			normalObserved = append(normalObserved, m)
 		}
 	}
-	// Put observed lightweight models ahead of generic fallbacks, keeping user/builtin primary order predictable.
-	if len(lightObserved) > 0 {
-		merged := make([]string, 0, len(lightObserved)+len(models)+len(otherObserved))
-		mergedSeen := make(map[string]bool)
-		appendUnique := func(list []string) {
-			for _, m := range list {
-				if m != "" && wakeupModelPattern.MatchString(m) && !mergedSeen[m] {
-					mergedSeen[m] = true
-					merged = append(merged, m)
-				}
+	merged := make([]string, 0, len(lightObserved)+len(models)+len(normalObserved)+len(heavyObserved))
+	mergedSeen := make(map[string]bool)
+	appendUnique := func(list []string) {
+		for _, m := range list {
+			if m != "" && wakeupModelPattern.MatchString(m) && !mergedSeen[m] {
+				mergedSeen[m] = true
+				merged = append(merged, m)
 			}
 		}
-		appendUnique(lightObserved)
-		appendUnique(models)
-		appendUnique(otherObserved)
-		return merged
 	}
-	for _, m := range otherObserved {
-		addModel(m)
-	}
-	return models
+	appendUnique(lightObserved)
+	appendUnique(models)
+	appendUnique(normalObserved)
+	appendUnique(heavyObserved)
+	return merged
 }
 
 func tryWakeupModels(
@@ -1635,6 +1734,9 @@ func classifyWakeupError(err error) string {
 		if rpcErr.StatusCode > 0 {
 			return classifyWakeupStatus(rpcErr.StatusCode, detail)
 		}
+		if strings.Contains(detail, "429") || strings.Contains(detail, "rate limit") || strings.Contains(detail, "rate_limit") || strings.Contains(detail, "quota") || strings.Contains(detail, "cooldown") || strings.Contains(detail, "exhausted") || strings.Contains(detail, "usage limit") {
+			return wakeupErrRateLimited
+		}
 		if strings.Contains(detail, "auth_not_found") || strings.Contains(detail, "model") || strings.Contains(detail, "not found") || strings.Contains(detail, "unsupported") {
 			return wakeupErrModelUnavail
 		}
@@ -1659,6 +1761,9 @@ func classifyWakeupStatus(status int, detail string) string {
 		}
 		return wakeupErrModelUnavail
 	default:
+		if strings.Contains(detail, "rate limit") || strings.Contains(detail, "rate_limit") || strings.Contains(detail, "quota") || strings.Contains(detail, "cooldown") || strings.Contains(detail, "usage limit") {
+			return wakeupErrRateLimited
+		}
 		if strings.Contains(detail, "auth_not_found") || strings.Contains(detail, "no auth available") || strings.Contains(detail, "unknown model") || strings.Contains(detail, "model_not_found") || strings.Contains(detail, "does not support") {
 			return wakeupErrModelUnavail
 		}
