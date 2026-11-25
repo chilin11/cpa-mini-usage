@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.37"
+const pluginVersion = "0.1.38"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -270,14 +270,15 @@ func dispatch(method string, body []byte) []byte {
 		}
 		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/consume-reset") {
 			var input struct {
-				AuthID          string `json:"auth_id"`
-				RedeemRequestID string `json:"redeem_request_id"`
-				CreditID        string `json:"credit_id"`
+				AuthID            string `json:"auth_id"`
+				RedeemRequestID   string `json:"redeem_request_id"`
+				CreditID          string `json:"credit_id"`
+				ConfirmationToken string `json:"confirmation_token"`
 			}
 			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil {
 				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
 			}
-			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID, input.CreditID)
+			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID, input.CreditID, input.ConfirmationToken)
 			var body []byte
 			if failure != "" {
 				body, _ = json.Marshal(map[string]any{"error": failure})

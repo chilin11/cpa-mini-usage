@@ -169,7 +169,7 @@ func TestClaudeResetInventoryRequestIdentity(t *testing.T) {
 	calls := 0
 	got, diagnostic := claudeResetRemaining(headers, func(url string, h http.Header) ([]byte, error) {
 		calls++
-		if url != claudeResetInventoryURL || h.Get("Authorization") != headers.Get("Authorization") || h.Get("Anthropic-Beta") != "oauth-2025-04-20" || h.Get("User-Agent") != "claude-cli/2.1.321 (external, cli)" || h.Get("Cache-Control") != "no-store" || h.Get("Content-Type") != "application/json" || h.Get("Accept") != "application/json" {
+		if url != claudeResetInventoryURL || h.Get("Authorization") != headers.Get("Authorization") || h.Get("Anthropic-Beta") != "oauth-2025-04-20" || h.Get("User-Agent") != "claude-cli/2.1.331 (external, cli)" || h.Get("Cache-Control") != "no-store" || h.Get("Content-Type") != "application/json" || h.Get("Accept") != "application/json" {
 			t.Fatal("inventory must retain OAuth identity with the opt-in URL and headers")
 		}
 		return []byte(`{"cedar_ember":{"eligible":true,"grants":[{"resets_left":2,"paused":false}]}}`), nil
@@ -329,7 +329,7 @@ func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 					}
 					return []byte(`{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"manual_reset_remaining":99,"extra_usage":{"used_credits":500}}`), nil
 				}
-				if calls != 2 || url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.321 (external, cli)" {
+				if calls != 2 || url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.331 (external, cli)" {
 					t.Fatal("only one optional inventory request may follow ordinary usage")
 				}
 				return []byte(tc.inventory), tc.failure

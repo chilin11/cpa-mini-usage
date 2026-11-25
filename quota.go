@@ -479,6 +479,7 @@ func (e *Engine) pruneQuotasLocked(live map[string]bool) bool {
 	for id := range e.quotas {
 		if !live[id] {
 			delete(e.quotas, id)
+			e.removeResetBindingsLocked(id)
 			delete(e.accountRefresh, id)
 			removed = true
 		}
@@ -752,9 +753,8 @@ func parseManualResetRemaining(body []byte) *int64 {
 const (
 	claudeUsageURL          = "https://api.anthropic.com/api/oauth/usage"
 	claudeResetInventoryURL = claudeUsageURL + "?cedar_ember=1"
-	// Public successful inventory read: pingdotgg/t3code#34226. This pinned
-	// version can age out; it is not an eligibility or availability guarantee.
-	claudeResetInventoryUserAgent = "claude-cli/2.1.321 (external, cli)"
+	// Pinned CLI contract, not an eligibility or availability guarantee.
+	claudeResetInventoryUserAgent = "claude-cli/2.1.331 (external, cli)"
 	codexResetCreditsURL          = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 )
 
@@ -780,11 +780,7 @@ func sanitizeManualResetDiagnostic(provider string, remaining *int64, diagnostic
 	}
 }
 
-// CodexBar's ClaudeOAuthUsageFetcher/ClaudeRateLimitResetCredits contract at
-// 7447bc77c2497323d9c41e40164ce705533493c8, with a publicly tested newer CLI
-// identity from https://github.com/pingdotgg/t3code/issues/34226. This optional,
-// read-only request never replaces usage or sends a redemption handle anywhere.
-func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]byte, error)) (*int64, string) {
+func claudeResetHeaders(headers http.Header) http.Header {
 	inventoryHeaders := headers.Clone()
 	if inventoryHeaders == nil {
 		inventoryHeaders = make(http.Header)
@@ -793,7 +789,12 @@ func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]
 	inventoryHeaders.Set("Anthropic-Beta", "oauth-2025-04-20")
 	inventoryHeaders.Set("Content-Type", "application/json")
 	inventoryHeaders.Set("Cache-Control", "no-store")
-	body, err := get(claudeResetInventoryURL, inventoryHeaders)
+	inventoryHeaders.Set("Accept", "application/json")
+	return inventoryHeaders
+}
+
+func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]byte, error)) (*int64, string) {
+	body, err := get(claudeResetInventoryURL, claudeResetHeaders(headers))
 	if err != nil {
 		return nil, manualResetRequestFailed
 	}
@@ -804,6 +805,31 @@ func claudeResetRemaining(headers http.Header, get func(string, http.Header) ([]
 // window resets, or extra-usage money. Fail closed on any malformed grant rather
 // than reporting a partial total, especially a fabricated zero.
 func parseClaudeResetRemaining(body []byte, now time.Time) (*int64, string) {
+	inventory, diagnostic := decodeClaudeInventory(body)
+	if diagnostic != "" {
+		return nil, diagnostic
+	}
+	var count int64
+	for _, raw := range inventory.Grants {
+		var g claudeGrantBalance
+		if json.Unmarshal(raw, &g) != nil {
+			return nil, manualResetInvalidResponse
+		}
+		left, _, ok := g.active(now)
+		if !ok || left > 50-count {
+			return nil, manualResetInvalidResponse
+		}
+		count += left
+	}
+	return &count, ""
+}
+
+type claudeInventory struct {
+	Grants []json.RawMessage
+	block  json.RawMessage // Decoded further only for an explicit list request.
+}
+
+func decodeClaudeInventory(body []byte) (*claudeInventory, string) {
 	var response map[string]json.RawMessage
 	if json.Unmarshal(body, &response) != nil || response == nil {
 		return nil, manualResetInvalidResponse
@@ -838,36 +864,30 @@ func parseClaudeResetRemaining(body []byte, now time.Time) (*int64, string) {
 	if json.Unmarshal(inventory.Grants, &grants) != nil || grants == nil || len(grants) > 200 {
 		return nil, manualResetInvalidResponse
 	}
-	var count int64
-	for _, raw := range grants {
-		var grant struct {
-			Left     *int64  `json:"resets_left"`
-			Total    *int64  `json:"resets_total"`
-			Paused   *bool   `json:"paused"`
-			StartsAt *string `json:"starts_at"`
-			EndsAt   *string `json:"ends_at"`
-		}
-		if json.Unmarshal(raw, &grant) != nil || grant.Left == nil || grant.Paused == nil || *grant.Left < 0 {
-			return nil, manualResetInvalidResponse
-		}
-		if grant.Total != nil && *grant.Total < *grant.Left {
-			return nil, manualResetInvalidResponse
-		}
-		startsAt, startOK := parseClaudeResetBound(grant.StartsAt)
-		endsAt, endOK := parseClaudeResetBound(grant.EndsAt)
-		if !startOK || !endOK || (startsAt != nil && endsAt != nil && !endsAt.After(*startsAt)) {
-			return nil, manualResetInvalidResponse
-		}
-		if *grant.Paused || (startsAt != nil && now.Before(*startsAt)) || (endsAt != nil && !now.Before(*endsAt)) {
-			continue
-		}
-		// CodexBar's plausibility limits, without allocating one item per reset.
-		if *grant.Left > 50-count {
-			return nil, manualResetInvalidResponse
-		}
-		count += *grant.Left
+	return &claudeInventory{grants, raw}, ""
+}
+
+type claudeGrantBalance struct {
+	Left     *int64  `json:"resets_left"`
+	Total    *int64  `json:"resets_total"`
+	Paused   *bool   `json:"paused"`
+	StartsAt *string `json:"starts_at"`
+	EndsAt   *string `json:"ends_at"`
+}
+
+func (g claudeGrantBalance) active(now time.Time) (int64, *time.Time, bool) {
+	if g.Left == nil || *g.Left < 0 || g.Paused == nil || (g.Total != nil && *g.Total < *g.Left) {
+		return 0, nil, false
 	}
-	return &count, ""
+	start, startOK := parseClaudeResetBound(g.StartsAt)
+	end, endOK := parseClaudeResetBound(g.EndsAt)
+	if !startOK || !endOK || (start != nil && end != nil && !end.After(*start)) {
+		return 0, nil, false
+	}
+	if *g.Paused || (start != nil && now.Before(*start)) || (end != nil && !now.Before(*end)) {
+		return 0, nil, true
+	}
+	return *g.Left, end, true
 }
 
 func parseClaudeResetBound(value *string) (*time.Time, bool) {

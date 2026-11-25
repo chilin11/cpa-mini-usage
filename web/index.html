@@ -183,11 +183,16 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .reset-option[aria-checked=true]{border-color:var(--accent);background:var(--accent-soft)}
 .reset-radio{width:14px;height:14px;margin-top:3px;border:1.5px solid var(--edge);border-radius:50%;background:var(--panel)}
 .reset-option[aria-checked=true] .reset-radio{border:4px solid var(--accent)}
+.reset-option:disabled,.reset-option[aria-disabled=true]{opacity:.62;cursor:not-allowed;border-color:var(--line)}
+.reset-option:disabled .reset-radio{border-style:dashed}
 .reset-option-main{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .reset-option-title{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13px;font-weight:600}
 .reset-badge{padding:0 6px;border:1px solid var(--warm);border-radius:4px;background:var(--warm-soft);color:var(--warm);font-size:10px;font-weight:600;line-height:1.6}
 .reset-option-detail{font-size:12px;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .reset-option-desc{font-size:11px;color:var(--muted)}
+.reset-badge.count{border-color:var(--edge);background:var(--accent-soft);color:var(--accent)}
+.reset-badge.muted{border-color:var(--line);background:var(--panel);color:var(--muted)}
+.reset-option-reason{font-size:11px;color:var(--warm)}
 .modal-message{padding:8px 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .modal-message.error{color:var(--bad)}
 .modal-message.warn{color:var(--warm)}
@@ -285,7 +290,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.37</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.38</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -460,11 +465,24 @@ const translations={
   '完整重置':'Full reset','重置当前用量额度':'Reset your current usage limits','不过期':'Does not expire','已到期':'Expired','{date} 过期':'Expires {date}','剩 {d} 天 {h} 小时':'{d}d {h}h left','剩 {h} 小时':'{h}h left','不足 1 小时':'Under 1h left',
   '最早过期':'Expires first','由 OpenAI 自动选择':'Chosen by OpenAI','未返回卡片明细，将由 OpenAI 决定扣哪一张。':'No credit details were returned; OpenAI will choose which credit to spend.',
   '默认选中最早过期的一张。确认后立即消耗，无法撤销。':'The credit expiring first is selected by default. Confirming spends it immediately; this cannot be undone.',
+  '默认选中可用卡中最早过期的一张。确认后立即消耗，无法撤销。':'The earliest-expiring usable reset is selected by default. Confirming spends it immediately; this cannot be undone.',
+  '重置确认凭据无效，请重新打开弹窗后再试。':'Invalid reset confirmation token. Reopen the dialog and try again.','账户已禁用，无法使用重置卡。':'Account is disabled and cannot use reset credits.',
   '确认后立即消耗一张重置卡，无法撤销。':'Confirming spends one reset credit immediately; this cannot be undone.',
   '上次请求结果未知。确认将用同一请求重试，不会重复扣除。':'The previous request had an unknown result. Confirming retries the same request and will not charge twice.',
   '重试同一请求':'Retry same request','确认使用':'Use this reset','取消':'Cancel','重新读取':'Reload',
   '重置卡读取失败，请稍后重试。':'Loading reset credits failed. Please retry later.','重置卡明细格式异常。':'Invalid reset credit details.','重置卡标识无效。':'Invalid reset credit id.',
   '这张重置卡已不可用，请重新选择。':'That reset credit is no longer available. Please choose again.',
+  '重置当前 5 小时和周额度。':'Refills your 5-hour and weekly limits.','Fable 重置':'Fable reset','重置 Fable 额度并返还 Fable 本周消耗的周额度。':'Refills your Fable allowance and gives back what Fable used on your weekly limit.',
+  '5 小时重置':'5-hour reset','重置当前 5 小时额度。':'Refills your 5-hour limit.','周额度重置':'Weekly reset','重置当前周额度。':'Refills your weekly limit.',
+  '剩 {n} 次':'{n} left','暂不可用':'Unavailable right now','需达到额度上限后使用':'Available once a limit is reached','冷却中，请稍后再试':'Cooling down; try again later',
+  '当前 5 小时窗口限制不可用':'Blocked by the 5-hour limit','当前周额度限制不可用':'Blocked by the weekly limit','当前 Opus 限制不可用':'Blocked by the Opus limit','当前 Sonnet 限制不可用':'Blocked by the Sonnet limit',
+  '当前其他额度限制不可用':'Blocked by another limit','无法重置当前受限窗口':'Cannot clear the current limit',
+  '当前没有立即可用的重置卡，可查看以上过期时间并在满足条件后使用。':'No reset credit can be used right now. Review the expiry times above and use one once it becomes available.',
+  '已使用重置卡，正在刷新额度。':'Reset credit used; refreshing quota.','重置卡处于冷却中，请稍后再试。':'This reset credit is cooling down. Please try again later.','请先使用最早过期的同类型重置卡。':'Use the earliest-expiring reset credit of the same type first.',
+  '重置请求过于频繁，请稍后重试。':'Too many reset requests. Please retry later.','该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。':'This account\'s OAuth authorization expired or lacks permission. Sign in again or refresh it in CPA, then retry.',
+  '该账户凭证已变更，请重新打开重置弹窗核对后再试。':'This account\'s credential changed. Reopen the reset dialog, review it and try again.','上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。':'The last reset result could not be confirmed. Click “Use reset” again to safely retry the same request.',
+  '无法读取账户所属组织信息，请稍后重试。':'Could not read the account\'s organization. Please retry later.','客户端版本过旧，暂不支持读取 Claude 重置卡。':'The client version is too old to read Claude reset credits.',
+  '当前请求身份未获 Claude 重置卡接口认可。':'This request surface is not accepted by the Claude reset endpoint.','当前账户不符合 Claude 重置卡使用条件。':'This account is not eligible for Claude reset credits.',
   '刷新':'Refresh','停用':'Disable','启用':'Enable','已启用':'Enabled','账户启用状态：{name}':'Account enabled status: {name}','停用 {name}':'Disable {name}','停用账户？':'Disable account?',
   '停用后，CPA 将不再调度此账户。已有额度不会重置，你可以稍后重新启用。':'CPA will no longer route requests to this account. Its quota will not be reset; you can enable it again later.','确认停用':'Disable account',
   '已禁用':'Disabled','启用 {name}':'Enable {name}','已启用，点击禁用':'Enabled; click to disable','已禁用，点击启用':'Disabled; click to enable','正在禁用…':'Disabling…','正在启用…':'Enabling…',
@@ -502,7 +520,7 @@ function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
-  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。'};
+  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','reset_rate_limited':'重置请求过于频繁，请稍后重试。','invalid_confirmation_token':'重置确认凭据无效，请重新打开弹窗后再试。','account_disabled':'账户已禁用，无法使用重置卡。','reset_auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','reset_account_changed':'该账户凭证已变更，请重新打开重置弹窗核对后再试。','reset_unconfirmed':'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。','reset organization unavailable':'无法读取账户所属组织信息，请稍后重试。','claude_reset_cli_version':'客户端版本过旧，暂不支持读取 Claude 重置卡。','claude_reset_surface':'当前请求身份未获 Claude 重置卡接口认可。','claude_reset_not_eligible':'当前账户不符合 Claude 重置卡使用条件。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。'};
   if(text==='storage_write_failed')return '无法保存设置，请稍后重试。';
   if(known[text])return known[text];
   if(/host callback|invalid host response/.test(text))return '主机接口请求失败。';
@@ -607,11 +625,16 @@ function requestMoney(value){const cost=validEstimate(value);return cost==null?'
 function updateCountdowns(){
   document.querySelectorAll('[data-reset-at]').forEach(node=>{const value=resetCountdown(node.dataset.resetAt);if(node.textContent!==value)node.textContent=value;});
 }
-function accountContent({fetched_at,...account}){return JSON.stringify(account);}
+// An unresolved reset attempt is part of the card: it keeps the retry entry even at zero balance.
+function accountContent({fetched_at,...account}){return JSON.stringify([account,pendingRedeem.has(account.auth_id)]);}
+function syncPendingCards(){
+  if(!data)return;const quotas=quotaContent(data);if(quotas===quotaStamp)return;
+  const focused=document.activeElement?.id;renderQuotas();quotaStamp=quotas;restoreFocus(focused);
+}
 function quotaContent(snapshot){return JSON.stringify(list(snapshot?.quotas).map(accountContent));}
 function requestContent(snapshot){return JSON.stringify([snapshot?.credentials,snapshot?.recent,list(snapshot?.quotas).map(({auth_id,name,provider})=>({auth_id,name,provider}))]);}
 function acceptSnapshot(snapshot){
-  const quotas=quotaContent(snapshot),requests=requestContent(snapshot),focused=document.activeElement?.id;
+  const requests=requestContent(snapshot),focused=document.activeElement?.id;
   for(const account of list(snapshot?.quotas)){
     const previous=list(data?.quotas).find(q=>q.auth_id===account.auth_id),state=snapshot.account_refresh?.[account.auth_id];
     if(!account.error&&!state?.error&&(account.fetched_at&&account.fetched_at!==previous?.fetched_at||state?.finished_at&&state.finished_at!==data?.account_refresh?.[account.auth_id]?.finished_at))accountErrors.delete(account.auth_id);
@@ -620,6 +643,7 @@ function acceptSnapshot(snapshot){
   if(resetDialog&&!resetTargetCurrent(resetDialog.target))closeReset();
   if(disableDialog&&!accountTargetCurrent(disableDialog.target))closeDisable();
   for(const [id,pending] of pendingRedeem)if(!accountTargetCurrent(pending.target))pendingRedeem.delete(id);
+  const quotas=quotaContent(snapshot);
   if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
   if(requests!==requestStamp){renderRequests();requestStamp=requests;}
   updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
@@ -713,7 +737,7 @@ async function api(path,method='GET',body,signal) {
   const headers={'Authorization':'Bearer '+key};if(body!==undefined)headers['Content-Type']='application/json';
   const res=await fetch(path.startsWith('/v0/management/')?path:endpoint+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),cache:'no-store',credentials:'same-origin',redirect:'error',...(signal?{signal}:{})});
   if(res.status===401 || res.status===403){const err=failure('CPA 登录已失效或远程管理未启用，请返回 CPA 管理页面重新登录。');err.auth=true;throw err;}
-  if(!res.ok){let payload;try{payload=await res.json();}catch{}const err=failure(payload?.error?errorKey(payload.error):{text:'CPA 返回 HTTP {code}，请稍后重试。',values:{code:res.status}});err.status=res.status;throw err;}
+  if(!res.ok){let payload;try{payload=await res.json();}catch{}const err=failure(payload?.error?errorKey(payload.error):{text:'CPA 返回 HTTP {code}，请稍后重试。',values:{code:res.status}});err.status=res.status;err.code=typeof payload?.error==='string'?payload.error:'';throw err;}
   return res.json();
 }
 const remoteAccountBusy=()=>Object.values(data?.account_refresh||{}).some(state=>state?.refreshing);
@@ -858,8 +882,10 @@ function accountTargetCurrent(target){
   const now=target&&accountTarget(target.id);
   return Boolean(now&&target.key&&key===target.key&&guessKey()===target.key&&now.identity===target.identity&&now.disabled===target.disabled);
 }
+// New redemptions need a positive balance; an unresolved attempt stays retryable on the same account.
+function resetRetryable(target){const pending=pendingRedeem.get(target?.id);return Boolean(pending&&accountTargetCurrent(pending.target));}
 function resetTargetCurrent(target){
-  return accountTargetCurrent(target)&&target.provider==='codex'&&!target.disabled&&list(data?.quotas).find(q=>q.auth_id===target.id)?.manual_reset_remaining>0;
+  return accountTargetCurrent(target)&&resetProvider(target.provider)&&!target.disabled&&(resetRetryable(target)||list(data?.quotas).find(q=>q.auth_id===target.id)?.manual_reset_remaining>0);
 }
 const accountBusy=id=>actionJobs.has(id)||accountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing)||Boolean(data?.quota_refreshing)||loading;
 function modalBackground(){
@@ -893,7 +919,7 @@ function redeemID(){
   bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
   return [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})/,'$1-$2-$3-$4-');
 }
-const resetNotes={reset:n=>({text:'已使用重置卡，重置了 {n} 个额度窗口。',values:{n:fmt(n)}}),nothing_to_reset:()=>'当前没有需要重置的额度窗口。',no_credit:(_,credit)=>credit?'这张重置卡已不可用，请重新选择。':'没有可用的重置卡。',already_redeemed:()=>'该重置请求已处理，未重复扣除。'};
+const resetNotes={reset:n=>n===0?'已使用重置卡，正在刷新额度。':{text:'已使用重置卡，重置了 {n} 个额度窗口。',values:{n:fmt(n)}},nothing_to_reset:()=>'当前没有需要重置的额度窗口。',no_credit:(_,credit)=>credit?'这张重置卡已不可用，请重新选择。':'没有可用的重置卡。',already_redeemed:()=>'该重置请求已处理，未重复扣除。',cooldown:()=>'重置卡处于冷却中，请稍后再试。',not_next_grant:()=>'请先使用最早过期的同类型重置卡。'};
 // Reset confirmation dialog. The plugin returns available credits earliest-expiry first, the same
 // order the official Codex client offers, and the first is preselected. Nothing is spent until the
 // user confirms; an unresolved earlier attempt can only be retried with its own redeem id and credit.
@@ -908,22 +934,38 @@ function expiryText(iso){
 }
 function validResetCredits(value){
   if(!value||!Number.isSafeInteger(value.available_count)||value.available_count<0||!Array.isArray(value.credits))return null;
-  const ok=value.credits.every(c=>c&&typeof c.id==='string'&&c.id&&['undefined','string'].includes(typeof c.expires_at));
-  return ok?{count:value.available_count,credits:value.credits}:null;
+  const ok=value.credits.every(c=>c&&typeof c.id==='string'&&c.id&&['undefined','string'].includes(typeof c.expires_at)&&
+    (c.remaining===undefined||Number.isSafeInteger(c.remaining)&&c.remaining>0)&&['undefined','boolean'].includes(typeof c.usable_now)&&['undefined','string'].includes(typeof c.unavailable_reason));
+  const token=value.confirmation_token;if(token!=null&&!(typeof token==='string'&&token.trim().length>=16))return null;
+  return ok?{count:value.available_count,credits:value.credits,token:token||null}:null;
 }
 function textAdd(parent,tag,cls,text){const e=add(parent,tag,cls);e.textContent=text;return e;}
-// Upstream copy is shown as-is, except the official client's default strings, which are localized.
-const upstreamResetCopy={'full reset':'完整重置','reset your current usage limits':'重置当前用量额度'};
+// Upstream copy is shown as-is, except the official clients' default strings, which are localized.
+const upstreamResetCopy=Object.assign(Object.create(null),{'full reset':'完整重置','reset your current usage limits':'重置当前用量额度',
+  'refills your 5-hour and weekly limits.':'重置当前 5 小时和周额度。','fable reset':'Fable 重置','refills your fable allowance and gives back what fable used on your weekly limit.':'重置 Fable 额度并返还 Fable 本周消耗的周额度。',
+  '5-hour reset':'5 小时重置','refills your 5-hour limit.':'重置当前 5 小时额度。','weekly reset':'周额度重置','refills your weekly limit.':'重置当前周额度。'});
+// Claude reports why a credit cannot be used yet. Only these fixed codes are shown; anything else is generic.
+const resetUnavailableReasons=Object.assign(Object.create(null),{needs_limit:'需达到额度上限后使用',cooldown:'冷却中，请稍后再试',blocked_five_hour:'当前 5 小时窗口限制不可用',blocked_seven_day:'当前周额度限制不可用',
+  blocked_opus:'当前 Opus 限制不可用',blocked_sonnet:'当前 Sonnet 限制不可用',blocked_other:'当前其他额度限制不可用',cannot_clear:'无法重置当前受限窗口',unavailable:'暂不可用'});
+const resetUnavailableReason=code=>typeof code==='string'&&resetUnavailableReasons[code]||'暂不可用';
+const resetProvider=provider=>provider==='codex'||provider==='claude';
+const resetUsable=c=>c?.usable_now!==false;
+// A ready dialog with listed credits needs a usable selection; Codex without details lets OpenAI choose.
+const resetConfirmable=state=>state?.status==='retry'||state?.status==='ready'&&(!state.credits.length||state.credits.some(c=>c.id===state.selected&&resetUsable(c)));
 const resetCopy=(text,fallback='')=>{const value=String(text||'').trim();if(!value)return fallback?t(fallback):'';const known=upstreamResetCopy[value.toLowerCase()];return known?t(known):value;};
-function resetOption(creditID,title,detail,description,first){
-  const button=el('button','reset-option'),checked=resetDialog.selected===creditID;button.type='button';
+function resetOption(creditID,title,detail,description,first,extra={}){
+  const button=el('button','reset-option'),blocked=extra.usable===false,checked=!blocked&&resetDialog.selected===creditID;button.type='button';
   button.setAttribute('role','radio');button.setAttribute('aria-checked',String(checked));button.tabIndex=checked?0:-1;button.dataset.creditId=creditID??'';
+  if(blocked){button.disabled=true;button.setAttribute('aria-disabled','true');}
   add(button,'span','reset-radio').setAttribute('aria-hidden','true');
   const main=add(button,'span','reset-option-main'),head=add(main,'span','reset-option-title');textAdd(head,'span','',title);
   if(first)textAdd(head,'span','reset-badge',t('最早过期'));
+  if(extra.remaining>1)textAdd(head,'span','reset-badge count',t('剩 {n} 次',{n:fmt(extra.remaining)}));
+  if(blocked)textAdd(head,'span','reset-badge muted',t('暂不可用'));
   if(detail)textAdd(main,'span','reset-option-detail',detail);
   if(description)textAdd(main,'span','reset-option-desc',description);
-  button.onclick=()=>selectResetCredit(creditID);
+  if(blocked&&extra.reason!=='暂不可用')textAdd(main,'span','reset-option-reason',t(extra.reason));
+  button.onclick=()=>{if(!blocked)selectResetCredit(creditID);};
   return button;
 }
 function renderResetDialog(){
@@ -935,12 +977,13 @@ function renderResetDialog(){
   else if(state.status==='empty')nodes.push(textAdd(body,'p','modal-message',t('没有可用的重置卡。')));
   else if(state.status==='retry')nodes.push(textAdd(body,'p','modal-message warn',t('上次请求结果未知。确认将用同一请求重试，不会重复扣除。')));
   else if(!state.credits.length)nodes.push(resetOption(null,t('由 OpenAI 自动选择'),t('未返回卡片明细，将由 OpenAI 决定扣哪一张。'),'',false));
-  else state.credits.forEach((c,i)=>nodes.push(resetOption(c.id,resetCopy(c.title,'完整重置'),expiryText(c.expires_at),resetCopy(c.description),i===0&&Boolean(c.expires_at)&&state.credits.length>1)));
+  else state.credits.forEach((c,i)=>nodes.push(resetOption(c.id,resetCopy(c.title,'完整重置'),expiryText(c.expires_at),resetCopy(c.description),i===0&&Boolean(c.expires_at)&&state.credits.length>1,
+    {remaining:c.remaining,usable:c.usable_now,reason:resetUnavailableReason(c.unavailable_reason)})));
   body.replaceChildren(...nodes);
-  const ready=state.status==='ready'||state.status==='retry';
+  const ready=resetConfirmable(state),blocked=state.status==='ready'&&!ready;
   $('reset-confirm').disabled=!ready;$('reset-confirm').textContent=t(state.status==='retry'?'重试同一请求':'确认使用');
   $('reset-retry').hidden=state.status!=='error';
-  $('reset-warning').textContent=t(state.status==='ready'&&state.credits.length?'默认选中最早过期的一张。确认后立即消耗，无法撤销。':'确认后立即消耗一张重置卡，无法撤销。');
+  $('reset-warning').textContent=t(blocked?'当前没有立即可用的重置卡，可查看以上过期时间并在满足条件后使用。':state.status==='ready'&&state.credits.length?(state.target.provider==='claude'?'默认选中可用卡中最早过期的一张。确认后立即消耗，无法撤销。':'默认选中最早过期的一张。确认后立即消耗，无法撤销。'):'确认后立即消耗一张重置卡，无法撤销。');
 }
 async function loadResetCredits(){
   const state=resetDialog;if(!state)return;const serial=state.serial;
@@ -950,9 +993,11 @@ async function loadResetCredits(){
     const parsed=validResetCredits(await api('reset-credits','POST',{auth_id:state.id}));
     if(resetDialog?.serial!==serial)return;
     if(!resetTargetCurrent(state.target)){closeReset();if(key!==guessKey())await load();return;}
-    if(!parsed)Object.assign(state,{status:'error',error:'重置卡明细格式异常。'});
+    // Claude spends only with the server-issued confirmation token; usable credits without one fail closed.
+    if(!parsed||state.target.provider==='claude'&&parsed.credits.some(resetUsable)&&!parsed.token)Object.assign(state,{status:'error',error:'重置卡明细格式异常。'});
     else if(parsed.count===0)Object.assign(state,{status:'empty',count:0});
-    else Object.assign(state,{status:'ready',count:parsed.count,credits:parsed.credits,selected:parsed.credits[0]?.id??null});
+    else if(state.target.provider==='claude'&&!parsed.credits.length)Object.assign(state,{status:'empty'}); // Claude never lets the server choose.
+    else Object.assign(state,{status:'ready',count:parsed.count,credits:parsed.credits,token:parsed.token,selected:parsed.credits.find(resetUsable)?.id??null});
   }catch(err){
     if(resetDialog?.serial!==serial)return;
     if(!resetTargetCurrent(state.target)){closeReset();if(key!==guessKey())await load();return;}
@@ -967,15 +1012,15 @@ async function openReset(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
   const target=accountTarget(id),q=list(data?.quotas).find(q=>q.auth_id===id);
-  if(!accountTargetCurrent(target)||target.disabled||target.provider!=='codex'||!(q.manual_reset_remaining>0)||accountBusy(id)||resetDialog||disableDialog)return;
+  if(!accountTargetCurrent(target)||target.disabled||!resetProvider(target.provider)||!(q.manual_reset_remaining>0||resetRetryable(target))||accountBusy(id)||resetDialog||disableDialog)return;
   showAccountError(id,null);showAccountNote(id,null);
   const pending=pendingRedeem.get(id);resetReturnFocus='account-reset-'+encodeURIComponent(id);
-  resetDialog={id,target,name:target.name,serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,error:null};
+  resetDialog={id,target,name:target.name,serial:++resetSerial,status:pending?'retry':'loading',credits:[],count:null,selected:pending?pending.credit:null,token:pending?pending.token:null,error:null};
   renderResetDialog();$('reset-card').focus();
   if(!pending)await loadResetCredits();
 }
 function selectResetCredit(creditID){
-  if(resetDialog?.status!=='ready'||!resetDialog.credits.some(c=>c.id===creditID))return;
+  if(resetDialog?.status!=='ready'||!resetDialog.credits.some(c=>c.id===creditID&&resetUsable(c)))return;
   resetDialog.selected=creditID;renderResetDialog();focusSelectedReset();
 }
 function closeReset(){
@@ -983,43 +1028,48 @@ function closeReset(){
   const back=resetReturnFocus;resetReturnFocus='';if(back&&document.getElementById(back))restoreFocus(back);
 }
 async function confirmReset(){
-  const state=resetDialog;if(!state||(state.status!=='ready'&&state.status!=='retry'))return;
+  const state=resetDialog;if(!resetConfirmable(state))return;
   closeReset();
   if(!resetTargetCurrent(state.target)){if(key!==guessKey())await load();return;}
-  await runReset(state.target,state.selected);
+  await runReset(state.target,state.selected,state.token);
 }
 function resetDialogKey(e){
   if(disableDialog){if(e.key==='Escape'){e.preventDefault();closeDisable();}else trapModalFocus(e,$('disable-card'));return;}
   if(!resetDialog)return;
   if(e.key==='Escape'){e.preventDefault();closeReset();return;}
-  if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)&&resetDialog.status==='ready'&&resetDialog.credits.length>1&&e.target?.getAttribute?.('role')==='radio'){
-    e.preventDefault();const ids=resetDialog.credits.map(c=>c.id),step=e.key==='ArrowDown'||e.key==='ArrowRight'?1:ids.length-1;
+  const ids=resetDialog.status==='ready'?resetDialog.credits.filter(resetUsable).map(c=>c.id):[]; // Arrow keys skip unavailable credits.
+  if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)&&ids.length>1&&ids.includes(resetDialog.selected)&&e.target?.getAttribute?.('role')==='radio'){
+    e.preventDefault();const step=e.key==='ArrowDown'||e.key==='ArrowRight'?1:ids.length-1;
     selectResetCredit(ids[(ids.indexOf(resetDialog.selected)+step)%ids.length]);return;
   }
   trapModalFocus(e,$('reset-card'));
 }
-// Spend one Codex reset credit. The plugin backend holds the OAuth token.
+// Spend one Codex or Claude reset credit. The plugin backend holds the OAuth token.
 async function actionAuthChanged(id,job){
   if(actionJobs.get(id)!==job)return true;
   if(key!==job.key||guessKey()!==job.key){await load();return true;}
   return !accountTargetCurrent(job.target);
 }
-async function runReset(target,credit){
+async function runReset(target,credit,token){
   const id=target.id;if(!resetTargetCurrent(target)||accountBusy(id))return;
-  const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null,target};pendingRedeem.set(id,pending);
+  // A retry always reuses the original request id, credit and confirmation token.
+  const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null,token:token||null,target,uncertain:false};pendingRedeem.set(id,pending);
   const job={kind:'reset',key,target};++accountMutationSerial;actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
   let refresh=false;
   try{
-    const body={auth_id:id,redeem_request_id:pending.redeem};if(pending.credit)body.credit_id=pending.credit;
+    const body={auth_id:id,redeem_request_id:pending.redeem};if(pending.credit)body.credit_id=pending.credit;if(pending.token)body.confirmation_token=pending.token;
     const result=await api('consume-reset','POST',body);if(await actionAuthChanged(id,job))return;
     ++accountMutationSerial;pendingRedeem.delete(id);
     const note=resetNotes[result?.code];showAccountNote(id,note?note(result.windows_reset,pending.credit):'重置接口响应格式异常。');refresh=Boolean(note);
   }catch(err){
     if(await actionAuthChanged(id,job))return;
-    if(err.status&&err.status<500)pendingRedeem.delete(id); // Definitive rejection; ambiguous failures keep the id.
+    // Ambiguous failures keep the id. After one, busy/rate-limit/transient-auth replies are not a verdict on
+    // that earlier attempt, so the same request must stay retryable; other 4xx replies are definitive.
+    if(!err.status||err.status>=500)pending.uncertain=true;
+    else if(!(pending.uncertain&&(err.status===429||err.status===422||err.status===409&&err.code==='reset_busy')))pendingRedeem.delete(id);
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
     showAccountError(id,err.ui||'重置卡使用失败，请稍后重试。');
-  }finally{if(actionJobs.get(id)===job){actionJobs.delete(id);syncAccountControls();}}
+  }finally{if(actionJobs.get(id)===job){actionJobs.delete(id);syncPendingCards();syncAccountControls();}}
   if(refresh&&key===job.key){if(!loading&&!data?.quota_refreshing&&!data?.account_refresh?.[id]?.refreshing&&!accountJobs.has(id))await refreshAccount(id);else await load();}
 }
 // Enable/disable through CPA's own management API, the same call as CPA's credential switch.
@@ -1128,12 +1178,16 @@ function renderQuotas(){
         else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
         const secondary=add(panel,'div','account-secondary-actions');
         const toggle=add(secondary,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');const track=add(toggle,'span','switch-track');track.setAttribute('aria-hidden','true');add(track,'span','switch-thumb');add(toggle,'span','');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
-        let reset=null;
+        let reset=null,resetActions=null;
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
-          const resetActions=add(secondary,'div','account-reset-actions'),resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
-          if(item.provider==='codex'&&!item.disabled&&item.manual_reset_remaining>0){reset=add(resetActions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);}
+          resetActions=add(secondary,'div','account-reset-actions');const resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'strong','',fmt(item.manual_reset_remaining));if(language==='zh')add(resets,'span','','次');
         }else if(item.provider==='claude'&&claudeResetDiagnostics[item.manual_reset_diagnostic]){
-          const resetActions=add(secondary,'div','account-reset-actions'),resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'span','manual-reset-diagnostic',claudeResetDiagnostics[item.manual_reset_diagnostic]);
+          resetActions=add(secondary,'div','account-reset-actions');const resets=add(resetActions,'div','manual-reset');add(resets,'span','','可重置');add(resets,'span','manual-reset-diagnostic',claudeResetDiagnostics[item.manual_reset_diagnostic]);
+        }
+        // An unresolved attempt keeps its retry entry even when the balance later reads 0, missing or diagnostic.
+        if(resetProvider(item.provider)&&!item.disabled&&(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>0||pendingRedeem.has(item.auth_id))){
+          resetActions??=add(secondary,'div','account-reset-actions');
+          reset=add(resetActions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);
         }
         entry={panel,button,refreshIcon,refreshLabel,reset,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }

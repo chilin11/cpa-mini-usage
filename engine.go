@@ -222,6 +222,7 @@ type Engine struct {
 	refreshMu            sync.RWMutex
 	priceRefreshMu       sync.Mutex
 	consuming            map[string]bool
+	resetBindings        map[string]resetBinding // Indexed by random confirmation token; never persisted.
 	lastRefresh          time.Time
 }
 
@@ -233,7 +234,7 @@ func newEngine() *Engine {
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), consuming: make(map[string]bool), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
+	return &Engine{quotas: make(map[string]AccountQuota), forecasts: make(map[string]SavedForecast), accountRefresh: make(map[string]AccountRefreshState), consuming: make(map[string]bool), resetBindings: make(map[string]resetBinding), names: make(map[string]string), aliases: make(map[string]string), prices: make(map[string]ModelPrice), dir: dir, persistence: PersistenceSettings{Enabled: true, Directory: dir}, done: make(chan struct{})}
 }
 
 func (e *Engine) start() {

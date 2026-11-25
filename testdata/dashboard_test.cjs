@@ -794,8 +794,9 @@ for(const language of ['zh','en']){
   test(`${language}: reset and status controls render only where supported and are translated`,()=>{
     const d=dashboard({},undefined,{language});d.api.renderSample(actionAccounts());
     const a=panel(d.elements,'codex-a'),zero=panel(d.elements,'codex-zero'),off=panel(d.elements,'codex-off'),claude=panel(d.elements,'claude-a');
-    assert(resetButton(a));assert(!resetButton(zero));assert(!resetButton(off));assert(!resetButton(claude));
-    assert.equal(resetButton(a).textContent,language==='en'?'Use reset':'使用重置卡');
+    assert(resetButton(a));assert(!resetButton(zero));assert(!resetButton(off));assert(resetButton(claude),'Claude accounts with credits get the same reset button');
+    assert.equal(resetButton(a).textContent,language==='en'?'Use reset':'使用重置卡');assert.equal(resetButton(claude).textContent,language==='en'?'Use reset':'使用重置卡');
+    assert.equal(resetButton(claude).id,'account-reset-claude-a');
     for(const card of [a,off]){assert.equal(toggleButton(card).getAttribute('role'),'switch');assert.equal(toggleButton(card).children[0].getAttribute('aria-hidden'),'true');}
     assert.equal(toggleButton(a).getAttribute('aria-checked'),'true');assert.equal(toggleButton(off).getAttribute('aria-checked'),'false');
     assert.equal(toggleButton(a).children[1].textContent,language==='en'?'Enabled':'已启用');assert.equal(toggleButton(off).children[1].textContent,language==='en'?'Disabled':'已禁用');
@@ -821,7 +822,7 @@ function resetFetcher(calls,opts={}){
     if(url.endsWith('reset-credits')){const list=typeof opts.list==='function'?opts.list():opts.list??creditList();return reply(list,opts.listStatus?.()??200);}
     if(url.endsWith('consume-reset'))return opts.consume?opts.consume(options):reply({code:'reset',windows_reset:2});
     if(url.endsWith('refresh-account'))return reply({refresh_finished_at:'before'},202);
-    return reply({...actionAccounts(),account_refresh:{'codex-a':{refreshing:false,finished_at:'after'}}});};
+    return reply({...(opts.snapshot?.()??actionAccounts()),account_refresh:{'codex-a':{refreshing:false,finished_at:'after'},'claude-a':{refreshing:false,finished_at:'after'}}});};
 }
 const useReset=async(d,id='codex-a')=>{await d.api.openReset(id);await d.api.confirmReset();};
 const posted=(calls,suffix)=>calls.filter(c=>c.url.endsWith(suffix));
@@ -911,14 +912,202 @@ test('reset outcomes are explained; ambiguous failures retry the same request an
   mode=409;await useReset(d);assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'重置卡请求正在处理中。');
   assert.equal(sent[2].redeem_request_id,sent[0].redeem_request_id);
   await useReset(d);
-  assert.equal(sent.length,4);assert.notEqual(sent[3].redeem_request_id,sent[2].redeem_request_id,'a definitive rejection starts a new request id');
-  assert.equal(sent[3].credit_id,'soon','a fresh request goes back to the earliest-expiring default');
+  assert.equal(sent.length,4);assert.equal(sent[3].redeem_request_id,sent[0].redeem_request_id,'busy after an unknown result is not a verdict; the same request stays retryable');
+  assert.equal(sent[3].credit_id,'late');assert.equal(posted(calls,'reset-credits').length,1);
+  mode=404;await useReset(d);assert.equal(sent[4].redeem_request_id,sent[0].redeem_request_id);
+  mode=409;await useReset(d);
+  assert.equal(sent.length,6);assert.notEqual(sent[5].redeem_request_id,sent[4].redeem_request_id,'a definitive rejection starts a new request id');
+  assert.equal(sent[5].credit_id,'soon','a fresh request goes back to the earliest-expiring default');
+  await useReset(d);assert.notEqual(sent[6].redeem_request_id,sent[5].redeem_request_id,'a first-attempt 4xx (even reset_busy) is definitive');
+  assert(sent.every(body=>!('confirmation_token' in body)),'Codex sends no confirmation token');
 });
 
 test('reset errors never echo backend text',async()=>{
   const d=dashboard(login(),resetFetcher([],{consume:()=>reply({error:'access_token=secret'},502)}));
   await d.api.load();await useReset(d);
   assert(!/secret/.test(accountError(panel(d.elements,'codex-a')).textContent));assert(accountError(panel(d.elements,'codex-a')).textContent);
+});
+
+const CLAUDE_TOKEN='claude-confirm-token-0123456789';
+function claudeCredits(){return {available_count:7,confirmation_token:CLAUDE_TOKEN,credits:[
+  {id:'c-full',title:'Full reset',description:'Refills your 5-hour and weekly limits.',expires_at:new Date(Date.now()+(2*24+3)*hour+hour/2).toISOString(),remaining:3,usable_now:true},
+  {id:'c-fable',title:'Fable reset',description:'Refills your Fable allowance and gives back what Fable used on your weekly limit.',expires_at:new Date(Date.now()+5*24*hour).toISOString(),remaining:1,usable_now:false,unavailable_reason:'needs_limit'},
+  {id:'c-5h',title:'5-hour reset',description:'Refills your 5-hour limit.',expires_at:new Date(Date.now()+10*24*hour).toISOString(),remaining:2,usable_now:true},
+  {id:'c-week',title:'Weekly reset',description:'Refills your weekly limit.',expires_at:new Date(Date.now()+20*24*hour).toISOString(),usable_now:false,unavailable_reason:'access_token=secret blocked'},
+]};}
+const badges=option=>descendants(option).filter(n=>/^reset-badge/.test(n.className)).map(n=>n.textContent);
+
+test('Claude: the card button opens a dialog showing every credit batch with type, expiry, count and availability',async()=>{
+  const calls=[];const d=dashboard(login(),resetFetcher(calls,{list:claudeCredits()}));await d.api.load();
+  await resetButton(panel(d.elements,'claude-a')).onclick();
+  assert.equal(resetDialog(d).hidden,false);assert.equal(posted(calls,'consume-reset').length,0);
+  assert.deepEqual(JSON.parse(posted(calls,'reset-credits')[0].options.body),{auth_id:'claude-a'});
+  assert.equal(d.elements.get('reset-subtitle').textContent,'账户：claude@example.com · 可用 7 张');
+  const options=resetOptions(d);assert.deepEqual(options.map(n=>n.dataset.creditId),['c-full','c-fable','c-5h','c-week']);
+  assert.deepEqual(options.map(n=>n.getAttribute('aria-checked')),['true','false','false','false']);
+  assert.deepEqual(options.map(n=>descendants(n).find(c=>c.className==='reset-option-title').children[0].textContent),['完整重置','Fable 重置','5 小时重置','周额度重置']);
+  assert.deepEqual(options.map(n=>descendants(n).find(c=>c.className==='reset-option-desc').textContent),['重置当前 5 小时和周额度。','重置 Fable 额度并返还 Fable 本周消耗的周额度。','重置当前 5 小时额度。','重置当前周额度。']);
+  assert.match(descendants(options[0]).find(n=>n.className==='reset-option-detail').textContent,/ 过期 · 剩 2 天 3 小时$/);
+  for(const option of options)assert.match(descendants(option).find(n=>n.className==='reset-option-detail').textContent,/ 过期 · 剩 \d+ 天/);
+  assert.deepEqual(options.map(badges),[['最早过期','剩 3 次'],['暂不可用'],['剩 2 次'],['暂不可用']]);
+  for(const i of [1,3]){assert.equal(options[i].disabled,true);assert.equal(options[i].getAttribute('aria-disabled'),'true');assert.equal(options[i].tabIndex,-1);}
+  for(const i of [0,2]){assert.notEqual(options[i].disabled,true);assert.equal(options[i].getAttribute('aria-disabled'),null);}
+  assert.equal(descendants(options[1]).find(n=>n.className==='reset-option-reason').textContent,'需达到额度上限后使用');
+  assert(!descendants(options[3]).some(n=>n.className==='reset-option-reason'),'unknown reasons fall back to the generic badge only');
+  assert(!dialogText(d).some(text=>/secret|access_token|blocked|Refills|Full reset/.test(text)),'backend reason/copy is never echoed');
+  assert(!dialogText(d).includes('由 OpenAI 自动选择'));
+  assert.equal(d.elements.get('reset-confirm').disabled,false);assert.equal(d.elements.get('reset-warning').textContent,'默认选中可用卡中最早过期的一张。确认后立即消耗，无法撤销。');
+  options[1].onclick();assert.equal(resetOptions(d)[0].getAttribute('aria-checked'),'true','unavailable credits cannot be selected');
+  const key=(name,target)=>{let prevented=false;d.events.keydown({key:name,target,preventDefault(){prevented=true;}});return prevented;};
+  assert(key('ArrowDown',resetOptions(d)[0]));assert.deepEqual(resetOptions(d).map(n=>n.getAttribute('aria-checked')),['false','false','true','false'],'arrow keys skip unavailable credits');
+  key('ArrowDown',resetOptions(d)[2]);assert.equal(resetOptions(d)[0].getAttribute('aria-checked'),'true');
+  key('ArrowUp',resetOptions(d)[0]);assert.equal(resetOptions(d)[2].getAttribute('aria-checked'),'true');
+  await d.elements.get('reset-confirm').onclick();assert.equal(resetDialog(d).hidden,true);
+  const body=JSON.parse(posted(calls,'consume-reset')[0].options.body);assert.equal(body.auth_id,'claude-a');assert.equal(body.credit_id,'c-5h');
+  assert.equal(accountNoteNode(panel(d.elements,'claude-a')).textContent,'已使用重置卡，重置了 2 个额度窗口。');
+  assert.equal(posted(calls,'refresh-account').length,1);
+});
+
+test('Claude: the earliest usable credit is the default and unavailable-first lists still confirm the usable one',async()=>{
+  const list=claudeCredits();list.credits=[list.credits[1],list.credits[0],list.credits[2]];
+  const calls=[];const d=dashboard(login(),resetFetcher(calls,{list}));await d.api.load();await useReset(d,'claude-a');
+  assert.equal(JSON.parse(posted(calls,'consume-reset')[0].options.body).credit_id,'c-full');
+});
+
+test('Claude: empty or fully unavailable credit lists cannot be confirmed and never fall back to OpenAI',async()=>{
+  let calls=[];let d=dashboard(login(),resetFetcher(calls,{list:{available_count:2,credits:[]}}));await d.api.load();await d.api.openReset('claude-a');
+  assert(dialogText(d).includes('没有可用的重置卡。'));assert(!dialogText(d).some(text=>/OpenAI/.test(text)));assert.equal(resetOptions(d).length,0);
+  assert.equal(d.elements.get('reset-confirm').disabled,true);await d.api.confirmReset();assert.equal(posted(calls,'consume-reset').length,0);
+  const all=claudeCredits();all.credits=all.credits.map(c=>({...c,usable_now:false,unavailable_reason:'cooldown'}));
+  calls=[];d=dashboard(login(),resetFetcher(calls,{list:all}));await d.api.load();await d.api.openReset('claude-a');
+  const options=resetOptions(d);assert.equal(options.length,4);assert(options.every(n=>n.disabled===true&&n.getAttribute('aria-checked')==='false'&&n.tabIndex===-1));
+  assert(options.every(n=>descendants(n).find(c=>c.className==='reset-option-detail').textContent.includes('过期')),'expiry times stay visible');
+  assert(options.every(n=>descendants(n).find(c=>c.className==='reset-option-reason').textContent==='冷却中，请稍后再试'));
+  assert.equal(d.elements.get('reset-confirm').disabled,true);assert(!dialogText(d).some(text=>/OpenAI/.test(text)));
+  assert.equal(d.elements.get('reset-warning').textContent,'当前没有立即可用的重置卡，可查看以上过期时间并在满足条件后使用。');
+  d.events.keydown({key:'ArrowDown',target:options[0],preventDefault(){}});assert(resetOptions(d).every(n=>n.getAttribute('aria-checked')==='false'));
+  await d.api.confirmReset();assert.equal(posted(calls,'consume-reset').length,0);
+});
+
+test('Claude: malformed optional credit fields are rejected',async()=>{
+  for(const extra of [{remaining:0},{remaining:1.5},{remaining:'2'},{usable_now:'yes'},{usable_now:null},{unavailable_reason:5}]){
+    const calls=[];const d=dashboard(login(),resetFetcher(calls,{list:{available_count:1,credits:[{id:'c',title:'Full reset',...extra}]}}));await d.api.load();await d.api.openReset('claude-a');
+    assert(dialogText(d).includes('重置卡明细格式异常。'),JSON.stringify(extra));assert.equal(d.elements.get('reset-confirm').disabled,true);
+  }
+});
+
+test('Claude: reset outcomes and new error codes are explained without echoing backend text',async()=>{
+  for(const [result,zh] of [[{code:'cooldown',windows_reset:0},'重置卡处于冷却中，请稍后再试。'],[{code:'not_next_grant',windows_reset:0},'请先使用最早过期的同类型重置卡。'],[{code:'reset',windows_reset:0},'已使用重置卡，正在刷新额度。'],[{code:'reset',windows_reset:1},'已使用重置卡，重置了 1 个额度窗口。']]){
+    const d=dashboard(login(),resetFetcher([],{list:claudeCredits(),consume:()=>reply(result)}));await d.api.load();await useReset(d,'claude-a');
+    assert.equal(accountNoteNode(panel(d.elements,'claude-a')).textContent,zh);
+  }
+  for(const [error,status,zh] of [['reset_rate_limited',429,'重置请求过于频繁，请稍后重试。'],['reset_auth_failed',422,'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。'],['reset_account_changed',409,'该账户凭证已变更，请重新打开重置弹窗核对后再试。'],['reset_unconfirmed',502,'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。'],['reset organization unavailable',502,'无法读取账户所属组织信息，请稍后重试。'],['claude_reset_cli_version',422,'客户端版本过旧，暂不支持读取 Claude 重置卡。'],['claude_reset_surface',422,'当前请求身份未获 Claude 重置卡接口认可。'],['claude_reset_not_eligible',422,'当前账户不符合 Claude 重置卡使用条件。']]){
+    const d=dashboard(login(),resetFetcher([],{list:claudeCredits(),consume:()=>reply({error},status)}));await d.api.load();await useReset(d,'claude-a');
+    assert.equal(accountError(panel(d.elements,'claude-a')).textContent,zh,error);
+  }
+  const d=dashboard(login(),resetFetcher([],{list:claudeCredits(),consume:()=>reply({error:'access_token=secret'},422)}));await d.api.load();await useReset(d,'claude-a');
+  assert(!/secret/.test(accountError(panel(d.elements,'claude-a')).textContent));
+});
+
+// consume-reset scripted step by step: 'lost' drops the response (network failure, no status).
+function scriptedConsume(sent,steps){return options=>{sent.push(JSON.parse(options.body));const [status,error]=steps.shift()??[200];
+  if(status==='lost')throw new TypeError('network connection lost');return status===200?reply({code:'reset',windows_reset:error??0}):reply({error},status);};}
+const sameRequest=(sent,first)=>sent.every(body=>body.redeem_request_id===first.redeem_request_id&&body.credit_id===first.credit_id&&body.confirmation_token===first.confirmation_token);
+
+test('Claude: the confirmation token is validated and sent with every attempt',async()=>{
+  const sent=[],calls=[];const d=dashboard(login(),resetFetcher(calls,{list:claudeCredits(),consume:scriptedConsume(sent,[[502,'reset_unconfirmed'],[200]])}));
+  await d.api.load();await useReset(d,'claude-a');await useReset(d,'claude-a');
+  assert.equal(sent.length,2);assert.equal(sent[0].confirmation_token,CLAUDE_TOKEN);assert(sameRequest(sent,sent[0]),'the retry reuses the token');
+  for(const token of [undefined,null,'',' short-token     ',42]){
+    const list=claudeCredits();if(token===undefined)delete list.confirmation_token;else list.confirmation_token=token;
+    const c=[];const b=dashboard(login(),resetFetcher(c,{list}));await b.api.load();await b.api.openReset('claude-a');
+    assert(dialogText(b).includes('重置卡明细格式异常。'),String(token));assert.equal(b.elements.get('reset-confirm').disabled,true);
+    await b.api.confirmReset();assert.equal(posted(c,'consume-reset').length,0,'usable Claude credits without a valid token fail closed');
+  }
+  const blocked=claudeCredits();delete blocked.confirmation_token;blocked.credits=blocked.credits.map(c=>({...c,usable_now:false}));
+  const b=dashboard(login(),resetFetcher([],{list:blocked}));await b.api.load();await b.api.openReset('claude-a');
+  assert.equal(resetOptions(b).length,4,'a token is only required when something can be spent');
+  for(const [error,status,zh] of [['invalid_confirmation_token',400,'重置确认凭据无效，请重新打开弹窗后再试。'],['account_disabled',409,'账户已禁用，无法使用重置卡。']]){
+    const e=dashboard(login(),resetFetcher([],{list:claudeCredits(),consume:()=>reply({error},status)}));await e.api.load();await useReset(e,'claude-a');
+    assert.equal(accountError(panel(e.elements,'claude-a')).textContent,zh,error);
+  }
+});
+
+test('Claude: a lost response stays retryable through busy and rate-limit replies until it succeeds',async()=>{
+  const sent=[],calls=[];
+  const d=dashboard(login(),resetFetcher(calls,{list:claudeCredits(),consume:scriptedConsume(sent,[['lost'],[409,'reset_busy'],[429,'reset_rate_limited'],[422,'reset_auth_failed'],[200]])}));
+  await d.api.load();await d.api.openReset('claude-a');resetOptions(d)[2].onclick();await d.api.confirmReset();
+  assert.equal(accountError(panel(d.elements,'claude-a')).textContent,'重置卡使用失败，请稍后重试。');
+  for(const zh of ['重置卡请求正在处理中。','重置请求过于频繁，请稍后重试。','该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。']){
+    await d.api.openReset('claude-a');assert(dialogText(d).includes('上次请求结果未知。确认将用同一请求重试，不会重复扣除。'));assert.equal(d.elements.get('reset-confirm').textContent,'重试同一请求');
+    await d.api.confirmReset();assert.equal(accountError(panel(d.elements,'claude-a')).textContent,zh);
+    assert(panel(d.elements,'claude-a'),'a 4xx never clears the CPA session');assert.equal(d.api.guessKey(),'key');
+  }
+  await useReset(d,'claude-a');
+  assert.equal(sent.length,5);assert(sameRequest(sent,sent[0]),'same request id, credit and token throughout');
+  assert.equal(sent[0].credit_id,'c-5h');assert.equal(sent[0].confirmation_token,CLAUDE_TOKEN);assert.equal(posted(calls,'reset-credits').length,1);
+  assert.equal(accountNoteNode(panel(d.elements,'claude-a')).textContent,'已使用重置卡，正在刷新额度。');
+  await d.api.openReset('claude-a');assert.equal(posted(calls,'reset-credits').length,2,'success clears the pending request');
+});
+
+test('Claude: first-attempt 4xx and definitive retry failures clear the pending request without logging out',async()=>{
+  for(const [steps,label] of [[[[429,'reset_rate_limited']],'first 429'],[[[422,'claude_reset_not_eligible']],'first 422'],[[[409,'reset_busy']],'first 409 busy'],
+    [[[502,'reset_unconfirmed'],[400,'invalid_confirmation_token']],'retry 400'],[[[503,'reset endpoint unavailable'],[404,'account_not_found']],'retry 404'],
+    [[['lost'],[409,'reset_account_changed']],'retry 409 changed'],[[[502,'reset_unconfirmed'],[409,'account_disabled']],'retry 409 disabled']]){
+    const sent=[],calls=[];const d=dashboard(login(),resetFetcher(calls,{list:claudeCredits(),consume:scriptedConsume(sent,[...steps])}));
+    await d.api.load();for(let i=0;i<steps.length;i++)await useReset(d,'claude-a');
+    assert(sameRequest(sent,sent[0]),label);assert(panel(d.elements,'claude-a'),label);assert.equal(d.api.guessKey(),'key',label);
+    const lists=posted(calls,'reset-credits').length;await useReset(d,'claude-a');
+    assert.equal(posted(calls,'reset-credits').length,lists+1,label+' clears the pending request');
+    assert.notEqual(sent.at(-1).redeem_request_id,sent[0].redeem_request_id,label+' starts a new request id');assert.equal(sent.at(-1).credit_id,'c-full');
+  }
+});
+
+test('an unresolved reset keeps its retry entry when the balance later reads 0, missing or diagnostic',async()=>{
+  for(const change of ['zero','missing','diagnostic']){
+    const sent=[],calls=[];let after=false;
+    const snapshot=()=>{const s=actionAccounts(),q=s.quotas.find(q=>q.auth_id==='claude-a');if(after){if(change==='zero')q.manual_reset_remaining=0;else delete q.manual_reset_remaining;if(change==='diagnostic')q.manual_reset_diagnostic='request_failed';}return s;};
+    const d=dashboard(login(),resetFetcher(calls,{list:claudeCredits(),snapshot,consume:scriptedConsume(sent,[[502,'reset_unconfirmed'],[200,1]])}));
+    await d.api.load();await useReset(d,'claude-a');
+    after=true;await d.api.load();
+    const card=panel(d.elements,'claude-a');assert(resetButton(card),change+': retry entry kept');assert.equal(resetButton(card).disabled,false);
+    if(change==='diagnostic')assert(descendants(card).some(n=>n.className==='manual-reset-diagnostic'));
+    await resetButton(card).onclick();assert(dialogText(d).includes('上次请求结果未知。确认将用同一请求重试，不会重复扣除。'),change);
+    await d.elements.get('reset-confirm').onclick();
+    assert.equal(sent.length,2,change);assert(sameRequest(sent,sent[0]),change+': original request, credit and token');assert.equal(posted(calls,'reset-credits').length,1);
+    assert.equal(accountNoteNode(panel(d.elements,'claude-a')).textContent,'已使用重置卡，重置了 1 个额度窗口。');
+    assert(!resetButton(panel(d.elements,'claude-a')),change+': no new redemption without a positive balance');
+    await d.api.openReset('claude-a');assert.equal(resetDialog(d).hidden,true);assert.equal(posted(calls,'reset-credits').length,1);
+  }
+  // A disabled or replaced account never keeps the retry entry.
+  const sent=[];let disabled=false;const snapshot=()=>{const s=actionAccounts();s.quotas.find(q=>q.auth_id==='claude-a').disabled=disabled;return s;};
+  const d=dashboard(login(),resetFetcher([],{list:claudeCredits(),snapshot,consume:scriptedConsume(sent,[[502,'reset_unconfirmed']])}));
+  await d.api.load();await useReset(d,'claude-a');disabled=true;await d.api.load();
+  assert(!resetButton(panel(d.elements,'claude-a')));await d.api.openReset('claude-a');assert.equal(resetDialog(d).hidden,true);
+});
+
+test('Claude confirmation copy names usable credits; Codex keeps its copy',async()=>{
+  for(const language of ['zh','en']){
+    const d=dashboard(login(),resetFetcher([],{list:claudeCredits()}),{language});await d.api.load();await d.api.openReset('claude-a');
+    assert.equal(d.elements.get('reset-warning').textContent,language==='en'?'The earliest-expiring usable reset is selected by default. Confirming spends it immediately; this cannot be undone.':'默认选中可用卡中最早过期的一张。确认后立即消耗，无法撤销。');
+    d.elements.get('reset-cancel').onclick();await d.api.openReset('codex-a');
+    assert.equal(d.elements.get('reset-warning').textContent,language==='en'?'The credit expiring first is selected by default. Confirming spends it immediately; this cannot be undone.':'默认选中最早过期的一张。确认后立即消耗，无法撤销。');
+  }
+});
+
+test('en: the Claude reset dialog is fully translated',async()=>{
+  const all=claudeCredits();all.credits[3].unavailable_reason='blocked_seven_day';
+  const d=dashboard(login(),resetFetcher([],{list:all}),{language:'en'});await d.api.load();await d.api.openReset('claude-a');
+  const options=resetOptions(d);
+  assert.deepEqual(options.map(n=>descendants(n).find(c=>c.className==='reset-option-title').children[0].textContent),['Full reset','Fable reset','5-hour reset','Weekly reset']);
+  assert.deepEqual(options.map(n=>descendants(n).find(c=>c.className==='reset-option-desc').textContent),['Refills your 5-hour and weekly limits.','Refills your Fable allowance and gives back what Fable used on your weekly limit.','Refills your 5-hour limit.','Refills your weekly limit.']);
+  assert.deepEqual(options.map(badges),[['Expires first','3 left'],['Unavailable right now'],['2 left'],['Unavailable right now']]);
+  assert.deepEqual([1,3].map(i=>descendants(options[i]).find(n=>n.className==='reset-option-reason').textContent),['Available once a limit is reached','Blocked by the weekly limit']);
+  for(const node of descendants(resetDialog(d))){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);for(const [name,v] of Object.entries(node.attributes))if(name!=='data-i18n')assert(!/[\u3400-\u9fff]/.test(v),v);}
+  d.elements.get('reset-cancel').onclick();
+  const blocked=claudeCredits();blocked.credits=blocked.credits.map(c=>({...c,usable_now:false}));
+  const b=dashboard(login(),resetFetcher([],{list:blocked}),{language:'en'});await b.api.load();await b.api.openReset('claude-a');
+  assert.equal(b.elements.get('reset-warning').textContent,'No reset credit can be used right now. Review the expiry times above and use one once it becomes available.');
 });
 
 test('en: the reset dialog is fully translated',async()=>{
