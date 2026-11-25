@@ -129,65 +129,73 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .account-wakeup-status{margin:0;padding:4px 8px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);background:var(--subtle);overflow-wrap:anywhere}
 .account-wakeup-status.sent{color:var(--good);background:var(--good-soft)}
 .account-wakeup-status.failed{color:var(--bad);background:var(--bad-soft)}
-#wakeup-open{gap:6px}
-#wakeup-open.wakeup-on:not(:disabled){color:var(--good);background:var(--good-soft);border-color:var(--edge)}
-#wakeup-open.wakeup-busy:not(:disabled){color:var(--accent);background:var(--accent-soft);border-color:var(--edge)}
-.wakeup-dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:var(--muted)}
-#wakeup-open.wakeup-on .wakeup-dot{background:var(--good)}
-#wakeup-open.wakeup-busy .wakeup-dot{background:var(--accent)}
-.wakeup-modal-card{width:min(640px,100%);gap:10px}
-.wakeup-hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border:1px solid var(--edge);border-radius:9px;background:var(--subtle)}
+.tab-count.wakeup-on{color:var(--good);background:var(--good-soft);border-color:var(--edge)}
+.tab-count.wakeup-busy{color:var(--accent);background:var(--accent-soft);border-color:var(--edge)}
+.wakeup-page{display:flex;flex-direction:column;gap:12px}
+.wakeup-hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;padding:12px 14px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow)}
 .wakeup-hero.on{border-color:var(--good);background:var(--good-soft)}
-.wakeup-hero-check{font-size:13px;font-weight:650}
+.wakeup-hero-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.wakeup-hero-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px}
+.wakeup-hero-check{font-size:14px;font-weight:700}
+.wakeup-hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-shrink:0}
+.wakeup-persist{font-size:11px;color:var(--muted);font-family:var(--mono);overflow-wrap:anywhere}
+.wakeup-persist.saved{color:var(--good)}
+.wakeup-persist.unsaved{color:var(--warm)}
+.wakeup-persist.error{color:var(--bad)}
+.wakeup-page-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px;align-items:start}
+.wakeup-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .wakeup-summary{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted)}
 .wakeup-summary strong{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums}
-.wakeup-form{display:flex;flex-direction:column;gap:10px}
-.wakeup-block{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--subtle)}
+.wakeup-block{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--line);border-top-color:var(--edge);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow);min-width:0}
 .wakeup-block-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.wakeup-block-title{font-size:12px;font-weight:650;color:var(--ink)}
+.wakeup-block-title{font-size:13px;font-weight:650;color:var(--ink)}
 .wakeup-block-hint{font-size:11px;color:var(--muted)}
 .wakeup-presets{display:flex;flex-wrap:wrap;gap:6px}
-.wakeup-preset{min-height:28px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:11px;font-weight:550}
+.wakeup-preset{min-height:28px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--subtle);color:var(--ink);font-size:11px;font-weight:550}
 .wakeup-preset:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .wakeup-preset[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:650}
-.wakeup-builder{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted)}
+.wakeup-builder{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--subtle);font-size:11px;color:var(--muted)}
 .wakeup-builder select{min-height:28px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:11px}
-.wakeup-cron-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px;align-items:end}
+.wakeup-cron-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px;align-items:end}
 .wakeup-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:11px;color:var(--muted)}
 .wakeup-field input[type=text],.wakeup-field select{width:100%;min-height:32px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-size:12px}
-.wakeup-preview{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
-.wakeup-preview.invalid{color:var(--bad)}
+.wakeup-preview{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;background:var(--subtle);font-size:11px;color:var(--muted)}
+.wakeup-preview.invalid{color:var(--bad);background:var(--bad-soft)}
 .wakeup-preview-chip{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font:550 11px/1.4 var(--mono);font-variant-numeric:tabular-nums}
 .wakeup-preview-chip:first-of-type{border-color:var(--edge);background:var(--accent-soft);color:var(--accent)}
 .wakeup-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink);cursor:pointer}
 .wakeup-check input{width:14px;height:14px;margin:0;accent-color:var(--accent);cursor:pointer}
 .wakeup-msg-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .wakeup-msg-row input{flex:1;min-width:140px}
-.wakeup-quick-msg{min-height:30px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--muted);font:600 11px/1 var(--mono)}
+.wakeup-quick-msg{min-height:30px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--subtle);color:var(--muted);font:600 11px/1 var(--mono)}
 .wakeup-quick-msg:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-.wakeup-provider-list{display:flex;flex-direction:column;gap:6px}
-.wakeup-provider-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:start;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
-.wakeup-provider-row.off{opacity:.6;background:var(--subtle)}
+.wakeup-provider-list{display:flex;flex-direction:column;gap:8px}
+.wakeup-provider-row{display:grid;grid-template-columns:116px minmax(0,1fr);gap:8px;align-items:start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--subtle)}
+.wakeup-provider-row.off{opacity:.6}
 .wakeup-provider-models{display:flex;flex-direction:column;gap:6px;min-width:0}
 .wakeup-model-slot{display:flex;flex-direction:column;gap:4px;min-width:0}
 .wakeup-model-slot-label{font-size:10px;color:var(--muted);font-weight:600}
-.wakeup-scope-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:11px;color:var(--muted)}
+.wakeup-scope-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted)}
 .wakeup-scope-bar strong{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums}
 .wakeup-scope-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .wakeup-scope-actions .button{min-height:26px;padding:2px 8px;font-size:11px}
-.wakeup-accounts-list{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
-.wakeup-account-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--subtle);color:var(--ink);text-align:left;font-size:11px}
+.wakeup-accounts-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow:auto;padding-right:2px}
+.wakeup-account-row{display:flex;align-items:center;gap:6px;min-width:0}
+.wakeup-account-item{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--subtle);color:var(--ink);text-align:left;font-size:11px}
 .wakeup-account-item:hover:not(:disabled){border-color:var(--accent);background:var(--hover)}
 .wakeup-account-item[aria-checked=false]{color:var(--muted);background:var(--panel)}
-.wakeup-account-main{display:flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
+.wakeup-account-main{display:flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere}
 .wakeup-account-check{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex-shrink:0;border:1px solid var(--edge);border-radius:4px;background:var(--panel);font:700 11px/1 var(--mono);color:var(--panel)}
 .wakeup-account-item[aria-checked=true] .wakeup-account-check{border-color:var(--good);background:var(--good)}
-.wakeup-account-provider{flex-shrink:0;font-family:var(--mono);font-size:10px;color:var(--muted)}
-.wakeup-inline{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wakeup-account-meta{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex-shrink:0;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.wakeup-account-test{flex-shrink:0;min-height:30px;padding:3px 8px;font-size:11px}
+.wakeup-inline{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
 .wakeup-inline select,.wakeup-inline input{flex:1;min-width:110px}
 .wakeup-tz-btn{min-height:32px;padding:4px 8px;font-size:11px;white-space:nowrap}
-.wakeup-section-title{font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
-.wakeup-results{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto;padding-right:2px}
+.wakeup-results{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto;padding-right:2px}
+.wakeup-notice{padding:8px 10px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft);color:var(--good);font-size:12px;overflow-wrap:anywhere}
+.wakeup-notice.error{border-left-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+@media(max-width:960px){.wakeup-page-grid{grid-template-columns:minmax(0,1fr)}}
 .wakeup-result-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--subtle);font-size:11px;min-width:0}
 .wakeup-result-main{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .wakeup-result-name{font-weight:600;color:var(--ink)}
@@ -360,14 +368,14 @@ tbody tr:focus-within>td{background:var(--hover)}
 @media(max-width:760px){main{padding:12px}.provider-stacks{grid-template-columns:minmax(0,1fr)}.masthead{gap:12px;flex-wrap:wrap}.header-actions{gap:8px;flex-wrap:wrap}.statusbar{display:none}.results{text-align:left;flex-basis:100%}.summary,.request-view .summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.summary-item{padding:12px 14px}.summary-item:nth-child(3){border-left:0}.summary-item:nth-child(n+3){border-top:1px solid var(--line)}.gate{display:block;padding:16px}.gate a{display:inline-flex;margin-top:12px}.table-foot>span{max-width:100%}.table-foot,.pagination{flex-wrap:wrap}.account-refresh,.account-action,.account-switch{min-height:44px;min-width:44px}.modal-actions .button{min-height:44px}.wakeup-cron-row,.wakeup-provider-row{grid-template-columns:minmax(0,1fr)}.browse-fields input,.browse-fields select,.browse-fields .button{min-height:36px}.browse-summary .button,.browse-summary select{min-height:32px}}
 @media(max-width:480px){h1{font-size:20px}.tabs{gap:4px}.tabs button{padding:6px 10px}.toolbar-options{width:100%}.manual-reset{flex-wrap:nowrap}.account-error,.account-note{margin-left:8px;margin-right:8px}.section-head{gap:8px}.summary-item{padding:12px}.pagination{gap:6px}}
 @media(max-width:350px){.windows{grid-template-columns:minmax(0,1fr)}.window+.window{border-left:0;border-top:1px solid var(--line)}.results{max-width:100%}.header-actions{width:100%;justify-content:flex-start}.tabs button{padding:6px 8px}}
-.needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login #wakeup-open,.needs-login .statusbar,.needs-login #updated{display:none}
+.needs-login .tabs,.needs-login [role=tabpanel],.needs-login .foot,.needs-login .filter-control,.needs-login .persistence-control,.needs-login #refresh,.needs-login .statusbar,.needs-login #updated{display:none}
 </style>
 </head>
 <body>
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.40</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.41</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -376,11 +384,11 @@ tbody tr:focus-within>td{background:var(--hover)}
 <div class="tabs" role="tablist" aria-label="用量视图">
   <button id="tab-quota" type="button" role="tab" aria-controls="page-quota" aria-selected="true" tabindex="0"><span data-i18n="剩余额度">剩余额度</span> <span class="tab-count" id="quota-count">—</span></button>
   <button id="tab-requests" type="button" role="tab" aria-controls="page-requests" aria-selected="false" tabindex="-1"><span data-i18n="请求明细">请求明细</span> <span class="tab-count" id="request-count">—</span></button>
+  <button id="tab-wakeup" type="button" role="tab" aria-controls="page-wakeup" aria-selected="false" tabindex="-1"><span data-i18n="定时唤醒">定时唤醒</span> <span class="tab-count" id="wakeup-tab-badge">关</span></button>
 </div>
 <div class="toolbar"><div class="toolbar-options">
   <div class="header-actions">
     <button class="button" id="refresh" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .2 5M16 3v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="refresh-label">刷新全部</span></button>
-    <button class="button" id="wakeup-open" type="button" aria-haspopup="dialog"><span class="wakeup-dot" id="wakeup-dot" aria-hidden="true"></span><span id="wakeup-open-label">定时唤醒</span></button>
     <label class="language-control"><span data-i18n="语言">语言</span><select id="language" aria-label="语言"><option value="zh" data-i18n="中文">中文</option><option value="en" data-i18n="英语">英语</option></select></label>
     <div class="statusbar" role="status"><span class="dot off" id="dot" aria-hidden="true"></span><span id="status">正在读取登录状态</span></div>
   </div>
@@ -424,6 +432,133 @@ tbody tr:focus-within>td{background:var(--hover)}
     <div id="credential-table" class="tablewrap" role="region" aria-label="凭证用量表，窄屏可横向滚动" tabindex="0"><div class="empty">等待同步</div></div>
   </section>
 </section>
+<section id="page-wakeup" role="tabpanel" aria-labelledby="tab-wakeup" tabindex="0" class="hide">
+  <div class="wakeup-page">
+    <div id="wakeup-hero" class="wakeup-hero">
+      <div class="wakeup-hero-main">
+        <div class="wakeup-hero-top">
+          <label class="wakeup-check wakeup-hero-check" for="wakeup-enabled"><input id="wakeup-enabled" type="checkbox"><span data-i18n="启用定时唤醒">启用定时唤醒</span></label>
+          <div id="wakeup-summary" class="wakeup-summary" role="status" aria-live="polite"></div>
+        </div>
+        <div id="wakeup-persist" class="wakeup-persist" role="status" aria-live="polite"></div>
+      </div>
+      <div class="wakeup-hero-actions">
+        <button class="button" type="button" id="wakeup-run-now" data-i18n="立即唤醒全部">立即唤醒全部</button>
+        <button class="button modal-primary" type="button" id="wakeup-save" data-i18n="保存设置">保存设置</button>
+      </div>
+    </div>
+    <p id="wakeup-message-box" class="wakeup-notice hide" role="status" aria-live="polite"></p>
+    <div class="wakeup-page-grid">
+      <div class="wakeup-col">
+        <section class="wakeup-block" aria-label="定时计划（Cron）">
+          <div class="wakeup-block-head">
+            <h2 class="wakeup-block-title" data-i18n="1. 定时计划（Cron · 每 5 小时）">1. 定时计划（Cron · 每 5 小时）</h2>
+            <span class="wakeup-block-hint" data-i18n="选预设、按周期生成，或直接输入 5 段 Cron">选预设、按周期生成，或直接输入 5 段 Cron</span>
+          </div>
+          <div id="wakeup-presets" class="wakeup-presets">
+            <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * *" data-i18n="早 6 点每 5h（6/11/16/21）">早 6 点每 5h（6/11/16/21）</button>
+            <button class="wakeup-preset" type="button" data-cron="0 7,12,17,22 * * *" data-i18n="早 7 点每 5h（7/12/17/22）">早 7 点每 5h（7/12/17/22）</button>
+            <button class="wakeup-preset" type="button" data-cron="0 8,13,18 * * *" data-i18n="早 8 点每 5h（8/13/18）">早 8 点每 5h（8/13/18）</button>
+            <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * 1-5" data-i18n="工作日早 6 点">工作日早 6 点</button>
+            <button class="wakeup-preset" type="button" data-cron="0 */5 * * *" data-i18n="全天每 5h">全天每 5h</button>
+          </div>
+          <div class="wakeup-builder" aria-label="快速生成每 5 小时 Cron">
+            <span data-i18n="从">从</span>
+            <select id="wakeup-gen-start" aria-label="起始小时"></select>
+            <select id="wakeup-gen-min" aria-label="分钟"><option value="0">:00</option><option value="5">:05</option><option value="15">:15</option><option value="30">:30</option><option value="45">:45</option></select>
+            <span data-i18n="起，每">起，每</span>
+            <select id="wakeup-gen-step" aria-label="间隔小时"><option value="3" data-i18n="3 小时">3 小时</option><option value="4" data-i18n="4 小时">4 小时</option><option value="5" selected data-i18n="5 小时">5 小时</option><option value="6" data-i18n="6 小时">6 小时</option><option value="8" data-i18n="8 小时">8 小时</option><option value="12" data-i18n="12 小时">12 小时</option></select>
+            <span data-i18n="至">至</span>
+            <select id="wakeup-gen-end" aria-label="截止小时"></select>
+            <select id="wakeup-gen-days" aria-label="重复日期"><option value="*" data-i18n="每天">每天</option><option value="1-5" data-i18n="工作日">工作日</option><option value="0,6" data-i18n="周末">周末</option></select>
+          </div>
+          <div class="wakeup-cron-row">
+            <label class="wakeup-field" for="wakeup-cron"><span data-i18n="Cron 表达式（分 时 日 月 周）">Cron 表达式（分 时 日 月 周）</span><input id="wakeup-cron" type="text" class="tabnum" maxlength="128" autocomplete="off" placeholder="0 6,11,16,21 * * *"></label>
+            <div class="wakeup-field"><span data-i18n="时区">时区</span><div class="wakeup-inline"><select id="wakeup-tz" aria-label="定时唤醒时区"></select><button class="button wakeup-tz-btn" type="button" id="wakeup-tz-local" data-i18n="本机">本机</button></div></div>
+          </div>
+          <div id="wakeup-cron-preview" class="wakeup-preview" role="status" aria-live="polite"></div>
+        </section>
+        <section class="wakeup-block" aria-label="发送消息与模型">
+          <div class="wakeup-block-head">
+            <h2 class="wakeup-block-title" data-i18n="2. 消息内容与模型">2. 消息内容与模型</h2>
+            <span class="wakeup-block-hint" data-i18n="勾选要唤醒的服务商，并选择使用的轻量模型">勾选要唤醒的服务商，并选择使用的轻量模型</span>
+          </div>
+          <div class="wakeup-field">
+            <span data-i18n="发送消息（越短越省额度）">发送消息（越短越省额度）</span>
+            <div class="wakeup-msg-row">
+              <input id="wakeup-text" type="text" maxlength="128" autocomplete="off" placeholder="hi">
+              <button class="wakeup-quick-msg" type="button" data-msg="hi">hi</button>
+              <button class="wakeup-quick-msg" type="button" data-msg=".">.</button>
+              <button class="wakeup-quick-msg" type="button" data-msg="OK">OK</button>
+            </div>
+          </div>
+          <div class="wakeup-provider-list">
+            <div class="wakeup-provider-row" id="wakeup-row-claude">
+              <label class="wakeup-check" for="wakeup-provider-claude"><input id="wakeup-provider-claude" type="checkbox"><span>Claude</span></label>
+              <div class="wakeup-provider-models">
+                <div class="wakeup-model-slot">
+                  <select id="wakeup-model-select-claude" aria-label="Claude 唤醒模型"></select>
+                  <input id="wakeup-model-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+                </div>
+              </div>
+            </div>
+            <div class="wakeup-provider-row" id="wakeup-row-codex">
+              <label class="wakeup-check" for="wakeup-provider-codex"><input id="wakeup-provider-codex" type="checkbox"><span>Codex</span></label>
+              <div class="wakeup-provider-models">
+                <div class="wakeup-model-slot">
+                  <select id="wakeup-model-select-codex" aria-label="Codex 唤醒模型"></select>
+                  <input id="wakeup-model-codex" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+                </div>
+              </div>
+            </div>
+            <div class="wakeup-provider-row" id="wakeup-row-antigravity">
+              <label class="wakeup-check" for="wakeup-provider-antigravity"><input id="wakeup-provider-antigravity" type="checkbox"><span>Antigravity</span></label>
+              <div class="wakeup-provider-models">
+                <div class="wakeup-model-slot">
+                  <span class="wakeup-model-slot-label" data-i18n="Gemini 模型组">Gemini 模型组</span>
+                  <select id="wakeup-model-select-ag-gemini" aria-label="Antigravity Gemini 组唤醒模型"></select>
+                  <input id="wakeup-model-ag-gemini" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+                </div>
+                <div class="wakeup-model-slot">
+                  <span class="wakeup-model-slot-label" data-i18n="Claude / GPT 模型组">Claude / GPT 模型组</span>
+                  <select id="wakeup-model-select-ag-claude" aria-label="Antigravity Claude / GPT 组唤醒模型"></select>
+                  <input id="wakeup-model-ag-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="wakeup-block" aria-label="防重策略">
+          <div class="wakeup-block-head">
+            <h2 class="wakeup-block-title" data-i18n="3. 防重与补发策略">3. 防重与补发策略</h2>
+          </div>
+          <div class="wakeup-inline">
+            <label class="wakeup-check" for="wakeup-skip-active"><input id="wakeup-skip-active" type="checkbox"><span data-i18n="跳过已激活的 5 小时窗口">跳过已激活的 5 小时窗口</span></label>
+            <label class="wakeup-check" for="wakeup-auto-reset"><input id="wakeup-auto-reset" type="checkbox"><span data-i18n="5 小时窗口重置后也自动补发">5 小时窗口重置后也自动补发</span></label>
+          </div>
+        </section>
+      </div>
+      <div class="wakeup-col">
+        <section class="wakeup-block" id="wakeup-accounts-section" aria-label="参与唤醒的账户">
+          <div class="wakeup-block-head">
+            <h2 class="wakeup-block-title" data-i18n="参与唤醒的账户">参与唤醒的账户</h2>
+            <div class="wakeup-scope-actions">
+              <button class="button" type="button" id="wakeup-clear-excluded" data-i18n="全部参与" hidden>全部参与</button>
+            </div>
+          </div>
+          <div class="wakeup-scope-bar"><span id="wakeup-scope-text"></span></div>
+          <div id="wakeup-accounts-list" class="wakeup-accounts-list" role="group" aria-label="选择参与定时唤醒的账户"></div>
+        </section>
+        <section class="wakeup-block" id="wakeup-results-wrap" aria-label="最近唤醒记录">
+          <div class="wakeup-block-head">
+            <h2 class="wakeup-block-title" data-i18n="最近唤醒记录">最近唤醒记录</h2>
+          </div>
+          <div id="wakeup-results" class="wakeup-results"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</section>
 <footer class="foot" id="footer" data-i18n="页面每分钟同步 · 额度每 15 分钟检查">页面每分钟同步 · 额度每 15 分钟检查</footer>
 </main>
 <div id="reset-dialog" class="modal" hidden>
@@ -443,127 +578,6 @@ tbody tr:focus-within>td{background:var(--hover)}
     <div class="modal-actions"><button class="button" type="button" id="disable-cancel" data-i18n="取消">取消</button><button class="button" type="button" id="disable-confirm" data-i18n="确认停用">确认停用</button></div>
   </div>
 </div>
-<div id="wakeup-dialog" class="modal" hidden>
-  <div id="wakeup-card" class="modal-card wakeup-modal-card" role="dialog" aria-modal="true" aria-labelledby="wakeup-title" aria-describedby="wakeup-subtitle" tabindex="-1">
-    <h2 id="wakeup-title" data-i18n="定时唤醒 · 锁定 5 小时窗口">定时唤醒 · 锁定 5 小时窗口</h2>
-    <p id="wakeup-subtitle" class="modal-sub" data-i18n="按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。">按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。</p>
-    <div id="wakeup-hero" class="wakeup-hero">
-      <label class="wakeup-check wakeup-hero-check" for="wakeup-enabled"><input id="wakeup-enabled" type="checkbox"><span data-i18n="启用定时唤醒">启用定时唤醒</span></label>
-      <div id="wakeup-summary" class="wakeup-summary" role="status" aria-live="polite"></div>
-    </div>
-    <p id="wakeup-message-box" class="modal-message hide" role="status" aria-live="polite"></p>
-    <div class="wakeup-form">
-      <section class="wakeup-block" aria-label="定时计划（Cron）">
-        <div class="wakeup-block-head">
-          <span class="wakeup-block-title" data-i18n="1. 定时计划（Cron · 每 5 小时）">1. 定时计划（Cron · 每 5 小时）</span>
-          <span class="wakeup-block-hint" data-i18n="选预设、按周期生成，或直接输入 5 段 Cron">选预设、按周期生成，或直接输入 5 段 Cron</span>
-        </div>
-        <div id="wakeup-presets" class="wakeup-presets">
-          <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * *" data-i18n="早 6 点每 5h（6/11/16/21）">早 6 点每 5h（6/11/16/21）</button>
-          <button class="wakeup-preset" type="button" data-cron="0 7,12,17,22 * * *" data-i18n="早 7 点每 5h（7/12/17/22）">早 7 点每 5h（7/12/17/22）</button>
-          <button class="wakeup-preset" type="button" data-cron="0 8,13,18 * * *" data-i18n="早 8 点每 5h（8/13/18）">早 8 点每 5h（8/13/18）</button>
-          <button class="wakeup-preset" type="button" data-cron="0 6,11,16,21 * * 1-5" data-i18n="工作日早 6 点">工作日早 6 点</button>
-          <button class="wakeup-preset" type="button" data-cron="0 */5 * * *" data-i18n="全天每 5h">全天每 5h</button>
-        </div>
-        <div class="wakeup-builder" aria-label="快速生成每 5 小时 Cron">
-          <span data-i18n="从">从</span>
-          <select id="wakeup-gen-start" aria-label="起始小时"></select>
-          <select id="wakeup-gen-min" aria-label="分钟"><option value="0">:00</option><option value="5">:05</option><option value="15">:15</option><option value="30">:30</option><option value="45">:45</option></select>
-          <span data-i18n="起，每">起，每</span>
-          <select id="wakeup-gen-step" aria-label="间隔小时"><option value="3" data-i18n="3 小时">3 小时</option><option value="4" data-i18n="4 小时">4 小时</option><option value="5" selected data-i18n="5 小时">5 小时</option><option value="6" data-i18n="6 小时">6 小时</option><option value="8" data-i18n="8 小时">8 小时</option><option value="12" data-i18n="12 小时">12 小时</option></select>
-          <span data-i18n="至">至</span>
-          <select id="wakeup-gen-end" aria-label="截止小时"></select>
-          <select id="wakeup-gen-days" aria-label="重复日期"><option value="*" data-i18n="每天">每天</option><option value="1-5" data-i18n="工作日">工作日</option><option value="0,6" data-i18n="周末">周末</option></select>
-        </div>
-        <div class="wakeup-cron-row">
-          <label class="wakeup-field" for="wakeup-cron"><span data-i18n="Cron 表达式（分 时 日 月 周）">Cron 表达式（分 时 日 月 周）</span><input id="wakeup-cron" type="text" class="tabnum" maxlength="128" autocomplete="off" placeholder="0 6,11,16,21 * * *"></label>
-          <div class="wakeup-field"><span data-i18n="时区">时区</span><div class="wakeup-inline"><select id="wakeup-tz" aria-label="定时唤醒时区"></select><button class="button wakeup-tz-btn" type="button" id="wakeup-tz-local" data-i18n="本机">本机</button></div></div>
-        </div>
-        <div id="wakeup-cron-preview" class="wakeup-preview" role="status" aria-live="polite"></div>
-      </section>
-      <section class="wakeup-block" aria-label="发送消息与模型">
-        <div class="wakeup-block-head">
-          <span class="wakeup-block-title" data-i18n="2. 消息内容与模型">2. 消息内容与模型</span>
-          <span class="wakeup-block-hint" data-i18n="勾选要唤醒的服务商，并选择使用的轻量模型">勾选要唤醒的服务商，并选择使用的轻量模型</span>
-        </div>
-        <div class="wakeup-field">
-          <span data-i18n="发送消息（越短越省额度）">发送消息（越短越省额度）</span>
-          <div class="wakeup-msg-row">
-            <input id="wakeup-text" type="text" maxlength="128" autocomplete="off" placeholder="hi">
-            <button class="wakeup-quick-msg" type="button" data-msg="hi">hi</button>
-            <button class="wakeup-quick-msg" type="button" data-msg=".">.</button>
-            <button class="wakeup-quick-msg" type="button" data-msg="OK">OK</button>
-          </div>
-        </div>
-        <div class="wakeup-provider-list">
-          <div class="wakeup-provider-row" id="wakeup-row-claude">
-            <label class="wakeup-check" for="wakeup-provider-claude"><input id="wakeup-provider-claude" type="checkbox"><span>Claude</span></label>
-            <div class="wakeup-provider-models">
-              <div class="wakeup-model-slot">
-                <select id="wakeup-model-select-claude" aria-label="Claude 唤醒模型"></select>
-                <input id="wakeup-model-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
-              </div>
-            </div>
-          </div>
-          <div class="wakeup-provider-row" id="wakeup-row-codex">
-            <label class="wakeup-check" for="wakeup-provider-codex"><input id="wakeup-provider-codex" type="checkbox"><span>Codex</span></label>
-            <div class="wakeup-provider-models">
-              <div class="wakeup-model-slot">
-                <select id="wakeup-model-select-codex" aria-label="Codex 唤醒模型"></select>
-                <input id="wakeup-model-codex" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
-              </div>
-            </div>
-          </div>
-          <div class="wakeup-provider-row" id="wakeup-row-antigravity">
-            <label class="wakeup-check" for="wakeup-provider-antigravity"><input id="wakeup-provider-antigravity" type="checkbox"><span>Antigravity</span></label>
-            <div class="wakeup-provider-models">
-              <div class="wakeup-model-slot">
-                <span class="wakeup-model-slot-label" data-i18n="Gemini 模型组">Gemini 模型组</span>
-                <select id="wakeup-model-select-ag-gemini" aria-label="Antigravity Gemini 组唤醒模型"></select>
-                <input id="wakeup-model-ag-gemini" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
-              </div>
-              <div class="wakeup-model-slot">
-                <span class="wakeup-model-slot-label" data-i18n="Claude / GPT 模型组">Claude / GPT 模型组</span>
-                <select id="wakeup-model-select-ag-claude" aria-label="Antigravity Claude / GPT 组唤醒模型"></select>
-                <input id="wakeup-model-ag-claude" type="text" maxlength="128" autocomplete="off" placeholder="输入自定义模型名" hidden>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="wakeup-block" aria-label="策略与账户范围">
-        <div class="wakeup-block-head">
-          <span class="wakeup-block-title" data-i18n="3. 策略与账户范围">3. 策略与账户范围</span>
-        </div>
-        <div class="wakeup-inline">
-          <label class="wakeup-check" for="wakeup-skip-active"><input id="wakeup-skip-active" type="checkbox"><span data-i18n="跳过已激活的 5 小时窗口">跳过已激活的 5 小时窗口</span></label>
-          <label class="wakeup-check" for="wakeup-auto-reset"><input id="wakeup-auto-reset" type="checkbox"><span data-i18n="5 小时窗口重置后也自动补发">5 小时窗口重置后也自动补发</span></label>
-        </div>
-        <div class="wakeup-field" id="wakeup-accounts-section">
-          <div class="wakeup-scope-bar">
-            <span id="wakeup-scope-text"></span>
-            <div class="wakeup-scope-actions">
-              <button class="button" type="button" id="wakeup-clear-excluded" data-i18n="清除排除" hidden>清除排除</button>
-              <button class="button" type="button" id="wakeup-accounts-toggle" aria-expanded="false" aria-controls="wakeup-accounts-list" data-i18n="选择账户">选择账户</button>
-            </div>
-          </div>
-          <div id="wakeup-accounts-list" class="wakeup-accounts-list" role="group" aria-label="选择参与定时唤醒的账户" hidden></div>
-        </div>
-      </section>
-    </div>
-    <div id="wakeup-results-wrap" hidden>
-      <div class="wakeup-section-title" data-i18n="最近唤醒记录">最近唤醒记录</div>
-      <div id="wakeup-results" class="wakeup-results"></div>
-    </div>
-    <div class="modal-actions wakeup-actions">
-      <button class="button" type="button" id="wakeup-run-now" data-i18n="立即唤醒全部">立即唤醒全部</button>
-      <div class="wakeup-actions-right">
-        <button class="button" type="button" id="wakeup-cancel" data-i18n="关闭">关闭</button>
-        <button class="button modal-primary" type="button" id="wakeup-save" data-i18n="保存设置">保存设置</button>
-      </div>
-    </div>
-  </div>
-</div>
 <script>
 (() => {
 'use strict';
@@ -579,7 +593,8 @@ const cardCache=new Map(), accountErrors=new Map();
 // Per-account write actions: in-flight jobs, transient notes, and the redeem id (plus chosen
 // credit) kept across an ambiguous failure so a retry is idempotent upstream.
 const actionJobs=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
-let wakeupDialog=null, wakeupReturnFocus='', wakeupJob=null;
+let wakeupJob=null;
+const wakeupForm={draft:null,dirty:false,saving:false,error:null,notice:null,hintsLoadedKey:''};
 const wakeupAccountJobs=new Map(), wakeupExcludeJobs=new Set();
 const wakeupModelHints={claude:[],codex:[],'antigravity:gemini':[],'antigravity:claude-gpt':[]};
 let pageSize = 20,requestJob=null,requestStatusKey='';
@@ -746,7 +761,17 @@ const translations={
   'Gemini 模型组':'Gemini group','Claude / GPT 模型组':'Claude / GPT group','Antigravity Gemini 组唤醒模型':'Antigravity Gemini wakeup model','Antigravity Claude / GPT 组唤醒模型':'Antigravity Claude/GPT wakeup model',
   '自动（轻量，如 {model}）':'Auto (lightweight, e.g. {model})','自定义模型…':'Custom model…','输入自定义模型名':'Enter custom model name',
   '策略与账户范围':'Rules and account scope','3. 策略与账户范围':'3. Rules & account scope','5 小时窗口重置后也自动补发':'Also auto-wake after 5h window resets',
-  '下次 {time}':'Next {time}','Cron 定时':'Cron schedule','Cron 定时 + 重置补发':'Cron + post-reset'
+  '下次 {time}':'Next {time}','Cron 定时':'Cron schedule','Cron 定时 + 重置补发':'Cron + post-reset',
+  '关':'Off','开':'On','运行中':'Running','刷新状态':'Refresh status',
+  '防重策略':'Deduplication rules','3. 防重与补发策略':'3. Deduplication & retry rules',
+  '参与唤醒的账户':'Accounts included in wakeup','全部参与':'Include all','测试':'Test',
+  '尚无唤醒记录，点击“立即唤醒全部”或单账户“测试”即可验证。':'No wakeup records yet. Click “Wake all now” or “Test” on an account to verify.',
+  '5h 剩 {pct}%':'5h {pct}% left','5h 未知':'5h unknown',
+  '已持久保存（更新 CPA / 重启后自动保留，后台独立运行）':'Saved persistently (survives CPA updates/restarts; runs server-side)',
+  '尚未保存到磁盘，点击“保存设置”后跨 CPA 更新持久生效':'Not yet saved to disk; click “Save settings” to persist across CPA updates',
+  '有未保存更改，点击“保存设置”写入持久文件':'Unsaved changes; click “Save settings” to persist',
+  '存储处于只读保护状态，暂不可修改设置':'Storage is read-only; settings cannot be modified',
+  '配置文件：':'Config file:'
 };
 function initialLanguage(){
   try{
@@ -786,7 +811,7 @@ function applyLanguage(){
   document.querySelectorAll('[aria-label]').forEach(node=>{node.dataset.labelKey ||= node.getAttribute('aria-label');node.setAttribute('aria-label',t(node.dataset.labelKey));});
   $('account-search').placeholder=t('搜索账户（名称、邮箱或 ID）');
   for(const id of ['wakeup-model-claude','wakeup-model-codex','wakeup-model-ag-gemini','wakeup-model-ag-claude'])$(id).placeholder=t('输入自定义模型名');
-  $('status').textContent=t(statusKey);renderAlerts();cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();renderWakeupDialog();
+  $('status').textContent=t(statusKey);renderAlerts();cardCache.clear();render();syncControls();renderResetDialog();renderDisableDialog();renderWakeupPage(true);
 }
 function setLanguage(value,persist=true){
   language=value==='en'?'en':'zh';if(persist){try{localStorage.setItem(languageStorage,language);}catch{}}
@@ -900,7 +925,7 @@ function acceptSnapshot(snapshot){
   const quotas=quotaContent(snapshot);
   if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
   if(requests!==requestStamp){renderRequests();requestStamp=requests;}
-  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();syncWakeupButton();if(wakeupDialog)renderWakeupDialog(false);restoreFocus(resetDialog||disableDialog||wakeupDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')||focused?.startsWith('wakeup-')?'':focused);
+  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(snapshot?.wakeup?.config);renderWakeupPage(!wakeupForm.dirty);restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
 }
 function updateSyncInfo(){
   if(tab==='requests'){
@@ -1043,23 +1068,21 @@ function updateHeaderStatus(){
   $('status').textContent=t(tab==='requests'?((requestJob||headerLoading)?'正在同步请求…':requestStatusKey||(data?'请求已同步':statusKey)):statusKey);
 }
 function syncHeader(){
-  const requests=tab==='requests',busy=requests?(headerLoading||Boolean(requestJob)):headerLoading;
-  $('refresh-label').textContent=t(requests?(busy?'正在同步请求…':'刷新请求'):(headerLoading?'正在同步…':phase==='error'?'重试连接':'刷新全部'));
+  const requests=tab==='requests',wakeupTab=tab==='wakeup',busy=requests?(headerLoading||Boolean(requestJob)):headerLoading;
+  $('refresh-label').textContent=t(requests?(busy?'正在同步请求…':'刷新请求'):wakeupTab?(headerLoading?'正在同步…':'刷新状态'):(headerLoading?'正在同步…':phase==='error'?'重试连接':'刷新全部'));
   $('refresh').setAttribute('aria-label',$('refresh-label').textContent);
   $('refresh').disabled=requests?(loading||Boolean(requestJob)||Boolean(settingsJob)):(loading||Boolean(requestJob)||accountJobs.size>0||remoteAccountBusy()||Boolean(data?.quota_refreshing));
-  $('wakeup-open').hidden=requests;
-  $('wakeup-open').disabled=!data||loading||Boolean(settingsJob);
-  syncWakeupButton();
+  syncWakeupTabBadge();
   $('dot').classList.toggle('off',!data&&!busy);$('dot').classList.toggle('busy',busy);updateHeaderStatus();
 }
 function syncControls(){
   syncHeader();
-  $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));syncAccountControls();updatePersistence();
+  $('page-quota').setAttribute('aria-busy',String(loading));$('page-requests').setAttribute('aria-busy',String(loading||Boolean(requestJob)));$('page-wakeup').setAttribute('aria-busy',String(loading||Boolean(wakeupJob)||Boolean(data?.wakeup?.running)));syncAccountControls();updatePersistence();
 }
 function clearSnapshot(needsLogin,msg){
   ++historySerial;historyAbort?.abort();historyAbort=null;historyPage=null;historyBusy=false;historyError='';historyIndex=0;historyCursors=[''];historyQuery=null;
   accountPage=0;accountSearch='';accountState='';$('account-search').value='';$('account-state').value='';
-  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();wakeupJob=null;wakeupAccountJobs.clear();wakeupExcludeJobs.clear();closeReset();closeDisable();closeWakeup();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
+  data=null;expanded='';recentPage=0;accountJobs.clear();actionJobs.clear();accountNotes.clear();pendingRedeem.clear();wakeupJob=null;wakeupAccountJobs.clear();wakeupExcludeJobs.clear();Object.assign(wakeupForm,{draft:null,dirty:false,saving:false,error:null,notice:null,hintsLoadedKey:''});closeReset();closeDisable();settingsJob=null;settingsError=null;requestJob=null;requestStatusKey='';headerLoading=false;cardCache.clear();accountErrors.clear();phase=needsLogin?'waiting':'error';
   $('dashboard').classList.toggle('needs-login',needsLogin);
   setStatus(needsLogin?'等待 CPA 登录':'连接失败');$('gate').classList.toggle('hide',!needsLogin);
   quotaAlertError='';alertGroups.snapshot.clear();setAlert(msg);render();
@@ -1067,7 +1090,7 @@ function clearSnapshot(needsLogin,msg){
 function validSnapshot(snapshot){if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw failure('CPA 快照格式异常。');return snapshot;}
 const pause=()=>new Promise(resolve=>setTimeout(resolve,2000));
 async function load(force=false){
-  if((accountJobs.size||actionJobs.size||resetDialog||disableDialog||wakeupDialog||wakeupJob||wakeupAccountJobs.size||settingsJob||requestJob)&&key===guessKey())return;
+  if((accountJobs.size||actionJobs.size||resetDialog||disableDialog||wakeupJob||wakeupAccountJobs.size||settingsJob||requestJob)&&key===guessKey())return;
   const serial=++loadSerial,saved=guessKey();
   if(key!==saved){clearSnapshot(!saved,'');}
   const quiet=!force&&Boolean(data)&&key===saved;
@@ -1176,8 +1199,8 @@ function resetTargetCurrent(target){
 }
 const accountBusy=id=>actionJobs.has(id)||accountJobs.has(id)||wakeupAccountJobs.has(id)||Boolean(data?.account_refresh?.[id]?.refreshing)||Boolean(data?.quota_refreshing)||loading;
 function modalBackground(){
-  // The real background is inert while any modal is open, including to pointer/AT navigation.
-  $('dashboard').inert=Boolean(resetDialog||disableDialog||wakeupDialog);
+  // The real background is inert while either modal is open, including to pointer/AT navigation.
+  $('dashboard').inert=Boolean(resetDialog||disableDialog);
 }
 let disableDialog=null;
 function renderDisableDialog(){
@@ -1350,31 +1373,26 @@ function formatAccountWakeupSummary(res){
   if(res.reason)tail.push(wakeupReasonText(res.reason));
   return tail.length?prefix+' · '+tail.join(' · '):prefix;
 }
-function syncWakeupButton(){
-  const btn=$('wakeup-open'),label=$('wakeup-open-label'),state=data?.wakeup,cfg=state?.config;
+function syncWakeupTabBadge(){
+  const badge=$('wakeup-tab-badge'),tabBtn=$('tab-wakeup'),state=data?.wakeup,cfg=state?.config;
   const busy=Boolean(wakeupJob)||Boolean(state?.running)||wakeupAccountJobs.size>0||list(state?.running_auth_ids).length>0;
   const enabled=Boolean(cfg?.enabled);
-  btn.classList.toggle('wakeup-on',enabled&&!busy);btn.classList.toggle('wakeup-busy',busy);
-  let text=t('定时唤醒');
-  if(busy)text=t('唤醒中…');
+  badge.classList.toggle('wakeup-on',enabled&&!busy);badge.classList.toggle('wakeup-busy',busy);
+  let text=t('关');
+  if(busy)text=t('运行中');
   else if(enabled){
-    let summary=t('重置时');
     if(state?.next_scheduled_at){
       const d=new Date(state.next_scheduled_at);
-      if(Number.isFinite(d.getTime()))summary=t('下次 {time}',{time:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')});
-    }else if(cfg.mode!=='reset'&&cfg.cron){
-      summary=cfg.cron;
-    }else if(cfg.mode!=='reset'&&list(cfg.times).length){
-      summary=list(cfg.times)[0]+(list(cfg.times).length>1?' +'+String(list(cfg.times).length-1):'');
-    }
-    text=t('定时唤醒 · {summary}',{summary});
+      text=Number.isFinite(d.getTime())?t('下次 {time}',{time:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}):t('开');
+    }else if(cfg.mode==='reset')text=t('重置时');
+    else text=t('开');
   }
-  if(label.textContent!==text)label.textContent=text;
+  if(badge.textContent!==text)badge.textContent=text;
   const tips=[enabled?t('已启用（{mode}）',{mode:wakeupModeLabel(cfg.mode)}):t('未启用')];
   if(cfg?.cron)tips.push('Cron: '+cfg.cron+' ('+formatUtcOffset(cfg.timezone_offset_min||0)+')');
   if(state?.next_scheduled_at)tips.push(t('下次计划：{time}',{time:when(state.next_scheduled_at)}));
   if(state?.last_run_at)tips.push(t('最近执行：{time}',{time:when(state.last_run_at)}));
-  btn.title=tips.join('\n');btn.setAttribute('aria-label',text);btn.setAttribute('aria-busy',String(busy));
+  tabBtn.title=tips.join('\n');
 }
 function populateWakeupGenSelects(){
   const startSel=$('wakeup-gen-start'),endSel=$('wakeup-gen-end');
@@ -1401,10 +1419,13 @@ function populateWakeupTimezoneOptions(selectedMin){
 function wakeupSlotModelOptions(slot){
   return [...new Set([...list(wakeupModelHints[slot.key]),...slot.defaults])];
 }
+function ensureWakeupDraft(){
+  if(!wakeupForm.draft)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
+  return wakeupForm.draft;
+}
 function populateWakeupModelSelects(){
-  if(!wakeupDialog)return;
-  const d=wakeupDialog.draft,readOnly=Boolean(data?.persistence?.read_only);
-  const busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(data?.wakeup?.running);
+  const d=ensureWakeupDraft(),readOnly=Boolean(data?.persistence?.read_only);
+  const busy=Boolean(wakeupForm.saving)||Boolean(wakeupJob)||Boolean(data?.wakeup?.running);
   for(const slot of wakeupModelSlots){
     const sel=$(slot.selectId),input=$(slot.inputId),providerOn=d.providers[slot.provider]!==false;
     const options=wakeupSlotModelOptions(slot),current=String(d.models[slot.key]||'');
@@ -1429,6 +1450,7 @@ function populateWakeupModelSelects(){
 }
 async function loadWakeupModelHints(){
   if(!key||!data)return;
+  wakeupForm.hintsLoadedKey=key;
   const seen=new Set(),targets=[];
   for(const q of list(data.quotas)){
     if(q.disabled||!q.auth_id||seen.has(q.provider))continue;
@@ -1445,13 +1467,12 @@ async function loadWakeupModelHints(){
       }else{
         wakeupModelHints[q.provider]=ids;
       }
-      if(wakeupDialog)populateWakeupModelSelects();
+      populateWakeupModelSelects();
     }catch{}
   }
 }
 function renderWakeupCronPreview(){
-  if(!wakeupDialog)return;
-  const d=wakeupDialog.draft,box=$('wakeup-cron-preview'),cron=String(d.cron||'').trim();
+  const d=ensureWakeupDraft(),box=$('wakeup-cron-preview'),cron=String(d.cron||'').trim();
   const normalized=cron.replace(/\s+/g,' ');
   for(const btn of $('wakeup-presets').children){
     btn.setAttribute('aria-pressed',String(btn.dataset.cron===normalized));
@@ -1474,9 +1495,8 @@ function renderWakeupCronPreview(){
   box.replaceChildren(...nodes);
 }
 function renderWakeupResults(){
-  const wrap=$('wakeup-results-wrap'),box=$('wakeup-results'),results=Object.values(data?.wakeup?.results||{});
-  wrap.hidden=!results.length;
-  if(!results.length){box.replaceChildren();return;}
+  const box=$('wakeup-results'),results=Object.values(data?.wakeup?.results||{});
+  if(!results.length){box.replaceChildren(el('p','muted',t('尚无唤醒记录，点击“立即唤醒全部”或单账户“测试”即可验证。')));return;}
   results.sort((a,b)=>String(b.at||'').localeCompare(String(a.at||''))||String(a.name||a.auth_id).localeCompare(String(b.name||b.auth_id)));
   const rows=results.map(item=>{
     const row=el('div','wakeup-result-row'),main=add(row,'div','wakeup-result-main');
@@ -1497,9 +1517,13 @@ function renderWakeupResults(){
   });
   box.replaceChildren(...rows);
 }
+function accountFiveHourBrief(q){
+  const five=list(q.groups).length?list(q.groups).map(g=>g.five_hour).find(Boolean):q.five_hour;
+  const pct=remainingPercent(five);
+  return pct==null?t('5h 未知'):t('5h 剩 {pct}%',{pct:pct.toFixed(0)});
+}
 function renderWakeupAccounts(){
-  if(!wakeupDialog)return;
-  const d=wakeupDialog.draft,enabledAccounts=list(data?.quotas).filter(q=>!q.disabled);
+  const d=ensureWakeupDraft(),enabledAccounts=list(data?.quotas).filter(q=>!q.disabled);
   const excludedSet=new Set(list(d.excluded_auth_ids));
   const included=enabledAccounts.filter(q=>d.providers[q.provider]!==false&&!excludedSet.has(q.auth_id));
   const excludedEnabled=enabledAccounts.filter(q=>excludedSet.has(q.auth_id)).length;
@@ -1509,40 +1533,45 @@ function renderWakeupAccounts(){
       :t('参与账户：{included} / {total} 个已启用',{included:fmt(included.length),total:fmt(enabledAccounts.length)}))
     :t('暂无已启用账户');
   $('wakeup-scope-text').textContent=scopeText;
-  const readOnly=Boolean(data?.persistence?.read_only),busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(data?.wakeup?.running);
+  const readOnly=Boolean(data?.persistence?.read_only),busy=Boolean(wakeupForm.saving)||Boolean(wakeupJob)||Boolean(data?.wakeup?.running);
   $('wakeup-clear-excluded').hidden=!excludedSet.size;
   $('wakeup-clear-excluded').disabled=busy||readOnly;
-  const toggleBtn=$('wakeup-accounts-toggle'),listEl=$('wakeup-accounts-list');
-  toggleBtn.hidden=!enabledAccounts.length;
-  toggleBtn.setAttribute('aria-expanded',String(Boolean(wakeupDialog.showAccounts)));
-  toggleBtn.textContent=t(wakeupDialog.showAccounts?'收起账户':'选择账户');
-  listEl.hidden=!wakeupDialog.showAccounts||!enabledAccounts.length;
-  if(listEl.hidden){listEl.replaceChildren();return;}
+  const listEl=$('wakeup-accounts-list');
+  if(!enabledAccounts.length){listEl.replaceChildren(el('p','muted',t('暂无已启用账户')));return;}
   const rows=enabledAccounts.map(q=>{
     const checked=!excludedSet.has(q.auth_id),providerOn=d.providers[q.provider]!==false;
-    const item=el('button','wakeup-account-item');item.type='button';item.setAttribute('role','checkbox');item.setAttribute('aria-checked',String(checked));
+    const waking=wakeupAccountJobs.has(q.auth_id)||list(data?.wakeup?.running_auth_ids).includes(q.auth_id);
+    const wrap=el('div','wakeup-account-row');
+    const item=add(wrap,'button','wakeup-account-item');item.type='button';item.setAttribute('role','checkbox');item.setAttribute('aria-checked',String(checked));
     item.disabled=busy||readOnly||!providerOn;
     const main=add(item,'span','wakeup-account-main');
     const box=add(main,'span','wakeup-account-check',checked?'✓':'');box.setAttribute('aria-hidden','true');
     add(main,'span','',credentialName(q));
-    add(item,'span','wakeup-account-provider',providerName(q.provider));
+    const meta=add(item,'span','wakeup-account-meta');
+    add(meta,'span','',providerName(q.provider));
+    add(meta,'span','',accountFiveHourBrief(q));
     item.onclick=()=>{
-      if(!wakeupDialog||wakeupDialog.saving)return;
+      if(wakeupForm.saving)return;
       readWakeupFormIntoDraft();
-      const next=new Set(list(wakeupDialog.draft.excluded_auth_ids));
+      const next=new Set(list(wakeupForm.draft.excluded_auth_ids));
       if(next.has(q.auth_id))next.delete(q.auth_id);else next.add(q.auth_id);
-      wakeupDialog.draft.excluded_auth_ids=[...next].sort();
-      wakeupDialog.dirty=true;wakeupDialog.error=null;
+      wakeupForm.draft.excluded_auth_ids=[...next].sort();
+      wakeupForm.dirty=true;wakeupForm.error=null;
       renderWakeupAccounts();renderWakeupStatusAndResults();
     };
-    return item;
+    const testBtn=add(wrap,'button','button wakeup-account-test',waking?'唤醒中…':'测试');
+    testBtn.type='button';testBtn.disabled=busy||waking||accountBusy(q.auth_id);
+    testBtn.title=t('唤醒 {name}（立即发送极简消息锁定 5 小时窗口）',{name:credentialName(q)});
+    testBtn.setAttribute('aria-label',testBtn.title);
+    testBtn.onclick=()=>runAccountWakeup(q.auth_id);
+    return wrap;
   });
   listEl.replaceChildren(...rows);
 }
 function renderWakeupStatusAndResults(){
-  if(!wakeupDialog)return;
-  const d=wakeupDialog.draft,state=data?.wakeup||{},readOnly=Boolean(data?.persistence?.read_only);
-  const busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(state.running);
+  const d=ensureWakeupDraft(),state=data?.wakeup||{},readOnly=Boolean(data?.persistence?.read_only);
+  const busy=Boolean(wakeupForm.saving)||Boolean(wakeupJob)||Boolean(state.running);
+  $('wakeup-hero').classList.toggle('on',Boolean(d.enabled));
   const summary=$('wakeup-summary'),items=[];
   const st=el('span','',t('状态')+': ');add(st,'strong','',state.config?.enabled?t('已启用（{mode}）',{mode:wakeupModeLabel(state.config.mode)}):t('未启用'));items.push(st);
   if(state.next_scheduled_at){const nx=el('span','',t('下次计划：{time}',{time:when(state.next_scheduled_at)}));items.push(nx);}
@@ -1554,60 +1583,58 @@ function renderWakeupStatusAndResults(){
   }
   summary.replaceChildren(...items);
 
+  const persistEl=$('wakeup-persist'),pathSuffix=state.config_path?' · '+t('配置文件：')+' '+state.config_path:'';
+  if(readOnly){
+    persistEl.className='wakeup-persist error';persistEl.textContent=t('存储处于只读保护状态，暂不可修改设置')+pathSuffix;
+  }else if(wakeupForm.dirty){
+    persistEl.className='wakeup-persist unsaved';persistEl.textContent=t('有未保存更改，点击“保存设置”写入持久文件')+pathSuffix;
+  }else if(state.persisted){
+    persistEl.className='wakeup-persist saved';persistEl.textContent=t('已持久保存（更新 CPA / 重启后自动保留，后台独立运行）')+pathSuffix;
+  }else{
+    persistEl.className='wakeup-persist';persistEl.textContent=t('尚未保存到磁盘，点击“保存设置”后跨 CPA 更新持久生效')+pathSuffix;
+  }
+
   const msgBox=$('wakeup-message-box');
-  const msgText=wakeupDialog.error?message(wakeupDialog.error):wakeupDialog.notice?message(wakeupDialog.notice):state.last_error?message(errorKey(state.last_error,'唤醒请求失败，请稍后重试。')):'';
+  const msgText=wakeupForm.error?message(wakeupForm.error):wakeupForm.notice?message(wakeupForm.notice):state.last_error?message(errorKey(state.last_error,'唤醒请求失败，请稍后重试。')):'';
   msgBox.textContent=msgText;msgBox.classList.toggle('hide',!msgText);
-  msgBox.classList.toggle('error',Boolean(wakeupDialog.error||(!wakeupDialog.notice&&state.last_error)));
+  msgBox.classList.toggle('error',Boolean(wakeupForm.error||(!wakeupForm.notice&&state.last_error)));
   renderWakeupResults();
-  $('wakeup-save').disabled=busy||readOnly;
-  $('wakeup-save').textContent=t(wakeupDialog.saving?'保存中…':'保存设置');
+  $('wakeup-save').disabled=busy||readOnly||!data;
+  $('wakeup-save').textContent=t(wakeupForm.saving?'保存中…':'保存设置');
   const hasEnabled=list(data?.quotas).some(q=>!q.disabled);
-  $('wakeup-run-now').disabled=busy||!hasEnabled;
+  $('wakeup-run-now').disabled=busy||!hasEnabled||!data;
   $('wakeup-run-now').textContent=t((wakeupJob||state.running)?'唤醒中…':'立即唤醒全部');
   $('wakeup-run-now').title=t(d.skip_active_window?'按当前配置立即唤醒（已勾选跳过已激活窗口）':'按当前配置立即唤醒全部符合条件的账户');
+  syncWakeupTabBadge();
 }
-function renderWakeupDialog(syncFields=true){
-  const root=$('wakeup-dialog');root.hidden=!wakeupDialog;modalBackground();if(!wakeupDialog)return;
+function renderWakeupPage(syncFields=true){
+  const d=ensureWakeupDraft(),state=data?.wakeup||{},readOnly=Boolean(data?.persistence?.read_only);
+  const busy=Boolean(wakeupForm.saving)||Boolean(wakeupJob)||Boolean(state.running);
   if(syncFields){
-    const d=wakeupDialog.draft,state=data?.wakeup||{},readOnly=Boolean(data?.persistence?.read_only);
-    const busy=Boolean(wakeupDialog.saving)||Boolean(wakeupJob)||Boolean(state.running);
-    $('wakeup-hero').classList.toggle('on',d.enabled);
-    $('wakeup-enabled').checked=d.enabled;$('wakeup-enabled').disabled=busy||readOnly;
-    $('wakeup-skip-active').checked=d.skip_active_window;$('wakeup-skip-active').disabled=busy||readOnly;
-    $('wakeup-auto-reset').checked=Boolean(d.auto_reset);$('wakeup-auto-reset').disabled=busy||readOnly;
+    $('wakeup-enabled').checked=d.enabled;$('wakeup-enabled').disabled=busy||readOnly||!data;
+    $('wakeup-skip-active').checked=d.skip_active_window;$('wakeup-skip-active').disabled=busy||readOnly||!data;
+    $('wakeup-auto-reset').checked=Boolean(d.auto_reset);$('wakeup-auto-reset').disabled=busy||readOnly||!data;
     populateWakeupGenSelects();
-    for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).disabled=busy||readOnly;
-    for(const btn of $('wakeup-presets').children)btn.disabled=busy||readOnly;
-    $('wakeup-cron').value=d.cron||'';$('wakeup-cron').disabled=busy||readOnly;
+    for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).disabled=busy||readOnly||!data;
+    for(const btn of $('wakeup-presets').children)btn.disabled=busy||readOnly||!data;
+    $('wakeup-cron').value=d.cron||'';$('wakeup-cron').disabled=busy||readOnly||!data;
     syncBuilderFromCron(d.cron);
     populateWakeupTimezoneOptions(d.timezone_offset_min);
-    $('wakeup-tz').disabled=busy||readOnly;
-    $('wakeup-tz-local').disabled=busy||readOnly;
+    $('wakeup-tz').disabled=busy||readOnly||!data;
+    $('wakeup-tz-local').disabled=busy||readOnly||!data;
     renderWakeupCronPreview();
-    $('wakeup-provider-claude').checked=d.providers.claude!==false;$('wakeup-provider-claude').disabled=busy||readOnly;
-    $('wakeup-provider-codex').checked=d.providers.codex!==false;$('wakeup-provider-codex').disabled=busy||readOnly;
-    $('wakeup-provider-antigravity').checked=d.providers.antigravity!==false;$('wakeup-provider-antigravity').disabled=busy||readOnly;
-    $('wakeup-text').value=d.message;$('wakeup-text').disabled=busy||readOnly;
-    for(const btn of $('wakeup-text').parentNode.children)if(btn.tagName==='BUTTON'||btn.tag==='button')btn.disabled=busy||readOnly;
+    $('wakeup-provider-claude').checked=d.providers.claude!==false;$('wakeup-provider-claude').disabled=busy||readOnly||!data;
+    $('wakeup-provider-codex').checked=d.providers.codex!==false;$('wakeup-provider-codex').disabled=busy||readOnly||!data;
+    $('wakeup-provider-antigravity').checked=d.providers.antigravity!==false;$('wakeup-provider-antigravity').disabled=busy||readOnly||!data;
+    $('wakeup-text').value=d.message;$('wakeup-text').disabled=busy||readOnly||!data;
+    for(const btn of $('wakeup-text').parentNode.children)if(btn.tagName==='BUTTON'||btn.tag==='button')btn.disabled=busy||readOnly||!data;
     populateWakeupModelSelects();
-    renderWakeupAccounts();
   }
+  renderWakeupAccounts();
   renderWakeupStatusAndResults();
 }
-function openWakeup(){
-  if(!data||resetDialog||disableDialog||wakeupDialog)return;
-  if(key!==guessKey()){load();return;}
-  wakeupReturnFocus='wakeup-open';
-  wakeupDialog={draft:defaultWakeupDraft(data?.wakeup?.config),showAccounts:false,dirty:false,saving:false,error:null,notice:null};
-  renderWakeupDialog(true);$('wakeup-card').focus();loadWakeupModelHints();
-}
-function closeWakeup(){
-  if(!wakeupDialog)return;wakeupDialog=null;renderWakeupDialog(false);
-  const back=wakeupReturnFocus;wakeupReturnFocus='';if(back&&document.getElementById(back))restoreFocus(back);
-}
 function readWakeupFormIntoDraft(){
-  if(!wakeupDialog)return;
-  const d=wakeupDialog.draft;
+  const d=ensureWakeupDraft();
   d.enabled=Boolean($('wakeup-enabled').checked);
   d.skip_active_window=Boolean($('wakeup-skip-active').checked);
   d.auto_reset=Boolean($('wakeup-auto-reset').checked);
@@ -1625,7 +1652,7 @@ function readWakeupFormIntoDraft(){
       d.models[slot.key]=selVal;
     }
   }
-  wakeupDialog.dirty=true;
+  wakeupForm.dirty=true;
 }
 function buildWakeupPayload(d){
   const cron=String(d.cron||'').trim().replace(/\s+/g,' ');
@@ -1660,36 +1687,37 @@ function buildWakeupPayload(d){
   };
 }
 async function saveWakeupConfig(silentNotice=false){
-  if(!wakeupDialog||wakeupDialog.saving)return false;
-  if(key!==guessKey()){closeWakeup();await load();return false;}
+  if(!data||wakeupForm.saving)return false;
+  if(key!==guessKey()){await load();return false;}
   readWakeupFormIntoDraft();
   let payload;
-  try{payload=buildWakeupPayload(wakeupDialog.draft);}
-  catch(err){wakeupDialog.error=err.ui||'唤醒配置无效，请检查时间点与模型名称。';wakeupDialog.notice=null;renderWakeupDialog();return false;}
-  const savedKey=key;wakeupDialog.saving=true;wakeupDialog.error=null;wakeupDialog.notice=null;renderWakeupDialog();
+  try{payload=buildWakeupPayload(wakeupForm.draft);}
+  catch(err){wakeupForm.error=err.ui||'唤醒配置无效，请检查时间点与模型名称。';wakeupForm.notice=null;renderWakeupPage(false);return false;}
+  const savedKey=key;wakeupForm.saving=true;wakeupForm.error=null;wakeupForm.notice=null;renderWakeupPage(true);
   try{
     const response=await api('wakeup/config','POST',payload);
-    if(key!==savedKey||guessKey()!==savedKey){closeWakeup();await load();return false;}
+    if(key!==savedKey||guessKey()!==savedKey){await load();return false;}
     if(!response?.wakeup)throw failure('无法保存设置，请稍后重试。');
     data={...data,wakeup:response.wakeup};
-    if(wakeupDialog){wakeupDialog.draft=defaultWakeupDraft(response.wakeup.config);wakeupDialog.dirty=false;wakeupDialog.saving=false;if(!silentNotice)wakeupDialog.notice='定时唤醒设置已保存。';}
-    syncPendingCards();syncWakeupButton();renderWakeupDialog();
+    wakeupForm.draft=defaultWakeupDraft(response.wakeup.config);wakeupForm.dirty=false;wakeupForm.saving=false;
+    if(!silentNotice)wakeupForm.notice='定时唤醒设置已保存。';
+    syncPendingCards();renderWakeupPage(true);
     return true;
   }catch(err){
-    if(err.auth){closeWakeup();++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return false;}
-    if(wakeupDialog){wakeupDialog.saving=false;wakeupDialog.error=err.ui||'无法保存设置，请稍后重试。';renderWakeupDialog();}
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return false;}
+    wakeupForm.saving=false;wakeupForm.error=err.ui||'无法保存设置，请稍后重试。';renderWakeupPage(true);
     return false;
   }
 }
 async function runWakeupAll(){
   if(wakeupJob||data?.wakeup?.running)return;
-  if(key!==guessKey()){closeWakeup();await load();return;}
-  if(wakeupDialog&&wakeupDialog.dirty){
+  if(key!==guessKey()){await load();return;}
+  if(wakeupForm.dirty){
     const ok=await saveWakeupConfig(true);if(!ok)return;
   }
   const job={key,serial:loadSerial};wakeupJob=job;
-  if(wakeupDialog){wakeupDialog.error=null;wakeupDialog.notice=null;renderWakeupDialog();}
-  syncWakeupButton();syncAccountControls();
+  wakeupForm.error=null;wakeupForm.notice=null;renderWakeupPage(true);
+  syncAccountControls();
   const current=()=>wakeupJob===job&&loadSerial===job.serial;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){wakeupJob=null;await load();}return true;}return !current();};
   try{
@@ -1703,26 +1731,26 @@ async function runWakeupAll(){
       if(state&&!state.running&&state.last_run_finished_at&&state.last_run_finished_at!==baseline){
         const results=Object.values(state.results||{});
         const sent=results.filter(r=>r.status==='sent').length,skipped=results.filter(r=>r.status==='skipped').length,failed=results.filter(r=>r.status==='failed').length;
-        if(wakeupDialog)wakeupDialog.notice={text:'唤醒完成：已发送 {sent}，跳过 {skipped}，失败 {failed}。',values:{sent,skipped,failed}};
+        wakeupForm.notice={text:'唤醒完成：已发送 {sent}，跳过 {skipped}，失败 {failed}。',values:{sent,skipped,failed}};
         return;
       }
     }
-    if(wakeupDialog)wakeupDialog.error='唤醒任务超时，请稍后刷新查看结果。';
+    wakeupForm.error='唤醒任务超时，请稍后刷新查看结果。';
   }catch(err){
     if(await authChanged())return;
-    if(err.auth){closeWakeup();++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
-    if(wakeupDialog)wakeupDialog.error=err.ui||'唤醒请求失败，请稍后重试。';
-    else setAlert(err.ui||'唤醒请求失败，请稍后重试。');
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
+    wakeupForm.error=err.ui||'唤醒请求失败，请稍后重试。';
+    if(tab!=='wakeup')setAlert(err.ui||'唤醒请求失败，请稍后重试。');
   }finally{
-    if(wakeupJob===job){wakeupJob=null;syncWakeupButton();syncAccountControls();if(wakeupDialog)renderWakeupDialog();}
+    if(wakeupJob===job){wakeupJob=null;syncAccountControls();renderWakeupPage(true);}
   }
 }
 async function runAccountWakeup(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
   const target=accountTarget(id);
-  if(!accountTargetCurrent(target)||target.disabled||accountBusy(id)||wakeupJob||data?.wakeup?.running||resetDialog||disableDialog||wakeupDialog)return;
-  const job={id,key,serial:loadSerial};wakeupAccountJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);syncAccountControls();
+  if(!accountTargetCurrent(target)||target.disabled||accountBusy(id)||wakeupJob||data?.wakeup?.running||resetDialog||disableDialog)return;
+  const job={id,key,serial:loadSerial};wakeupAccountJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);syncAccountControls();renderWakeupPage(false);
   const current=()=>wakeupAccountJobs.get(id)===job&&loadSerial===job.serial;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){wakeupAccountJobs.delete(id);await load();}return true;}return !current();};
   try{
@@ -1737,11 +1765,14 @@ async function runAccountWakeup(id){
       const fallbackDone=!baselineAt&&Boolean(state?.last_run_finished_at&&state.last_run_finished_at!==baselineFinish);
       if(!running&&(accountDone||fallbackDone)){
         if(res?.status==='sent'){
-          showAccountNote(id,res.model?{text:'已发送唤醒消息（{model}），额度已同步。',values:{model:res.model}}:'已发送唤醒消息，额度已同步。');
+          const note=res.model?{text:'已发送唤醒消息（{model}），额度已同步。',values:{model:res.model}}:'已发送唤醒消息，额度已同步。';
+          showAccountNote(id,note);if(tab==='wakeup'){wakeupForm.notice=note;wakeupForm.error=null;}
         }else if(res?.status==='skipped'){
-          showAccountNote(id,errorKey(res.reason,'5 小时窗口已激活，已跳过。'));
+          const note=errorKey(res.reason,'5 小时窗口已激活，已跳过。');
+          showAccountNote(id,note);if(tab==='wakeup'){wakeupForm.notice=note;wakeupForm.error=null;}
         }else if(res?.status==='failed'){
-          showAccountError(id,errorKey(res.reason,'唤醒请求失败，请稍后重试。'));
+          const errMsg=errorKey(res.reason,'唤醒请求失败，请稍后重试。');
+          showAccountError(id,errMsg);if(tab==='wakeup'){wakeupForm.error=errMsg;wakeupForm.notice=null;}
         }
         return;
       }
@@ -1749,9 +1780,9 @@ async function runAccountWakeup(id){
     showAccountError(id,'唤醒任务超时，请稍后刷新查看结果。');
   }catch(err){
     if(await authChanged())return;
-    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else showAccountError(id,err.ui||'唤醒请求失败，请稍后重试。');
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();}else{showAccountError(id,err.ui||'唤醒请求失败，请稍后重试。');if(tab==='wakeup')wakeupForm.error=err.ui||'唤醒请求失败，请稍后重试。';}
   }finally{
-    if(wakeupAccountJobs.get(id)===job){wakeupAccountJobs.delete(id);syncAccountControls();}
+    if(wakeupAccountJobs.get(id)===job){wakeupAccountJobs.delete(id);syncAccountControls();renderWakeupPage(false);}
   }
 }
 async function toggleAccountWakeupExclude(id,excluded){
@@ -1763,7 +1794,9 @@ async function toggleAccountWakeupExclude(id,excluded){
     if(key!==savedKey||guessKey()!==savedKey){await load();return;}
     if(!response?.wakeup)throw failure('无法保存设置，请稍后重试。');
     data={...data,wakeup:response.wakeup};
-    syncPendingCards();syncWakeupButton();
+    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(response.wakeup.config);
+    else wakeupForm.draft.excluded_auth_ids=list(response.wakeup.config?.excluded_auth_ids).map(String);
+    syncPendingCards();renderWakeupPage(false);
     showAccountNote(id,excluded?'此账户已排除定时唤醒。':'此账户已恢复参与定时唤醒。');
   }catch(err){
     if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
@@ -1895,7 +1928,6 @@ async function confirmReset(){
   await runReset(state.target,state.selected,state.token);
 }
 function resetDialogKey(e){
-  if(wakeupDialog){if(e.key==='Escape'){e.preventDefault();closeWakeup();}else trapModalFocus(e,$('wakeup-card'));return;}
   if(disableDialog){if(e.key==='Escape'){e.preventDefault();closeDisable();}else trapModalFocus(e,$('disable-card'));return;}
   if(!resetDialog)return;
   if(e.key==='Escape'){e.preventDefault();closeReset();return;}
@@ -1939,7 +1971,7 @@ async function toggleAccount(id,disabled){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
   const target=accountTarget(id);
-  if(!accountTargetCurrent(target)||target.disabled===disabled||accountBusy(id)||resetDialog||disableDialog||wakeupDialog)return;
+  if(!accountTargetCurrent(target)||target.disabled===disabled||accountBusy(id)||resetDialog||disableDialog)return;
   if(!disabled){await runAccountStatus(target,false);return;}
   disableDialog={id,target,returnFocus:'account-toggle-'+encodeURIComponent(id)};
   renderDisableDialog();$('disable-cancel').focus();
@@ -2226,19 +2258,31 @@ function renderRequests(){const credentials=list(data?.credentials).filter(activ
 function restoreFocus(id){if(id&&$(id)&&document.activeElement?.id!==id)$(id).focus({preventScroll:true});}
 function render(){
   const focused=document.activeElement?.id;
-  renderQuotas();renderRequests();updateSyncInfo();updatePersistence();
+  renderQuotas();renderRequests();renderWakeupPage(!wakeupForm.dirty);updateSyncInfo();updatePersistence();
   quotaStamp=quotaContent(data);requestStamp=requestContent(data);
   restoreFocus(focused);
 }
+const tabOrder=['quota','requests','wakeup'];
 function setTab(selected){
-  tab=selected==='requests'?'requests':'quota';
-  ['quota','requests'].forEach(name=>{const selected=tab===name;$('tab-'+name).setAttribute('aria-selected',String(selected));$('tab-'+name).tabIndex=selected?0:-1;$('page-'+name).classList.toggle('hide',!selected);});
+  tab=tabOrder.includes(selected)?selected:'quota';
+  tabOrder.forEach(name=>{const activeTab=tab===name;$('tab-'+name).setAttribute('aria-selected',String(activeTab));$('tab-'+name).tabIndex=activeTab?0:-1;$('page-'+name).classList.toggle('hide',!activeTab);});
   $('dashboard').classList.toggle('request-view',tab==='requests');syncHeader();updateSyncInfo();
   if(tab==='requests'&&supportsHistory()&&!historyBusy&&!historyPage)loadHistory(true);
+  if(tab==='wakeup'){
+    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
+    renderWakeupPage(!wakeupForm.dirty);
+    if(key&&data&&wakeupForm.hintsLoadedKey!==key)loadWakeupModelHints();
+  }
 }
-['quota','requests'].forEach(name=>{
+tabOrder.forEach(name=>{
   $('tab-'+name).onclick=()=>setTab(name);
-  $('tab-'+name).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setTab(e.key==='Home'?'quota':e.key==='End'?'requests':tab==='quota'?'requests':'quota');$('tab-'+tab).focus();});
+  $('tab-'+name).addEventListener('keydown',e=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+    e.preventDefault();
+    const idx=tabOrder.indexOf(tab);
+    const next=e.key==='Home'?tabOrder[0]:e.key==='End'?tabOrder.at(-1):tabOrder[(idx+(e.key==='ArrowRight'?1:tabOrder.length-1))%tabOrder.length];
+    setTab(next);$('tab-'+tab).focus();
+  });
 });
 function accountChanged(){accountPage=0;renderQuotas();}
 $('account-search').value='';$('account-state').value='';$('account-sort').value=accountSort;$('account-size').value=String(accountSize);
@@ -2259,63 +2303,58 @@ $('history-start').value='';$('history-end').value='';
 $('history-rolling').onclick=()=>{$('history-start').value='';$('history-end').value='';return historyChanged();};
 for(const id of ['history-start','history-end','history-model'])$(id).onchange=historyChanged;
 $('history-retry').onclick=()=>loadHistory(true);
-$('refresh').onclick=()=>tab==='requests'?refreshRequests():load(true);
+$('refresh').onclick=()=>tab==='requests'?refreshRequests():tab==='wakeup'?load(false):load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 $('reset-cancel').onclick=closeReset;$('reset-confirm').onclick=confirmReset;$('reset-retry').onclick=loadResetCredits;
 $('reset-dialog').onclick=e=>{if(e.target===$('reset-dialog'))closeReset();};
 $('disable-cancel').onclick=closeDisable;$('disable-confirm').onclick=confirmDisable;
 $('disable-dialog').onclick=e=>{if(e.target===$('disable-dialog'))closeDisable();};
-$('wakeup-open').onclick=openWakeup;
-$('wakeup-cancel').onclick=closeWakeup;
 $('wakeup-save').onclick=()=>saveWakeupConfig(false);
 $('wakeup-run-now').onclick=runWakeupAll;
-$('wakeup-dialog').onclick=e=>{if(e.target===$('wakeup-dialog'))closeWakeup();};
-$('wakeup-tz-local').onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;readWakeupFormIntoDraft();wakeupDialog.draft.timezone_offset_min=browserTimezoneOffsetMin();wakeupDialog.dirty=true;renderWakeupDialog(true);};
+$('wakeup-tz-local').onclick=()=>{if(wakeupForm.saving)return;readWakeupFormIntoDraft();wakeupForm.draft.timezone_offset_min=browserTimezoneOffsetMin();wakeupForm.dirty=true;renderWakeupPage(true);};
 for(const btn of $('wakeup-presets').children){
   btn.onclick=()=>{
-    if(!wakeupDialog||wakeupDialog.saving)return;
+    if(wakeupForm.saving)return;
     readWakeupFormIntoDraft();
-    wakeupDialog.draft.cron=btn.dataset.cron||defaultCronExpr;
-    wakeupDialog.dirty=true;wakeupDialog.error=null;
-    renderWakeupDialog(true);
+    wakeupForm.draft.cron=btn.dataset.cron||defaultCronExpr;
+    wakeupForm.dirty=true;wakeupForm.error=null;
+    renderWakeupPage(true);
   };
 }
 function applyWakeupBuilder(){
-  if(!wakeupDialog||wakeupDialog.saving)return;
+  if(wakeupForm.saving)return;
   readWakeupFormIntoDraft();
   const start=Number($('wakeup-gen-start').value)||0;
   let end=Number($('wakeup-gen-end').value)||22;
   if(end<start){end=23;$('wakeup-gen-end').value='23';}
-  wakeupDialog.draft.cron=buildCadenceCron(start,$('wakeup-gen-min').value,$('wakeup-gen-step').value,end,$('wakeup-gen-days').value);
-  wakeupDialog.dirty=true;wakeupDialog.error=null;
-  $('wakeup-cron').value=wakeupDialog.draft.cron;
+  wakeupForm.draft.cron=buildCadenceCron(start,$('wakeup-gen-min').value,$('wakeup-gen-step').value,end,$('wakeup-gen-days').value);
+  wakeupForm.dirty=true;wakeupForm.error=null;
+  $('wakeup-cron').value=wakeupForm.draft.cron;
   renderWakeupCronPreview();renderWakeupStatusAndResults();
 }
 for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).onchange=applyWakeupBuilder;
-$('wakeup-cron').oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;syncBuilderFromCron(wakeupDialog.draft.cron);renderWakeupCronPreview();};
+$('wakeup-cron').oninput=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;syncBuilderFromCron(wakeupForm.draft.cron);renderWakeupCronPreview();renderWakeupStatusAndResults();};
 for(const btn of $('wakeup-text').parentNode.children){
   if(btn.dataset?.msg){
-    btn.onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;$('wakeup-text').value=btn.dataset.msg;readWakeupFormIntoDraft();wakeupDialog.error=null;};
+    btn.onclick=()=>{if(wakeupForm.saving)return;$('wakeup-text').value=btn.dataset.msg;readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupStatusAndResults();};
   }
 }
 for(const slot of wakeupModelSlots){
   $(slot.selectId).onchange=()=>{
-    if(!wakeupDialog)return;
     readWakeupFormIntoDraft();
     const isCustom=$(slot.selectId).value==='__custom__';
     $(slot.inputId).hidden=!isCustom;
     if(isCustom)$(slot.inputId).focus();
-    wakeupDialog.error=null;
+    wakeupForm.error=null;renderWakeupStatusAndResults();
   };
-  $(slot.inputId).oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;};
+  $(slot.inputId).oninput=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupStatusAndResults();};
 }
-$('wakeup-accounts-toggle').onclick=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.showAccounts=!wakeupDialog.showAccounts;renderWakeupAccounts();};
-$('wakeup-clear-excluded').onclick=()=>{if(!wakeupDialog||wakeupDialog.saving)return;readWakeupFormIntoDraft();wakeupDialog.draft.excluded_auth_ids=[];wakeupDialog.dirty=true;wakeupDialog.error=null;renderWakeupAccounts();renderWakeupStatusAndResults();};
+$('wakeup-clear-excluded').onclick=()=>{if(wakeupForm.saving)return;readWakeupFormIntoDraft();wakeupForm.draft.excluded_auth_ids=[];wakeupForm.dirty=true;wakeupForm.error=null;renderWakeupAccounts();renderWakeupStatusAndResults();};
 for(const id of ['wakeup-enabled','wakeup-skip-active','wakeup-auto-reset','wakeup-tz','wakeup-provider-claude','wakeup-provider-codex','wakeup-provider-antigravity']){
-  $(id).onchange=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;renderWakeupDialog(true);};
+  $(id).onchange=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupPage(true);};
 }
-$('wakeup-text').oninput=()=>{if(!wakeupDialog)return;readWakeupFormIntoDraft();wakeupDialog.error=null;};
+$('wakeup-text').oninput=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupStatusAndResults();};
 window.addEventListener('keydown',resetDialogKey);
 window.addEventListener('storage',e=>{if(e.key===languageStorage||e.key===cpaLanguageStorage){setLanguage(initialLanguage(),false);return;}load();});
 window.addEventListener('focus',()=>{if(!loading&&!accountJobs.size&&Date.now()-lastSyncAt>=60000)load();});

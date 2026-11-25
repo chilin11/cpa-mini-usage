@@ -615,3 +615,72 @@ func TestWakeupCronParsingScheduleAndWeekdays(t *testing.T) {
 		t.Fatalf("unexpected upcoming runs after 06:00: %v", upcoming)
 	}
 }
+
+func TestWakeupSurvivesCPAUpgradeAndRestartWithoutUI(t *testing.T) {
+	dir := t.TempDir()
+	loc := wakeupZone(480)
+
+	// 1. User configures and saves scheduled wakeup before a CPA upgrade.
+	before := newEngine()
+	before.dir = dir
+	before.load()
+	if before.snapshot().Wakeup.Persisted {
+		t.Fatal("fresh install without wakeup.json should report persisted=false")
+	}
+	state, status, failure := before.setWakeupConfig(WakeupConfig{
+		Enabled:           true,
+		Mode:              "daily",
+		Cron:              "0 6,11,16,21 * * *",
+		TimezoneOffsetMin: 480,
+		SkipActiveWindow:  true,
+		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
+		Models:            map[string]string{"claude": "claude-haiku-4-5-20251001"},
+		Message:           "hi",
+	})
+	if status != 200 || failure != "" || !state.Persisted || state.ConfigPath != filepath.Join(dir, wakeupConfigFileName) {
+		t.Fatalf("expected persisted wakeup state, got status=%d failure=%q state=%+v", status, failure, state)
+	}
+	before.shutdown()
+
+	// 2. Simulate CPA upgrade/restart: brand new Engine pointing at the same persistent data dir,
+	// with no browser/UI requests ever made.
+	after := newEngine()
+	after.dir = dir
+	after.load()
+	restored := after.snapshot().Wakeup
+	if !restored.Persisted || !restored.Config.Enabled || restored.Config.Cron != "0 6,11,16,21 * * *" || restored.Config.Models["claude"] != "claude-haiku-4-5-20251001" {
+		t.Fatalf("wakeup config did not survive CPA restart: %+v", restored)
+	}
+
+	// 3. Simulate transient host startup unavailability at 06:00: slot must roll back, not be lost.
+	at0601 := time.Date(2026, 11, 26, 6, 1, 0, 0, loc).UTC()
+	unavailableRPC := func(method string, _ any) (any, error) {
+		return nil, &hostRPCError{Method: method, Detail: "host starting up"}
+	}
+	calls := 0
+	exec := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		calls++
+		return model, ""
+	}
+	after.checkWakeupScheduleWith(at0601, unavailableRPC, exec, nil)
+	waitWakeupIdle(t, after)
+	if calls != 0 {
+		t.Fatalf("expected 0 calls while host unavailable, got %d", calls)
+	}
+
+	// 4. Once CPA finishes loading auth records 1 minute later (still inside grace window), the
+	// rolled-back 06:00 slot automatically retries and executes.
+	readyRPC := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{
+				map[string]any{"id": "c1", "auth_index": "i1", "provider": "claude", "email": "a@example.com"},
+			}}, nil
+		}
+		return nil, nil
+	}
+	after.checkWakeupScheduleWith(at0601.Add(time.Minute), readyRPC, exec, nil)
+	waitWakeupIdle(t, after)
+	if calls != 1 {
+		t.Fatalf("expected rolled-back slot to fire once CPA became ready, got %d", calls)
+	}
+}

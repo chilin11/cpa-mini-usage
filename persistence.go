@@ -130,6 +130,12 @@ func (e *Engine) setPersistence(enabled bool) (PersistenceSettings, error) {
 			e.storageError = "Price catalog could not be persisted"
 			return e.persistence, err
 		}
+		if e.wakeupPersisted || e.wakeupConfig.Enabled {
+			if err = e.writeWakeupLocked(time.Now().UTC()); err != nil {
+				e.storageError = "Wakeup settings could not be persisted"
+				return e.persistence, err
+			}
+		}
 	}
 	settings, _ := json.Marshal(map[string]bool{"persistence_enabled": enabled})
 	if err := writeAtomic(filepath.Join(e.dir, "settings.json"), settings); err != nil {

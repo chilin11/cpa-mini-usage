@@ -226,6 +226,7 @@ type Engine struct {
 	resetBindings        map[string]resetBinding // Indexed by random confirmation token; never persisted.
 	lastRefresh          time.Time
 	wakeupConfig         WakeupConfig
+	wakeupPersisted      bool
 	wakeupRunning        bool
 	wakeupRunningAuths   map[string]bool
 	wakeupLastRunAt      time.Time
@@ -275,9 +276,11 @@ func (e *Engine) start() {
 		e.kickRefresh(false)
 		// Check deadlines more often than their intervals so an attempt started
 		// just after a tick does not cost a whole extra refresh interval.
+		startupWakeup := time.NewTimer(5 * time.Second)
 		refreshTick := time.NewTicker(time.Minute)
 		wakeupTick := time.NewTicker(wakeupCheckInterval)
 		tc := time.NewTicker(24 * time.Hour)
+		defer startupWakeup.Stop()
 		defer refreshTick.Stop()
 		defer wakeupTick.Stop()
 		defer tc.Stop()
@@ -285,6 +288,8 @@ func (e *Engine) start() {
 			select {
 			case <-e.done:
 				return
+			case <-startupWakeup.C:
+				e.checkWakeupSchedule()
 			case <-refreshTick.C:
 				e.kickRefresh(false)
 				go e.refreshPrices(false)

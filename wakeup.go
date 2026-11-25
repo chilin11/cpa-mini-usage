@@ -91,16 +91,18 @@ type WakeupAccountResult struct {
 }
 
 type WakeupState struct {
-	Config          WakeupConfig                   `json:"config"`
-	Running         bool                           `json:"running"`
-	RunningAuthIDs  []string                       `json:"running_auth_ids,omitempty"`
-	LastRunAt       string                         `json:"last_run_at,omitempty"`
-	LastRunTrigger  string                         `json:"last_run_trigger,omitempty"`
+	Config            WakeupConfig                   `json:"config"`
+	ConfigPath        string                         `json:"config_path,omitempty"`
+	Persisted         bool                           `json:"persisted"`
+	Running           bool                           `json:"running"`
+	RunningAuthIDs    []string                       `json:"running_auth_ids,omitempty"`
+	LastRunAt         string                         `json:"last_run_at,omitempty"`
+	LastRunTrigger    string                         `json:"last_run_trigger,omitempty"`
 	LastRunFinished   string                         `json:"last_run_finished_at,omitempty"`
 	NextScheduledAt   string                         `json:"next_scheduled_at,omitempty"`
 	NextScheduledRuns []string                       `json:"next_scheduled_runs,omitempty"`
 	Results           map[string]WakeupAccountResult `json:"results,omitempty"`
-	LastError       string                         `json:"last_error,omitempty"`
+	LastError         string                         `json:"last_error,omitempty"`
 }
 
 type wakeupSentRecord struct {
@@ -311,6 +313,7 @@ func (e *Engine) loadWakeupPersistence() {
 		return
 	}
 	e.wakeupConfig = cfg
+	e.wakeupPersisted = true
 	for k, ts := range saved.FiredSlots {
 		if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 			e.wakeupFiredSlots[k] = parsed
@@ -416,7 +419,11 @@ func (e *Engine) writeWakeupLocked(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(e.dir, wakeupConfigFileName), body)
+	if err := writeAtomic(filepath.Join(e.dir, wakeupConfigFileName), body); err != nil {
+		return err
+	}
+	e.wakeupPersisted = true
+	return nil
 }
 
 func (e *Engine) persistWakeupTrackingLocked(now time.Time) {
@@ -648,6 +655,8 @@ func (e *Engine) setWakeupExcluded(authID string, excluded bool) (WakeupState, i
 func (e *Engine) wakeupStateLocked(now time.Time) WakeupState {
 	state := WakeupState{
 		Config:         cloneWakeupConfig(e.wakeupConfig),
+		ConfigPath:     filepath.Join(e.dir, wakeupConfigFileName),
+		Persisted:      e.wakeupPersisted,
 		Running:        e.wakeupRunning,
 		LastRunTrigger: e.wakeupLastRunTrigger,
 		LastError:      e.wakeupLastError,
@@ -828,7 +837,7 @@ func (e *Engine) checkWakeupScheduleWith(
 		e.wakeupLastError = ""
 		e.persistWakeupTrackingLocked(now)
 		e.mu.Unlock()
-		go e.runWakeupBatchLockedClaimed(cfg, false, "schedule", now, rpc, exec, refresh)
+		go e.runWakeupBatchLockedClaimed(cfg, false, "schedule", dueSlotKey, now, rpc, exec, refresh)
 		return
 	}
 
@@ -854,7 +863,7 @@ func (e *Engine) checkWakeupScheduleWith(
 		e.wakeupLastRunTrigger = "reset"
 		e.wakeupLastError = ""
 		e.mu.Unlock()
-		go e.runWakeupSubsetClaimed(cfg, resetTargets, false, "reset", now, rpc, exec, refresh)
+		go e.runWakeupSubsetClaimed(cfg, resetTargets, false, "reset", "", now, rpc, exec, refresh)
 		return
 	}
 	e.mu.Unlock()
@@ -947,7 +956,7 @@ func (e *Engine) kickWakeupRunWith(
 	e.wakeupLastRunTrigger = "manual"
 	e.wakeupLastError = ""
 	e.mu.Unlock()
-	go e.runWakeupBatchLockedClaimed(cfg, force, "manual", now, rpc, exec, refresh)
+	go e.runWakeupBatchLockedClaimed(cfg, force, "manual", "", now, rpc, exec, refresh)
 	return 202, accepted, ""
 }
 
@@ -1023,12 +1032,13 @@ func (e *Engine) runWakeupBatchLockedClaimed(
 	cfg WakeupConfig,
 	force bool,
 	trigger string,
+	slotKey string,
 	now time.Time,
 	rpc func(string, any) (any, error),
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
 	refresh func(AuthEntry) bool,
 ) {
-	e.runWakeupSubsetClaimed(cfg, nil, force, trigger, now, rpc, exec, refresh)
+	e.runWakeupSubsetClaimed(cfg, nil, force, trigger, slotKey, now, rpc, exec, refresh)
 }
 
 func (e *Engine) runWakeupSubsetClaimed(
@@ -1036,6 +1046,7 @@ func (e *Engine) runWakeupSubsetClaimed(
 	onlyAuthIDs []string,
 	force bool,
 	trigger string,
+	slotKey string,
 	now time.Time,
 	rpc func(string, any) (any, error),
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
@@ -1043,6 +1054,7 @@ func (e *Engine) runWakeupSubsetClaimed(
 ) {
 	var sentEntries []AuthEntry
 	var sentMu sync.Mutex
+	rollbackSlot := false
 	defer func() {
 		if len(sentEntries) > 0 && refresh != nil {
 			refreshJobs := make(chan AuthEntry, len(sentEntries))
@@ -1072,6 +1084,11 @@ func (e *Engine) runWakeupSubsetClaimed(
 			rwg.Wait()
 		}
 		e.mu.Lock()
+		if rollbackSlot && slotKey != "" {
+			// Roll back the slot if CPA was still starting up so the next tick inside
+			// the grace window retries instead of silently losing the scheduled run.
+			delete(e.wakeupFiredSlots, slotKey)
+		}
 		e.wakeupRunning = false
 		e.wakeupLastRunFinished = time.Now().UTC()
 		e.persistWakeupTrackingLocked(now)
@@ -1080,10 +1097,18 @@ func (e *Engine) runWakeupSubsetClaimed(
 
 	raw, err := rpc("host.auth.list", map[string]any{})
 	if err != nil {
+		rollbackSlot = trigger == "schedule"
 		e.mu.Lock()
 		e.wakeupLastError = wakeupErrHostUnavail
 		e.mu.Unlock()
 		return
+	}
+	entries := parseAuthList(raw)
+	if len(entries) == 0 {
+		if _, complete := completeAuthIDs(raw, entries); !complete && trigger == "schedule" {
+			rollbackSlot = true
+			return
+		}
 	}
 	if len(onlyAuthIDs) == 0 {
 		// Full batch replaces prior batch results so summary counts match this run.
@@ -1095,7 +1120,6 @@ func (e *Engine) runWakeupSubsetClaimed(
 	for _, id := range onlyAuthIDs {
 		only[id] = true
 	}
-	entries := parseAuthList(raw)
 	jobs := make(chan AuthEntry, len(entries))
 	for _, entry := range entries {
 		if !quotaProvider(entry.Provider) {

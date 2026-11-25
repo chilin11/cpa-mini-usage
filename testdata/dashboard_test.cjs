@@ -56,7 +56,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     clearTimeout(timer){if(timer===alertTimeout)alertTimeout=undefined;}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, openWakeup, closeWakeup, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, parseCronJS, nextCronRunsJS, buildCadenceCron, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, parseCronJS, nextCronRunsJS, buildCadenceCron, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){
     fakeNow+=ms;
@@ -149,7 +149,7 @@ for(const version of [1,2]) test(`reuse CPA v${version} encoded login without in
   assert.equal(requests[0].url,'/v0/management/plugins/cpa-mini-usage/data');
   assert.equal(requests[0].options.headers.Authorization,'Bearer test-only-key');
   assert.equal(requests[0].options.redirect,'error');
-  const outsideWakeup=html.split('<div id="wakeup-dialog"')[0];
+  const outsideWakeup=html.replace(/<section id="page-wakeup"[\s\S]*?<footer class="foot"/, '<footer class="foot"');
   assert.equal((outsideWakeup.match(/<input\b/g)||[]).length,4);assert.match(html,/<input id="account-search" type="search"/);assert.equal((html.match(/type="date"/g)||[]).length,2);assert(!/type="password"/.test(html));assert(!/type="(?:password|text)"/.test(outsideWakeup));assert.match(html,/<input id="persistence-enabled" type="checkbox"/);assert.deepEqual(writes,[]);api.setLanguage('en');assert.deepEqual(writes,[['cpa-mini-usage-language','en']]);assert(!/sessionStorage\.setItem/.test(source));
 });
 test('cross-origin or corrupt CPA credentials are not reused', () => {
@@ -1752,8 +1752,9 @@ for(const language of ['zh','en'])test(`${language}: pagination boundary, sortin
   assert.equal(d.elements.get('account-results').textContent,language==='zh'?'显示 1–12 / 匹配 14 个，共 14 个账户':'Showing 1–12 / 14 matching, 14 accounts total');
 });
 
-test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, model selects, validation and full/single wakeup', async () => {
+test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence status, cadence builder, model selects and full/single wakeup', async () => {
   const calls = [];
+  let persisted = false;
   let savedConfig = {
     enabled: false, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, skip_active_window: true,
     providers: { claude: true, codex: true, antigravity: true }, excluded_auth_ids: [], models: {}, message: 'hi',
@@ -1771,6 +1772,8 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
     persistence: { enabled: true, directory: '/tmp/cpa' },
     wakeup: {
       config: savedConfig,
+      config_path: '/tmp/cpa/wakeup.json',
+      persisted,
       running,
       running_auth_ids: runningAuths,
       last_run_at: finishedAt,
@@ -1788,11 +1791,13 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
     }
     if (url.endsWith('/wakeup/config')) {
       savedConfig = JSON.parse(options.body);
+      persisted = true;
       return { ok: true, status: 200, json: async () => ({ wakeup: snapshotPayload().wakeup }) };
     }
     if (url.endsWith('/wakeup/exclude')) {
       const body = JSON.parse(options.body);
       savedConfig = { ...savedConfig, excluded_auth_ids: body.excluded ? [body.auth_id] : [] };
+      persisted = true;
       return { ok: true, status: 200, json: async () => ({ wakeup: snapshotPayload().wakeup }) };
     }
     if (url.endsWith('/wakeup/run')) {
@@ -1816,20 +1821,17 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
   assert.equal(d.api.nextCronRunsJS('bad cron', 480, 4), null);
 
   await d.api.load();
-  assert.equal(d.elements.get('wakeup-open').hidden, false);
-  assert.equal(d.elements.get('wakeup-open-label').textContent, '定时唤醒');
+  assert.equal(d.elements.get('tab-wakeup').getAttribute('aria-selected'), 'false');
+  assert.equal(d.elements.get('wakeup-tab-badge').textContent, '关');
+  assert.equal(d.elements.get('page-wakeup').getAttribute('class'), 'hide');
 
-  // Switch to requests tab hides wakeup button; switch back restores it.
-  d.api.setTab('requests');
-  assert.equal(d.elements.get('wakeup-open').hidden, true);
-  d.api.setTab('quota');
-  assert.equal(d.elements.get('wakeup-open').hidden, false);
-
-  // Open wakeup modal: background becomes inert, Cron preview renders upcoming chips.
-  d.api.openWakeup();
-  assert.equal(d.elements.get('wakeup-dialog').hidden, false);
-  assert.equal(d.elements.get('dashboard').inert, true);
+  // Switch to dedicated wakeup tab: panel becomes visible and shows persistence file path.
+  d.api.setTab('wakeup');
+  assert.equal(d.elements.get('tab-wakeup').getAttribute('aria-selected'), 'true');
+  assert(!d.elements.get('page-wakeup').classes.has('hide'));
+  assert(d.elements.get('page-quota').classes.has('hide'));
   assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * *');
+  assert.match(d.elements.get('wakeup-persist').textContent, /\/tmp\/cpa\/wakeup\.json/);
   assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
   assert(descendants(d.elements.get('wakeup-cron-preview')).filter(n => n.className === 'wakeup-preview-chip').length === 4);
 
@@ -1838,6 +1840,7 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
   assert(weekdayPreset, 'expected weekday 6AM preset');
   weekdayPreset.onclick();
   assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * 1-5');
+  assert.match(d.elements.get('wakeup-persist').textContent, /未保存更改/);
 
   // Cadence builder generates 5-hour schedule automatically on change.
   d.elements.get('wakeup-gen-start').value = '6';
@@ -1873,16 +1876,15 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
   d.api.acceptSnapshot(snapshotPayload());
   assert.equal(d.elements.get('wakeup-text').value, '.');
 
-  // Account selector in modal toggles exclusion and clears exclusion cleanly.
-  d.elements.get('wakeup-accounts-toggle').onclick();
-  assert.equal(d.elements.get('wakeup-accounts-list').hidden, false);
-  const accItem = d.elements.get('wakeup-accounts-list').children[0];
-  accItem.onclick();
+  // Flat account list in wakeup tab toggles exclusion and clears exclusion cleanly.
+  const accRow = d.elements.get('wakeup-accounts-list').children[0];
+  const accCheckbox = descendants(accRow).find(n => n.className === 'wakeup-account-item');
+  accCheckbox.onclick();
   assert.match(d.elements.get('wakeup-scope-text').textContent, /已排除 1/);
   d.elements.get('wakeup-clear-excluded').onclick();
   assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：1 / 1 个已启用');
 
-  // Save valid Cron config.
+  // Save valid Cron config: persistence banner confirms durable disk save across CPA updates.
   assert.equal(await d.api.saveWakeupConfig(), true);
   const configCall = calls.find(c => c.url.endsWith('/wakeup/config'));
   assert(configCall, 'expected POST wakeup/config');
@@ -1892,19 +1894,16 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
   assert.equal(sentCfg.cron, '0 6,11,16,21 * * *');
   assert.equal(sentCfg.models.claude, 'claude-haiku-4-5-20251001');
   assert.equal(sentCfg.message, '.');
-  assert.match(d.elements.get('wakeup-open-label').textContent, /^定时唤醒 · 下次 \d{2}:\d{2}$/);
+  assert.match(d.elements.get('wakeup-tab-badge').textContent, /^下次 \d{2}:\d{2}$/);
+  assert.match(d.elements.get('wakeup-persist').textContent, /已持久保存/);
 
-  // Run full wakeup from modal.
+  // Run full wakeup from wakeup tab.
   await d.api.runWakeupAll();
   assert(calls.some(c => c.url.endsWith('/wakeup/run')));
-  assert.equal(d.elements.get('wakeup-results-wrap').hidden, false);
+  assert(descendants(d.elements.get('wakeup-results')).some(n => n.textContent.includes('claude-haiku-4-5-20251001')));
 
-  // Escape closes wakeup dialog and restores inert=false.
-  d.events.keydown({ key: 'Escape', preventDefault() {} });
-  assert.equal(d.elements.get('wakeup-dialog').hidden, true);
-  assert.equal(d.elements.get('dashboard').inert, false);
-
-  // Enabled account card exposes single-account wake button, schedule exclude toggle and inline status strip.
+  // Switch back to quota tab: enabled account card exposes wake button, schedule exclude toggle and inline status strip.
+  d.api.setTab('quota');
   const cards = visibleAccounts(d);
   const claudeCard = cards.find(c => c.dataset.authId === 'claude-a');
   const disabledCard = cards.find(c => c.dataset.authId === 'codex-b');
@@ -1930,9 +1929,9 @@ test('scheduled wakeup dialog supports 5-hour cron presets, cadence builder, mod
   const noteNode = descendants(latestClaudeCard).find(n => n.className === 'account-note');
   assert(noteNode && noteNode.textContent.includes('额度已同步'));
 
-  // Language switch translates wakeup button and dialog labels.
+  // Language switch translates wakeup tab badge and section headings.
   d.api.setLanguage('en', false);
-  assert.match(d.elements.get('wakeup-open-label').textContent, /^Wakeup · Next \d{2}:\d{2}$/);
-  assert.equal(d.elements.get('wakeup-title').textContent, 'Scheduled Wakeup · Lock 5h Window');
+  assert.match(d.elements.get('wakeup-tab-badge').textContent, /^Next \d{2}:\d{2}$/);
+  assert.equal(d.elements.get('tab-wakeup').children[0].textContent, 'Scheduled wakeup');
 });
 

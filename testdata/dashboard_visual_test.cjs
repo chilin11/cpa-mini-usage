@@ -120,6 +120,7 @@ window.visualFixture = {
     if(state==='wakeup'){
       data.wakeup={
         config:{enabled:true,mode:'daily',cron:'0 6,11,16,21 * * *',timezone_offset_min:480,skip_active_window:true,providers:{claude:true,codex:true,antigravity:true},excluded_auth_ids:[],models:{claude:'claude-haiku-4-5-20251001'},message:'hi'},
+        config_path:'/demo-only/data/wakeup.json',persisted:true,
         running:false,last_run_at:'2026-10-09T06:00:04Z',last_run_finished_at:'2026-10-09T06:00:08Z',last_run_trigger:'schedule',next_scheduled_at:'2026-10-09T11:00:00Z',
         results:{
           'demo-claude':{auth_id:'demo-claude',provider:'claude',name:'demo-team@example.test',status:'sent',model:'claude-haiku-4-5-20251001',at:'2026-10-09T06:00:05Z'},
