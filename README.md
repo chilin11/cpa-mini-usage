@@ -307,6 +307,13 @@ Keep all accounts aligned to the configured Cron schedule without overnight phas
 - **Scheduled slot on imminent exhausted reset**: when a Cron slot hits a 100%-used 5-hour window within `[reset-5m, reset+30s)` while weekly quota remains available, it defers one follow-up to `reset+30s` without making a premature model or quota request or triggering the 15-minute failure backoff, and displays the queued retry time inline.
 - **Safe upgrade migration**: legacy v0.1.44–v0.1.46 `wakeup.json` records are migrated atomically across `last_sent` and `results` so stale existing-window retries stop immediately while genuine scheduled short retries remain intact.
 
+### v0.1.48
+
+Reduce Claude `/api/oauth/usage` rate-limit (HTTP 429) pressure without affecting model usage:
+- **Single combined Claude quota + reset-grant request**: each Claude refresh now makes one `GET /api/oauth/usage?cedar_ember=1` call and parses both the 5-hour/7-day windows and `cedar_ember` reset grants from that same response, instead of hitting `/api/oauth/usage` twice back-to-back. Only non-429 compatibility rejections (HTTP 400/404/422/426, reset-only payload without windows, or legacy hosts without `host.http.do`) fall back to plain `/api/oauth/usage` and cache that fallback for 6 hours.
+- **30-minute Claude background cadence & disabled skip**: Claude background quota polling now runs every 30 minutes (Codex and Antigravity remain at 15 minutes) and skips disabled Claude accounts; manual refreshes still run immediately. Wakeup freshness scales with each provider's refresh interval (60 minutes for Claude).
+- **HTTP 429 `Retry-After` backoff**: quota reads stop immediately on HTTP 429 without a second call, respect `Retry-After` (seconds or HTTP-date) with exponential per-account backoff (30m → 60m → 120m), preserve cached quota windows on the card with a clear rate-limit notice, and skip post-wakeup usage reads while an account is backed off.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

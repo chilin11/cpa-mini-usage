@@ -1266,7 +1266,7 @@ func (e *Engine) accountNeedsResetWakeupLocked(q AccountQuota, now time.Time) bo
 		return false
 	}
 	fetchedAt, ok := parseWindowResetTime(q.FetchedAt)
-	if !ok || now.Sub(fetchedAt) > 2*quotaInterval {
+	if !ok || now.Sub(fetchedAt) > 2*providerQuotaInterval(q.Provider) {
 		return false
 	}
 	if q.Provider == "antigravity" {
@@ -1705,6 +1705,9 @@ func (e *Engine) recordWakeupResult(res WakeupAccountResult, failed bool) {
 }
 
 func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) bool, runNow func() time.Time) {
+	if e.isQuotaBackoffActive(entry.ID, runNow()) {
+		return
+	}
 	if !e.refreshMu.TryRLock() {
 		return
 	}

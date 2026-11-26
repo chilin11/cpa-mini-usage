@@ -3,16 +3,181 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-const allQuotaReadsFailed = "All OAuth quota reads failed; check the individual account messages"
+const (
+	allQuotaReadsFailed       = "All OAuth quota reads failed; check the individual account messages"
+	quotaErrRateLimited       = "Quota endpoint rate limited"
+	claudeCombinedFallbackTTL = 6 * time.Hour
+	quotaRetryAfterMax        = 24 * time.Hour
+)
+
+var errOptionalResetInventoryUnavail = errors.New("optional reset inventory unavailable")
+
+type quotaBackoffState struct {
+	Until time.Time
+	Count int
+}
+
+type quotaHTTPError struct {
+	StatusCode int
+	RetryAfter time.Duration
+}
+
+func (e *quotaHTTPError) Error() string {
+	return fmt.Sprintf("quota HTTP %d", e.StatusCode)
+}
+
+func providerQuotaInterval(provider string) time.Duration {
+	if provider == "claude" {
+		return claudeQuotaInterval
+	}
+	return quotaInterval
+}
+
+func quotaRateLimitBackoff(count int) time.Duration {
+	switch {
+	case count <= 1:
+		return 30 * time.Minute
+	case count == 2:
+		return 60 * time.Minute
+	default:
+		return 120 * time.Minute
+	}
+}
+
+func parseRetryAfterDuration(raw string, now time.Time) time.Duration {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0
+	}
+	if secs, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		d := time.Duration(secs) * time.Second
+		if d > quotaRetryAfterMax {
+			return quotaRetryAfterMax
+		}
+		return d
+	}
+	if ts, err := http.ParseTime(value); err == nil && ts.After(now) {
+		d := ts.Sub(now)
+		if d > quotaRetryAfterMax {
+			return quotaRetryAfterMax
+		}
+		return d
+	}
+	return 0
+}
+
+func headerRetryAfterFromMap(r map[string]any, now time.Time) time.Duration {
+	hdrs, _ := getAny(r, "Headers", "headers", "Header", "header").(map[string]any)
+	for k, v := range hdrs {
+		if !strings.EqualFold(k, "Retry-After") {
+			continue
+		}
+		switch typed := v.(type) {
+		case string:
+			if d := parseRetryAfterDuration(typed, now); d > 0 {
+				return d
+			}
+		case []any:
+			for _, item := range typed {
+				if s, ok := item.(string); ok {
+					if d := parseRetryAfterDuration(s, now); d > 0 {
+						return d
+					}
+				}
+			}
+		case []string:
+			for _, s := range typed {
+				if d := parseRetryAfterDuration(s, now); d > 0 {
+					return d
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func isQuotaRateLimitedErr(err error) (time.Duration, bool) {
+	var httpErr *quotaHTTPError
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusTooManyRequests {
+		return httpErr.RetryAfter, true
+	}
+	return 0, false
+}
+
+func isClaudeCombinedIncompatibleErr(err error) bool {
+	if errors.Is(err, errOptionalResetInventoryUnavail) {
+		return true
+	}
+	var httpErr *quotaHTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusUpgradeRequired:
+			return true
+		}
+	}
+	return false
+}
+
+func hasClaudeResetBlock(body []byte) bool {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil || m == nil {
+		return false
+	}
+	_, ok := m["cedar_ember"]
+	return ok
+}
+
+func (e *Engine) isQuotaBackoffActive(authID string, now time.Time) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	b, ok := e.quotaBackoff[authID]
+	return ok && now.Before(b.Until)
+}
+
+func (e *Engine) recordQuotaRateLimit(entry AuthEntry, retryAfter time.Duration, now time.Time) {
+	e.mu.Lock()
+	b := e.quotaBackoff[entry.ID]
+	b.Count++
+	delay := quotaRateLimitBackoff(b.Count)
+	if retryAfter > delay {
+		delay = retryAfter
+	}
+	b.Until = now.Add(delay)
+	e.quotaBackoff[entry.ID] = b
+	e.mu.Unlock()
+	e.recordQuotaError(entry, quotaErrRateLimited)
+}
+
+func (e *Engine) shouldSkipBackgroundQuotaRefreshLocked(entry AuthEntry, now time.Time) bool {
+	if b, ok := e.quotaBackoff[entry.ID]; ok && now.Before(b.Until) {
+		return true
+	}
+	if entry.Provider == "claude" && entry.Disabled {
+		return true
+	}
+	if interval := providerQuotaInterval(entry.Provider); interval > quotaInterval {
+		if prior, ok := e.quotas[entry.ID]; ok && prior.Error == "" {
+			if fetchedAt, valid := parseWindowResetTime(prior.FetchedAt); valid && now.Sub(fetchedAt) < interval {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 type AuthEntry struct {
 	Index         string
@@ -177,12 +342,21 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 	if len(auths) == 0 {
 		return
 	}
+	now := time.Now().UTC()
+	supported := 0
 	jobs := make(chan AuthEntry, len(auths))
+	e.mu.RLock()
 	for _, entry := range auths {
-		if quotaProvider(entry.Provider) {
-			jobs <- entry
+		if !quotaProvider(entry.Provider) {
+			continue
 		}
+		supported++
+		if !force && e.shouldSkipBackgroundQuotaRefreshLocked(entry, now) {
+			continue
+		}
+		jobs <- entry
 	}
+	e.mu.RUnlock()
 	attempted := len(jobs)
 	close(jobs)
 	results := make(chan bool, attempted)
@@ -209,9 +383,9 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 			successful++
 		}
 	}
-	if attempted == 0 {
+	if supported == 0 {
 		e.quotaFailure("No Claude, Codex or Antigravity OAuth credentials were found")
-	} else if successful == 0 {
+	} else if attempted > 0 && successful == 0 {
 		e.quotaFailure(allQuotaReadsFailed)
 	}
 }
@@ -238,34 +412,88 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	if entry.Provider == "antigravity" {
 		return e.refreshAntigravityQuota(entry, headers, creds, antigravityPOST)
 	}
-	url := claudeUsageURL
-	if entry.Provider == "codex" {
-		url = "https://chatgpt.com/backend-api/wham/usage"
-	}
-	body, err := get(url, headers)
-	if err != nil {
-		e.recordQuotaError(entry, "Quota endpoint unavailable")
-		return false
-	}
+	now := time.Now().UTC()
 	var five, week *QuotaWindow
-	if entry.Provider == "claude" {
-		five, week, err = parseClaudeQuota(body)
-	} else {
-		five, week, err = parseCodexQuota(body)
-	}
-	if err != nil {
-		e.recordQuotaError(entry, "Quota response was not recognized")
-		return false
-	}
-	observedAt := time.Now().UTC()
 	var resetRemaining *int64
 	var resetDiagnostic string
+	var observedAt time.Time
 	if entry.Provider == "claude" {
-		resetRemaining, resetDiagnostic = claudeResetRemaining(headers, get)
-	} else if entry.Provider == "codex" {
+		e.mu.RLock()
+		combinedBlocked := now.Before(e.claudeCombinedBlockedUntil)
+		e.mu.RUnlock()
+		usePlain := combinedBlocked
+		if !combinedBlocked {
+			body, err := get(claudeResetInventoryURL, claudeResetHeaders(headers))
+			if err != nil {
+				if retryAfter, rateLimited := isQuotaRateLimitedErr(err); rateLimited {
+					e.recordQuotaRateLimit(entry, retryAfter, now)
+					return false
+				}
+				if isClaudeCombinedIncompatibleErr(err) {
+					e.mu.Lock()
+					e.claudeCombinedBlockedUntil = now.Add(claudeCombinedFallbackTTL)
+					e.mu.Unlock()
+					usePlain = true
+				} else {
+					e.recordQuotaError(entry, "Quota endpoint unavailable")
+					return false
+				}
+			} else {
+				five, week, err = parseClaudeQuota(body)
+				if err != nil {
+					if hasClaudeResetBlock(body) {
+						e.mu.Lock()
+						e.claudeCombinedBlockedUntil = now.Add(claudeCombinedFallbackTTL)
+						e.mu.Unlock()
+						usePlain = true
+					} else {
+						e.recordQuotaError(entry, "Quota response was not recognized")
+						return false
+					}
+				} else {
+					observedAt = time.Now().UTC()
+					resetRemaining, resetDiagnostic = parseClaudeResetRemaining(body, observedAt)
+				}
+			}
+		}
+		if usePlain {
+			body, err := get(claudeUsageURL, headers)
+			if err != nil {
+				if retryAfter, rateLimited := isQuotaRateLimitedErr(err); rateLimited {
+					e.recordQuotaRateLimit(entry, retryAfter, now)
+					return false
+				}
+				e.recordQuotaError(entry, "Quota endpoint unavailable")
+				return false
+			}
+			five, week, err = parseClaudeQuota(body)
+			if err != nil {
+				e.recordQuotaError(entry, "Quota response was not recognized")
+				return false
+			}
+			observedAt = time.Now().UTC()
+			resetRemaining, resetDiagnostic = nil, manualResetRequestFailed
+		}
+	} else {
+		body, err := get("https://chatgpt.com/backend-api/wham/usage", headers)
+		if err != nil {
+			if retryAfter, rateLimited := isQuotaRateLimitedErr(err); rateLimited {
+				e.recordQuotaRateLimit(entry, retryAfter, now)
+				return false
+			}
+			e.recordQuotaError(entry, "Quota endpoint unavailable")
+			return false
+		}
+		five, week, err = parseCodexQuota(body)
+		if err != nil {
+			e.recordQuotaError(entry, "Quota response was not recognized")
+			return false
+		}
+		observedAt = time.Now().UTC()
 		resetRemaining = codexResetRemaining(body, headers, get)
 	}
 	e.mu.Lock()
+	delete(e.quotaBackoff, entry.ID)
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
@@ -295,6 +523,7 @@ func (e *Engine) refreshAntigravityQuota(entry AuthEntry, headers http.Header, c
 	observedAt := time.Now().UTC()
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	delete(e.quotaBackoff, entry.ID)
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
@@ -502,6 +731,7 @@ func (e *Engine) pruneQuotasLocked(live map[string]bool) bool {
 	for id := range e.quotas {
 		if !live[id] {
 			delete(e.quotas, id)
+			delete(e.quotaBackoff, id)
 			e.removeResetBindingsLocked(id)
 			delete(e.accountRefresh, id)
 			delete(e.wakeupResults, id)
@@ -627,13 +857,13 @@ func safeProviderGETWithRPC(url string, headers http.Header, rpc func(string, an
 				}
 				return []byte(raw), nil
 			}
-			return nil, fmt.Errorf("quota HTTP %d", code)
+			return nil, &quotaHTTPError{StatusCode: int(code), RetryAfter: headerRetryAfterFromMap(r, time.Now().UTC())}
 		}
 	}
 	// Optional inventory is a single host GET, with no direct-HTTP retry even if the
 	// callback fails ambiguously. Legacy ordinary usage keeps its existing fallback.
 	if url == claudeResetInventoryURL {
-		return nil, fmt.Errorf("optional reset inventory unavailable")
+		return nil, errOptionalResetInventoryUnavail
 	}
 	// Legacy hosts may not implement host.http.do; fixed HTTPS fallback.
 	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
@@ -645,7 +875,7 @@ func safeProviderGETWithRPC(url string, headers http.Header, rpc func(string, an
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("quota HTTP %d", resp.StatusCode)
+		return nil, &quotaHTTPError{StatusCode: resp.StatusCode, RetryAfter: parseRetryAfterDuration(resp.Header.Get("Retry-After"), time.Now().UTC())}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024+1))
 	if err != nil || len(body) > 512*1024 {

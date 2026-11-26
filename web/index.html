@@ -382,7 +382,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.47</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.48</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -561,7 +561,7 @@ tbody tr:focus-within>td{background:var(--hover)}
     </div>
   </div>
 </section>
-<footer class="foot" id="footer" data-i18n="页面每分钟同步 · 额度每 15 分钟检查">页面每分钟同步 · 额度每 15 分钟检查</footer>
+<footer class="foot" id="footer" data-i18n="页面每分钟同步 · 额度每 15 分钟检查（Claude 30 分钟）">页面每分钟同步 · 额度每 15 分钟检查（Claude 30 分钟）</footer>
 </main>
 <div id="reset-dialog" class="modal" hidden>
   <div id="reset-card" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-subtitle" tabindex="-1">
@@ -628,7 +628,7 @@ const translations={
   '用量视图':'Usage views','筛选服务商':'Filter by provider','近期请求':'Recent requests','最多 60 条':'Up to 60 requests','凭证用量 · 近 7 天':'Credential usage · Last 7 days',
   '近期请求表，窄屏可横向滚动':'Recent requests table; scroll horizontally on small screens','近期请求分页':'Recent request pagination','上一页':'Previous page','下一页':'Next page',
   '凭证用量表，窄屏可横向滚动':'Credential usage table; scroll horizontally on small screens','近 7 天观测统计':'Observed usage over the last 7 days',
-  '页面每分钟同步 · 额度每 15 分钟检查':'Snapshot every minute · All quotas checked every 15 minutes',
+  '页面每分钟同步 · 额度每 15 分钟检查（Claude 30 分钟）':'Snapshot every minute · Quotas checked every 15 min (Claude 30 min)',
   '正在读取登录状态':'Reading sign-in status','正在同步…':'Syncing…','刷新全部':'Refresh all','刷新额度':'Refresh quota','正在刷新…':'Refreshing…','重试连接':'Retry connection',
   '刷新请求':'Refresh requests','正在同步请求…':'Syncing requests…','请求已同步':'Requests synced','请求同步失败':'Request sync failed','请求同步 {time}':'Requests synced {time}','请求快照：{snapshot}':'Request snapshot: {snapshot}','每页':'Per page','每页请求数':'Requests per page',
   '等待 CPA 登录':'Waiting for CPA sign-in','连接失败':'Connection failed','正在连接':'Connecting','正在刷新额度':'Refreshing quotas','额度刷新中':'Quotas refreshing','部分数据异常':'Some data unavailable','已连接':'Connected',
@@ -670,7 +670,7 @@ const translations={
   '请求名称':'Requested name','执行模型（用量记录）':'Execution model (usage record)','响应模型':'Response model','未提供':'Not provided','名称一致':'Same name','版本变体':'Name variant','模型不一致':'Model mismatch','响应模型未知':'Response model unknown',
   '响应模型由上游自行声明，不能证明模型真伪。执行模型是 CPA 用量记录名称，不保证等于最终出站模型；合法映射也可能产生名称差异。仅比较名称，不改变计费。':'The response model is declared by the upstream, not proof of model authenticity. The execution model is the CPA usage-record name, not necessarily the final outbound model; valid mappings may also cause name differences. Name comparison only; pricing is unchanged.',
   '缺少响应模型或执行模型，无法比较；旧记录不会自动补全。':'A response or execution model is missing, so comparison is unavailable; old records are not backfilled.',
-  '额度接口不可用。':'Quota endpoint unavailable.','额度响应过大。':'Quota response too large.','额度响应格式异常。':'Invalid quota response.','缺少额度窗口。':'Quota windows missing.',
+  '额度接口不可用。':'Quota endpoint unavailable.','额度查询触发上游限流（429），已自动退避，不影响模型正常使用。':'Quota endpoint rate limited (429); backing off automatically while models remain usable.','额度响应过大。':'Quota response too large.','额度响应格式异常。':'Invalid quota response.','缺少额度窗口。':'Quota windows missing.',
   '额度端点不允许访问。':'Quota endpoint not permitted.','额度接口返回 HTTP {code}。':'Quota endpoint returned HTTP {code}.','没有支持的模型。':'No supported models.',
   '首字时间：{ttft} s\n总耗时：{latency} s':'First token: {ttft} s\nTotal latency: {latency} s',
   'TPS = 输出 token ÷ 总耗时秒（请求平均速度）\n输出：{output} token\n总耗时：{latency} s\n首字时间独立展示，不从总耗时扣除；不是纯解码速度。':'TPS = output tokens / total latency seconds (request average)\nOutput: {output} tokens\nTotal latency: {latency} s\nFirst-token time is shown separately, not subtracted; this is not pure decode speed.',
@@ -814,7 +814,7 @@ function setStatus(text){statusKey=text;updateHeaderStatus();}
 function errorKey(raw,fallback='同步失败，可手动重试。'){
   const text=String(raw||'');
   if(translations[text])return text;
-  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','reset_rate_limited':'重置请求过于频繁，请稍后重试。','invalid_confirmation_token':'重置确认凭据无效，请重新打开弹窗后再试。','account_disabled':'账户已禁用，无法使用重置卡。','wakeup_account_disabled':'该账户已被禁用，无法唤醒。','tos_violation':'上游返回服务条款限制（TOS_VIOLATION），CPA 已自动停用此账户，请检查 CPA 凭证详情或申诉。','reset_auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','reset_account_changed':'该账户凭证已变更，请重新打开重置弹窗核对后再试。','reset_unconfirmed':'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。','reset organization unavailable':'无法读取账户所属组织信息，请稍后重试。','claude_reset_cli_version':'客户端版本过旧，暂不支持读取 Claude 重置卡。','claude_reset_surface':'当前请求身份未获 Claude 重置卡接口认可。','claude_reset_not_eligible':'当前账户不符合 Claude 重置卡使用条件。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。','invalid_wakeup_config':'唤醒配置无效，请检查时间点与模型名称。','wakeup_busy':'已有唤醒任务正在进行，请稍后重试。','wakeup_unsupported':'此账户不支持定时唤醒。','host_unsupported':'当前 CPA 版本不支持模型执行回调，请升级 CPA 后重试。','host_list_unavailable':'主机接口不可用。','model_unavailable':'该账户下未找到可用唤醒模型，请在定时唤醒设置中指定模型。','rate_limited':'该账户额度已用完（429 / 冷却中）。','quota_exhausted':'该账户当前周期额度已用完。','auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','request_failed':'唤醒请求失败，请稍后重试。','window_active':'5 小时窗口已激活，已跳过。','disabled':'该账户未启用，已跳过。','excluded':'该账户已排除定时唤醒。','provider_disabled':'该服务商未开启定时唤醒。'};
+  const known={'invalid_auth_id':'无效的账户标识。','account_not_found':'未找到账户。','refresh_busy':'已有额度刷新正在进行，请稍后重试。','quota endpoint failed':'额度接口不可用。','quota response too large':'额度响应过大。','quota response invalid':'额度响应格式异常。','missing quota windows':'缺少额度窗口。','missing rate_limit':'缺少额度窗口。','quota windows missing':'缺少额度窗口。','endpoint not permitted':'额度端点不允许访问。','no supported models':'没有支持的模型。','host callbacks unavailable':'主机接口不可用。','invalid_redeem_request_id':'重置请求无效，请重试。','invalid_credit_id':'重置卡标识无效。','reset credits unavailable':'重置卡读取失败，请稍后重试。','reset credits invalid':'重置卡明细格式异常。','reset_unsupported':'此账户不支持重置卡。','reset_busy':'重置卡请求正在处理中。','reset endpoint unavailable':'重置接口不可用，请稍后重试。','reset response invalid':'重置接口响应格式异常。','reset_rate_limited':'重置请求过于频繁，请稍后重试。','invalid_confirmation_token':'重置确认凭据无效，请重新打开弹窗后再试。','account_disabled':'账户已禁用，无法使用重置卡。','wakeup_account_disabled':'该账户已被禁用，无法唤醒。','tos_violation':'上游返回服务条款限制（TOS_VIOLATION），CPA 已自动停用此账户，请检查 CPA 凭证详情或申诉。','reset_auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','reset_account_changed':'该账户凭证已变更，请重新打开重置弹窗核对后再试。','reset_unconfirmed':'上次重置结果未能确认，请再次点击“使用重置卡”用同一请求安全重试。','reset organization unavailable':'无法读取账户所属组织信息，请稍后重试。','claude_reset_cli_version':'客户端版本过旧，暂不支持读取 Claude 重置卡。','claude_reset_surface':'当前请求身份未获 Claude 重置卡接口认可。','claude_reset_not_eligible':'当前账户不符合 Claude 重置卡使用条件。','Credential could not be read':'凭证无法读取。','OAuth access token unavailable':'OAuth 访问令牌不可用。','auth file not found':'未找到账户。','Quota endpoint unavailable':'额度接口不可用。','Quota endpoint rate limited':'额度查询触发上游限流（429），已自动退避，不影响模型正常使用。','Quota response was not recognized':'额度响应格式异常。','quota groups missing':'缺少额度窗口。','Antigravity project ID unavailable':'缺少 Antigravity 项目 ID。','OAuth access token expired; CPA refreshes it automatically':'OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。','invalid_wakeup_config':'唤醒配置无效，请检查时间点与模型名称。','wakeup_busy':'已有唤醒任务正在进行，请稍后重试。','wakeup_unsupported':'此账户不支持定时唤醒。','host_unsupported':'当前 CPA 版本不支持模型执行回调，请升级 CPA 后重试。','host_list_unavailable':'主机接口不可用。','model_unavailable':'该账户下未找到可用唤醒模型，请在定时唤醒设置中指定模型。','rate_limited':'该账户额度已用完（429 / 冷却中）。','quota_exhausted':'该账户当前周期额度已用完。','auth_failed':'该账户 OAuth 授权已失效或权限不足，请在 CPA 中重新登录或刷新后重试。','request_failed':'唤醒请求失败，请稍后重试。','window_active':'5 小时窗口已激活，已跳过。','disabled':'该账户未启用，已跳过。','excluded':'该账户已排除定时唤醒。','provider_disabled':'该服务商未开启定时唤醒。'};
   if(text==='storage_write_failed')return '无法保存设置，请稍后重试。';
   if(known[text])return known[text];
   if(/host callback|invalid host response/.test(text))return '主机接口请求失败。';

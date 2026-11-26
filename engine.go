@@ -20,6 +20,7 @@ import (
 const (
 	eventDays            = 35
 	quotaInterval        = 15 * time.Minute
+	claudeQuotaInterval  = 30 * time.Minute
 	pricingInterval      = 6 * time.Hour
 	pricingRetryInterval = 5 * time.Minute
 )
@@ -239,8 +240,10 @@ type Engine struct {
 	priceRefreshMu       sync.Mutex
 	consuming            map[string]bool
 	resetBindings        map[string]resetBinding // Indexed by random confirmation token; never persisted.
-	lastRefresh          time.Time
-	wakeupConfig         WakeupConfig
+	lastRefresh                time.Time
+	quotaBackoff               map[string]quotaBackoffState
+	claudeCombinedBlockedUntil time.Time
+	wakeupConfig               WakeupConfig
 	wakeupPersisted      bool
 	wakeupRunning        bool
 	wakeupRunningAuths   map[string]bool
@@ -264,6 +267,7 @@ func newEngine() *Engine {
 	}
 	return &Engine{
 		quotas:             make(map[string]AccountQuota),
+		quotaBackoff:       make(map[string]quotaBackoffState),
 		forecasts:          make(map[string]SavedForecast),
 		accountRefresh:     make(map[string]AccountRefreshState),
 		consuming:          make(map[string]bool),

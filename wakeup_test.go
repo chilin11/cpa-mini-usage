@@ -1802,3 +1802,31 @@ func TestWakeupGeminiUsesSameConfirmationForAccountAndGroup(t *testing.T) {
 		})
 	}
 }
+
+func TestWakeupClaudeFreshnessWindowAndRateLimitBackoffSkip(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+
+	// Claude uses a 30m background cadence (60m freshness window), so a 45m-old snapshot is still valid,
+	// whereas a 45m-old Codex snapshot (>30m) is stale.
+	claudeQ := AccountQuota{AuthID: "cl", Provider: "claude", FetchedAt: now.Add(-45 * time.Minute).Format(time.RFC3339Nano), Five: &QuotaWindow{Used: 0}}
+	codexQ := AccountQuota{AuthID: "cx", Provider: "codex", FetchedAt: now.Add(-45 * time.Minute).Format(time.RFC3339Nano), Five: &QuotaWindow{Used: 0}}
+	if !e.accountNeedsResetWakeupLocked(claudeQ, now) {
+		t.Fatal("45m-old Claude snapshot must remain fresh under 30m Claude refresh cadence")
+	}
+	if e.accountNeedsResetWakeupLocked(codexQ, now) {
+		t.Fatal("45m-old Codex snapshot must be treated as stale under 15m Codex cadence")
+	}
+
+	// While an account is in active 429 backoff, refreshAfterWakeup must skip calling the usage endpoint.
+	e.quotaBackoff["cl"] = quotaBackoffState{Until: now.Add(30 * time.Minute), Count: 1}
+	called := 0
+	e.refreshAfterWakeup(AuthEntry{ID: "cl", Provider: "claude"}, func(AuthEntry) bool {
+		called++
+		return true
+	}, func() time.Time { return now })
+	if called != 0 {
+		t.Fatalf("refreshAfterWakeup must skip backed-off account, called=%d", called)
+	}
+}

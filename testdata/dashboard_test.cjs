@@ -2248,4 +2248,27 @@ test('wakeup: legacy Antigravity group time plus retry_at counts as a running wi
   assert(!/unconfirmed|No new window|retrying/.test(accountStatus('ag-queued').textContent));
 });
 
+test('Claude quota 429 error copy and 30-minute footer cadence render in zh and en', async () => {
+  const sample = {
+    quotas: [
+      {
+        auth_id: 'cl-429',
+        provider: 'claude',
+        name: 'cl@example.com',
+        error: 'Quota endpoint rate limited',
+        five_hour: { used_percent: 12, reset_at: '2026-11-26T17:00:00Z' },
+      },
+    ],
+  };
+  const d = dashboard({ managementKey: 'key' }, async () => reply(sample));
+  await d.api.load();
+  const cardText = () => descendants(panel(d.elements, 'cl-429')).map(n => n.textContent).join(' ');
+  assert.match(cardText(), /额度查询触发上游限流（429），已自动退避，不影响模型正常使用。/);
+  assert.match(d.elements.get('footer').textContent, /每 15 分钟检查（Claude 30 分钟）/);
+
+  d.api.setLanguage('en');
+  assert.match(cardText(), /Quota endpoint rate limited \(429\); backing off automatically while models remain usable\./);
+  assert.match(d.elements.get('footer').textContent, /every 15 min \(Claude 30 min\)/);
+});
+
 

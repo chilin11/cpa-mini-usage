@@ -275,29 +275,32 @@ func TestCodexQuotaRefreshKeepsResetCreditContract(t *testing.T) {
 
 func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		inventory  string
-		failure    error
-		usage      string
-		usageError bool
-		want       int64 // -1 means unknown.
-		diagnostic string
+		name        string
+		combined    string
+		combinedErr error
+		plain       string
+		wantCalls   int
+		wantOK      bool
+		wantErr     string
+		want        int64 // -1 means unknown.
+		diagnostic  string
 	}{
-		{"available", `{"cedar_ember":{"eligible":true,"grants":[{"id":"private-grant-handle","label":"private-grant-label","resets_left":2,"paused":false,"usable_now":false}]}}`, nil, "", false, 2, ""},
-		{"known zero", `{"cedar_ember":{"eligible":true,"grants":[{"resets_left":0,"paused":false}]}}`, nil, "", false, 0, ""},
-		{"no opt-in support", "", fmt.Errorf("HTTP 400"), "", false, -1, "request_failed"},
-		{"forbidden", "", fmt.Errorf("HTTP 403"), "", false, -1, "request_failed"},
-		{"rate limited", "", fmt.Errorf("HTTP 429"), "", false, -1, "request_failed"},
-		{"timeout", "", fmt.Errorf("Bearer synthetic-only-token timeout"), "", false, -1, "request_failed"},
-		{"old CLI", `{"cedar_ember":{"eligible":false,"ineligible_reason":"cli_version"}}`, nil, "", false, -1, "cli_version"},
-		{"wrong surface", `{"cedar_ember":{"eligible":false,"ineligible_reason":"surface"}}`, nil, "", false, -1, "surface"},
-		{"ineligible", `{"cedar_ember":{"eligible":false,"grants":[]}}`, nil, "", false, -1, "not_eligible"},
-		{"private reason", `{"cedar_ember":{"eligible":false,"ineligible_reason":"synthetic-only-token private-grant-handle private-grant-label"}}`, nil, "", false, -1, "not_eligible"},
-		{"missing inventory", `{}`, nil, "", false, -1, "unavailable"},
-		{"malformed inventory", `{"cedar_ember":{"eligible":true,"grants":[{}]}}`, nil, "", false, -1, "invalid_response"},
-		{"invalid JSON", `broken`, nil, "", false, -1, "invalid_response"},
-		{"ordinary read failure", "", nil, "", true, -1, ""},
-		{"ordinary schema failure", "", nil, `{}`, false, -1, ""},
+		{"available single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"manual_reset_remaining":99,"extra_usage":{"used_credits":500},"cedar_ember":{"eligible":true,"grants":[{"id":"private-grant-handle","label":"private-grant-label","resets_left":2,"paused":false,"usable_now":false}]}}`, nil, "", 1, true, "", 2, ""},
+		{"known zero single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":true,"grants":[{"resets_left":0,"paused":false}]}}`, nil, "", 1, true, "", 0, ""},
+		{"old CLI single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":false,"ineligible_reason":"cli_version"}}`, nil, "", 1, true, "", -1, "cli_version"},
+		{"wrong surface single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":false,"ineligible_reason":"surface"}}`, nil, "", 1, true, "", -1, "surface"},
+		{"ineligible single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":false,"grants":[]}}`, nil, "", 1, true, "", -1, "not_eligible"},
+		{"private reason single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":false,"ineligible_reason":"synthetic-only-token private-grant-handle private-grant-label"}}`, nil, "", 1, true, "", -1, "not_eligible"},
+		{"missing inventory single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34}}`, nil, "", 1, true, "", -1, "unavailable"},
+		{"malformed inventory single request", `{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"cedar_ember":{"eligible":true,"grants":[{}]}}`, nil, "", 1, true, "", -1, "invalid_response"},
+		{"no opt-in support falls back once to plain", "", &quotaHTTPError{StatusCode: 400}, `{"five_hour":{"utilization":12},"seven_day":{"utilization":34}}`, 2, true, "", -1, "request_failed"},
+		{"upgrade required falls back once to plain", "", &quotaHTTPError{StatusCode: 426}, `{"five_hour":{"utilization":12},"seven_day":{"utilization":34}}`, 2, true, "", -1, "request_failed"},
+		{"cedar-only response falls back once to plain", `{"cedar_ember":{"eligible":true,"grants":[]}}`, nil, `{"five_hour":{"utilization":12},"seven_day":{"utilization":34}}`, 2, true, "", -1, "request_failed"},
+		{"rate limited stops after one request", "", &quotaHTTPError{StatusCode: 429, RetryAfter: 45 * time.Minute}, "", 1, false, quotaErrRateLimited, -1, ""},
+		{"forbidden stops after one request", "", &quotaHTTPError{StatusCode: 403}, "", 1, false, "Quota endpoint unavailable", -1, ""},
+		{"timeout stops after one request", "", fmt.Errorf("Bearer synthetic-only-token timeout"), "", 1, false, "Quota endpoint unavailable", -1, ""},
+		{"invalid JSON stops after one request", `broken`, nil, "", 1, false, "Quota response was not recognized", -1, ""},
+		{"empty JSON stops after one request", `{}`, nil, "", 1, false, "Quota response was not recognized", -1, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEngine()
@@ -318,33 +321,30 @@ func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 					t.Fatal("wrong credential")
 				}
 				if calls == 1 {
-					if url != claudeUsageURL || headers.Get("User-Agent") != "claude-code/2.1.0" {
-						t.Fatal("ordinary usage request must remain first and unchanged")
+					if url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.331 (external, cli)" {
+						t.Fatalf("combined usage+reset request must run first: url=%s ua=%s", url, headers.Get("User-Agent"))
 					}
-					if tc.usageError {
-						return nil, fmt.Errorf("synthetic-only-token unavailable")
-					}
-					if tc.usage != "" {
-						return []byte(tc.usage), nil
-					}
-					return []byte(`{"five_hour":{"utilization":12},"seven_day":{"utilization":34},"manual_reset_remaining":99,"extra_usage":{"used_credits":500}}`), nil
+					return []byte(tc.combined), tc.combinedErr
 				}
-				if calls != 2 || url != claudeResetInventoryURL || headers.Get("User-Agent") != "claude-cli/2.1.331 (external, cli)" {
-					t.Fatal("only one optional inventory request may follow ordinary usage")
+				if calls != 2 || url != claudeUsageURL || headers.Get("User-Agent") != "claude-code/2.1.0" {
+					t.Fatalf("unexpected fallback call #%d: url=%s ua=%s", calls, url, headers.Get("User-Agent"))
 				}
-				return []byte(tc.inventory), tc.failure
+				return []byte(tc.plain), nil
 			})
 			q := e.quotas["account"]
-			if tc.usageError || tc.usage != "" {
-				if ok || calls != 1 || q.Five.Used != 70 || q.Error == "" || q.ManualResetRemaining == nil || *q.ManualResetRemaining != oldCount || q.ManualResetDiagnostic != "" {
-					t.Fatal("ordinary failures must keep prior usage and skip optional inventory")
+			if ok != tc.wantOK || calls != tc.wantCalls {
+				t.Fatalf("ok=%v (want %v) calls=%d (want %d) quota=%+v", ok, tc.wantOK, calls, tc.wantCalls, q)
+			}
+			if !tc.wantOK {
+				if q.Five.Used != 70 || q.Error != tc.wantErr || q.ManualResetRemaining == nil || *q.ManualResetRemaining != oldCount || q.ManualResetDiagnostic != "" {
+					t.Fatalf("failed refresh must keep prior usage and report %q: %+v", tc.wantErr, q)
 				}
 			} else {
-				if !ok || calls != 2 || q.Five == nil || q.Five.Used != 12 || q.Week == nil || q.Week.Used != 34 || q.Error != "" || q.FetchedAt == "" || !q.Disabled || e.accountRefresh["account"].Error != "" {
-					t.Fatal("optional inventory must not break ordinary usage or account state")
+				if q.Five == nil || q.Five.Used != 12 || q.Week == nil || q.Week.Used != 34 || q.Error != "" || q.FetchedAt == "" || !q.Disabled || e.accountRefresh["account"].Error != "" {
+					t.Fatalf("successful refresh produced unexpected quota state: %+v", q)
 				}
 				if (tc.want < 0 && q.ManualResetRemaining != nil) || (tc.want >= 0 && (q.ManualResetRemaining == nil || *q.ManualResetRemaining != tc.want)) || q.ManualResetDiagnostic != tc.diagnostic {
-					t.Fatal("incorrect reset count or stale inventory was retained")
+					t.Fatalf("incorrect reset count or diagnostic: got count=%v diag=%q want=%d/%q", q.ManualResetRemaining, q.ManualResetDiagnostic, tc.want, tc.diagnostic)
 				}
 				encoded, err := json.Marshal(q)
 				if err != nil || strings.Contains(string(encoded), "manual_reset_remaining") != (tc.want >= 0) || strings.Contains(string(encoded), "manual_reset_diagnostic") != (tc.diagnostic != "") {
@@ -371,5 +371,132 @@ func TestClaudeQuotaInventoryRefreshIsolation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClaudeRateLimitBackoffFallbackCacheAndBackgroundCadence(t *testing.T) {
+	// 1. Retry-After header parsing from host RPC (seconds and HTTP-date).
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	if got := parseRetryAfterDuration("120", now); got != 2*time.Minute {
+		t.Fatalf("expected 2m from seconds, got %v", got)
+	}
+	if got := parseRetryAfterDuration(now.Add(45*time.Minute).Format(http.TimeFormat), now); got != 45*time.Minute {
+		t.Fatalf("expected 45m from HTTP-date, got %v", got)
+	}
+	_, err := safeProviderGETWithRPC(claudeResetInventoryURL, nil, func(string, any) (any, error) {
+		return map[string]any{
+			"StatusCode": float64(429),
+			"Headers":    map[string]any{"Retry-After": []any{"2700"}},
+		}, nil
+	})
+	if ra, ok := isQuotaRateLimitedErr(err); !ok || ra != 45*time.Minute {
+		t.Fatalf("expected 429 with 45m Retry-After, got ok=%v ra=%v err=%v", ok, ra, err)
+	}
+
+	// 2. Exponential 429 backoff (30m -> 60m -> 120m) honors larger Retry-After and clears on success.
+	e := newEngine()
+	e.dir = t.TempDir()
+	entry := AuthEntry{ID: "cl-1", Index: "i1", Provider: "claude", Name: "cl@example.com"}
+	authRPC := func(string, any) (any, error) {
+		return map[string]any{"access_token": "tok"}, nil
+	}
+	calls := 0
+	if ok := e.refreshAccountQuotaWith(entry, authRPC, func(string, http.Header) ([]byte, error) {
+		calls++
+		return nil, &quotaHTTPError{StatusCode: 429, RetryAfter: 45 * time.Minute}
+	}); ok || calls != 1 {
+		t.Fatalf("429 must fail after 1 call, ok=%v calls=%d", ok, calls)
+	}
+	b1 := e.quotaBackoff["cl-1"]
+	if b1.Count != 1 || time.Until(b1.Until) < 44*time.Minute {
+		t.Fatalf("first 429 must honor 45m Retry-After: %+v", b1)
+	}
+	e.refreshAccountQuotaWith(entry, authRPC, func(string, http.Header) ([]byte, error) {
+		return nil, &quotaHTTPError{StatusCode: 429}
+	})
+	if b2 := e.quotaBackoff["cl-1"]; b2.Count != 2 || time.Until(b2.Until) < 59*time.Minute {
+		t.Fatalf("second 429 must escalate to 60m: %+v", b2)
+	}
+	e.refreshAccountQuotaWith(entry, authRPC, func(string, http.Header) ([]byte, error) {
+		return nil, &quotaHTTPError{StatusCode: 429}
+	})
+	if b3 := e.quotaBackoff["cl-1"]; b3.Count != 3 || time.Until(b3.Until) < 119*time.Minute {
+		t.Fatalf("third 429 must escalate to 120m: %+v", b3)
+	}
+	if ok := e.refreshAccountQuotaWith(entry, authRPC, func(string, http.Header) ([]byte, error) {
+		return []byte(`{"five_hour":{"utilization":5},"cedar_ember":{"eligible":true,"grants":[]}}`), nil
+	}); !ok {
+		t.Fatal("expected manual recovery refresh to succeed")
+	}
+	if _, backedOff := e.quotaBackoff["cl-1"]; backedOff {
+		t.Fatal("successful refresh must clear 429 backoff")
+	}
+
+	// 3. Non-429 incompatibility caches plain fallback for 6h so the next refresh sends only 1 plain request.
+	e2 := newEngine()
+	e2.dir = t.TempDir()
+	var urls []string
+	if ok := e2.refreshAccountQuotaWith(entry, authRPC, func(url string, _ http.Header) ([]byte, error) {
+		urls = append(urls, url)
+		if url == claudeResetInventoryURL {
+			return nil, &quotaHTTPError{StatusCode: 426}
+		}
+		return []byte(`{"five_hour":{"utilization":10}}`), nil
+	}); !ok || len(urls) != 2 {
+		t.Fatalf("expected single compatibility fallback on 426: ok=%v urls=%v", ok, urls)
+	}
+	urls = nil
+	if ok := e2.refreshAccountQuotaWith(entry, authRPC, func(url string, _ http.Header) ([]byte, error) {
+		urls = append(urls, url)
+		return []byte(`{"five_hour":{"utilization":11}}`), nil
+	}); !ok || len(urls) != 1 || urls[0] != claudeUsageURL {
+		t.Fatalf("subsequent refresh within fallback TTL must make 1 plain call: ok=%v urls=%v", ok, urls)
+	}
+
+	// 4. Background refresh cadence: Claude 30m (skips fresh, disabled, and backed-off) without false errors;
+	// Codex stays on 15m; force=true still refreshes all.
+	e3 := newEngine()
+	e3.dir = t.TempDir()
+	freshAt := time.Now().UTC().Add(-20 * time.Minute).Format(time.RFC3339Nano)
+	e3.quotas["cl-fresh"] = AccountQuota{AuthID: "cl-fresh", Provider: "claude", FetchedAt: freshAt, Five: &QuotaWindow{Used: 5}}
+	e3.quotas["cl-backoff"] = AccountQuota{AuthID: "cl-backoff", Provider: "claude", FetchedAt: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339Nano), Five: &QuotaWindow{Used: 5}}
+	e3.quotaBackoff["cl-backoff"] = quotaBackoffState{Until: time.Now().UTC().Add(30 * time.Minute), Count: 1}
+	e3.quotas["cx-due"] = AccountQuota{AuthID: "cx-due", Provider: "codex", FetchedAt: freshAt, Five: &QuotaWindow{Used: 5}}
+	listRPC := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{
+				map[string]any{"id": "cl-fresh", "auth_index": "i1", "provider": "claude", "email": "fresh@example.com"},
+				map[string]any{"id": "cl-disabled", "auth_index": "i2", "provider": "claude", "email": "dis@example.com", "disabled": true},
+				map[string]any{"id": "cl-backoff", "auth_index": "i3", "provider": "claude", "email": "bo@example.com"},
+				map[string]any{"id": "cx-due", "auth_index": "i4", "provider": "codex", "email": "cx@example.com"},
+			}}, nil
+		}
+		return nil, nil
+	}
+	var seen []string
+	e3.refreshQuotaWith(false, listRPC, func(a AuthEntry) bool {
+		seen = append(seen, a.ID)
+		return true
+	})
+	if len(seen) != 1 || seen[0] != "cx-due" || e3.quotaError != "" {
+		t.Fatalf("expected only cx-due on 15m background tick, got seen=%v err=%q", seen, e3.quotaError)
+	}
+
+	// If ALL supported accounts are Claude and cleanly skipped, quotaError must remain empty.
+	e4 := newEngine()
+	e4.dir = t.TempDir()
+	e4.quotas["cl-fresh"] = AccountQuota{AuthID: "cl-fresh", Provider: "claude", FetchedAt: freshAt, Five: &QuotaWindow{Used: 5}}
+	claudeOnlyRPC := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{
+				map[string]any{"id": "cl-fresh", "auth_index": "i1", "provider": "claude", "email": "fresh@example.com"},
+			}}, nil
+		}
+		return nil, nil
+	}
+	called := 0
+	e4.refreshQuotaWith(false, claudeOnlyRPC, func(AuthEntry) bool { called++; return true })
+	if called != 0 || e4.quotaError != "" {
+		t.Fatalf("all-skipped Claude refresh must not set quotaError: called=%d err=%q", called, e4.quotaError)
 	}
 }

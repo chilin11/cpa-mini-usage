@@ -107,19 +107,16 @@ func TestClaudeResetDiagnosticRetainedUntilSuccessfulRefresh(t *testing.T) {
 			return map[string]any{"access_token": "synthetic-only-token"}, nil
 		}, func(url string, _ http.Header) ([]byte, error) {
 			calls++
-			if url == claudeUsageURL {
-				if failure == "usage" {
-					return nil, fmt.Errorf("private-upstream-text")
-				}
-				if failure == "schema" {
-					return []byte(`{}`), nil
-				}
-				return []byte(`{"five_hour":{"utilization":12}}`), nil
+			if url != claudeResetInventoryURL || calls != 1 {
+				t.Fatalf("expected single combined request, got call #%d url=%s", calls, url)
 			}
-			if url != claudeResetInventoryURL || calls != 2 {
-				t.Fatal("unexpected optional request")
+			if failure == "usage" {
+				return nil, fmt.Errorf("private-upstream-text")
 			}
-			return []byte(`{"cedar_ember":{"eligible":true,"grants":[]}}`), nil
+			if failure == "schema" {
+				return []byte(`{}`), nil
+			}
+			return []byte(`{"five_hour":{"utilization":12},"cedar_ember":{"eligible":true,"grants":[]}}`), nil
 		})
 		q := e.quotas["account"]
 		if failure != "" {
@@ -130,8 +127,8 @@ func TestClaudeResetDiagnosticRetainedUntilSuccessfulRefresh(t *testing.T) {
 			if ok || calls != wantCalls || q.ManualResetRemaining != nil || q.ManualResetDiagnostic != "surface" || q.Five.Used != 70 || q.Error == "" {
 				t.Fatal("ordinary failure must preserve prior inventory diagnostic and usage")
 			}
-		} else if !ok || calls != 2 || q.ManualResetRemaining == nil || *q.ManualResetRemaining != 0 || q.ManualResetDiagnostic != "" || q.Error != "" {
-			t.Fatal("successful known inventory must clear the previous diagnostic")
+		} else if !ok || calls != 1 || q.ManualResetRemaining == nil || *q.ManualResetRemaining != 0 || q.ManualResetDiagnostic != "" || q.Error != "" {
+			t.Fatal("successful known inventory must clear the previous diagnostic in one request")
 		}
 		restored := newEngine()
 		restored.dir = e.dir
