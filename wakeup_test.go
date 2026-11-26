@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,6 @@ func TestWakeupConfigValidationAndNormalization(t *testing.T) {
 		Mode:              "DAILY",
 		Times:             []string{"12:05", "07:00", "07:00"},
 		TimezoneOffsetMin: 480,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": false, "antigravity": true},
 		ExcludedAuthIDs:   []string{"b", "a", "a"},
 		Models:            map[string]string{"Claude": "claude-haiku-4-5-20251001", "codex": "  "},
@@ -74,7 +74,6 @@ func TestWakeupPersistenceSurvivesRestartAndCorruptTriggersReadOnly(t *testing.T
 		Mode:              "both",
 		Times:             []string{"07:00", "12:05"},
 		TimezoneOffsetMin: 480,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": false},
 		Models:            map[string]string{"claude": "claude-haiku-4-5-20251001"},
 		Message:           "hello",
@@ -154,7 +153,6 @@ func TestWakeupDailyScheduleRespectsTimezoneGraceAndNoDuplicateFire(t *testing.T
 		Mode:              "daily",
 		Times:             []string{"07:00", "12:00"},
 		TimezoneOffsetMin: 480,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
 		Message:           "hi",
 	}
@@ -249,7 +247,6 @@ func TestWakeupWindowActiveAndCooldownPreventsLoop(t *testing.T) {
 		Mode:              "reset",
 		Times:             []string{},
 		TimezoneOffsetMin: 0,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
 		Message:           "hi",
 	}
@@ -455,6 +452,28 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 	}
 }
 
+func TestWakeupGemini4UsesLowEffortAndIsNotLightweight(t *testing.T) {
+	const model = "gemini-4-argon-high"
+	if isLightWakeupModel(model) || !isLightWakeupModel("gemini-3.5-flash-lite") {
+		t.Fatal("Gemini family name must not make every Gemini model lightweight")
+	}
+	entry := AuthEntry{ID: "ag-on", Provider: "antigravity", RawProvider: "antigravity"}
+	_, reason := executeWakeupModel(entry, model, "hi", func(method string, arg any) (any, error) {
+		request := arg.(map[string]any)
+		var body map[string]any
+		if err := json.Unmarshal(request["body"].([]byte), &body); err != nil {
+			t.Fatal(err)
+		}
+		if method != "host.model.execute" || request["auth_id"] != "ag-on" || request["model"] != model || body["reasoning_effort"] != "low" || body["max_tokens"] != nil {
+			t.Fatalf("unexpected Gemini 4 wakeup: %s %+v %+v", method, request, body)
+		}
+		return map[string]any{"status_code": float64(200)}, nil
+	})
+	if reason != "" {
+		t.Fatalf("Gemini 4 wakeup failed: %s", reason)
+	}
+}
+
 func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 	e := newEngine()
 	e.dir = t.TempDir()
@@ -633,7 +652,6 @@ func TestWakeupCronParsingScheduleAndWeekdays(t *testing.T) {
 		Mode:              "daily",
 		Cron:              "0 6,11,16,21 * * *",
 		TimezoneOffsetMin: 480,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
 		Message:           "hi",
 	}
@@ -689,7 +707,6 @@ func TestWakeupSurvivesCPAUpgradeAndRestartWithoutUI(t *testing.T) {
 		Mode:              "daily",
 		Cron:              "0 6,11,16,21 * * *",
 		TimezoneOffsetMin: 480,
-		SkipActiveWindow:  true,
 		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
 		Models:            map[string]string{"claude": "claude-haiku-4-5-20251001"},
 		Message:           "hi",
@@ -912,5 +929,103 @@ func TestWakeupAntigravityTOSViolationAndDisableReason(t *testing.T) {
 	}
 	if got := sanitizeDisableReason(true, "some raw upstream secret error"); got != "" {
 		t.Fatalf("non-allowlisted disable reason must be stripped, got %q", got)
+	}
+}
+
+func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
+	at := time.Date(2026, 11, 26, 19, 0, 14, 0, time.UTC)
+	// Reset margin: a window that "reset" seconds ago may still be the old one.
+	win := &QuotaWindow{Used: 40, ResetAt: at.Add(-10 * time.Second).Format(time.RFC3339)}
+	if !isFiveHourWindowActive(win, wakeupSentRecord{}, at) {
+		t.Fatal("window inside the reset margin must stay active")
+	}
+	if isFiveHourWindowActive(win, wakeupSentRecord{}, at.Add(25*time.Second)) {
+		t.Fatal("window past the reset margin must be inactive")
+	}
+
+	sent := wakeupSentRecord{At: at}
+	if rec := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 1, ResetAt: at.Add(5 * time.Hour).Format(time.RFC3339)}, at.Add(time.Second)); !rec.RetryAt.IsZero() || rec.ResetAt.IsZero() || rec.Misses != 0 {
+		t.Fatalf("opened window must be confirmed: %+v", rec)
+	}
+	// Landed in the expiring window (resets 6s after the send).
+	old := &QuotaWindow{Used: 40, ResetAt: at.Add(6 * time.Second).Format(time.RFC3339)}
+	rec := verifyWakeupSentRecord(sent, old, at.Add(2*time.Second))
+	if rec.Misses != 1 || !rec.RetryAt.Equal(at.Add(2*time.Second+time.Minute)) {
+		t.Fatalf("miss must queue a one-minute retry: %+v", rec)
+	}
+	// Sent in the middle of a running window: follow up right after it ends.
+	long := &QuotaWindow{Used: 40, ResetAt: at.Add(2 * time.Hour).Format(time.RFC3339)}
+	if rec := verifyWakeupSentRecord(sent, long, at.Add(time.Second)); !rec.RetryAt.Equal(at.Add(2*time.Hour + wakeupResetMargin)) {
+		t.Fatalf("running window must queue a follow-up after its reset: %+v", rec)
+	}
+	if rec := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, old, at); !rec.RetryAt.IsZero() {
+		t.Fatalf("quick retries must be bounded: %+v", rec)
+	}
+	if rec := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 3}, at); rec != sent {
+		t.Fatalf("usage without a reset time must keep the record: %+v", rec)
+	}
+
+	// Daily mode: send even though cached quota says a window is active, then retry once
+	// the fresh read shows the wakeup landed in the expiring window.
+	start := time.Now().UTC()
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.load()
+	e.wakeupConfig = WakeupConfig{
+		Enabled: true, Mode: "daily", Cron: fmt.Sprintf("0 %d * * *", (start.Hour()+12)%24),
+		Providers: map[string]bool{"claude": true, "codex": true, "antigravity": true}, Message: "hi",
+	}
+	e.quotas["cx"] = AccountQuota{AuthID: "cx", Provider: "codex", Name: "cx@example.com", FetchedAt: start.Format(time.RFC3339Nano),
+		Five: &QuotaWindow{Used: 30, ResetAt: start.Add(10 * time.Second).Format(time.RFC3339)}}
+	rpc := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{map[string]any{"id": "cx", "auth_index": "i1", "provider": "codex", "email": "cx@example.com"}}}, nil
+		}
+		return nil, nil
+	}
+	var mu sync.Mutex
+	sends := 0
+	exec := func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		mu.Lock()
+		sends++
+		mu.Unlock()
+		return model, ""
+	}
+	refresh := func(entry AuthEntry) bool {
+		mu.Lock()
+		n := sends
+		mu.Unlock()
+		five := &QuotaWindow{Used: 30, ResetAt: start.Add(10 * time.Second).Format(time.RFC3339)}
+		if n >= 2 {
+			five = &QuotaWindow{Used: 1, ResetAt: time.Now().Add(5 * time.Hour).UTC().Format(time.RFC3339)}
+		}
+		e.mu.Lock()
+		q := e.quotas[entry.ID]
+		q.FetchedAt, q.Five = time.Now().UTC().Format(time.RFC3339Nano), five
+		e.quotas[entry.ID] = q
+		e.mu.Unlock()
+		return true
+	}
+	if status, _, failure := e.kickWakeupRunWith("", false, start, rpc, exec, refresh); status != 202 || failure != "" {
+		t.Fatalf("kick status=%d failure=%q", status, failure)
+	}
+	waitWakeupIdle(t, e)
+	if res := e.snapshot().Wakeup.Results["cx"]; sends != 1 || res.Status != "sent" || res.RetryAt == "" {
+		t.Fatalf("expected a blind send with a queued retry, sends=%d result=%+v", sends, res)
+	}
+	e.checkWakeupScheduleWith(start.Add(30*time.Second), rpc, exec, refresh)
+	waitWakeupIdle(t, e)
+	if sends != 1 {
+		t.Fatalf("retry fired before it was due: sends=%d", sends)
+	}
+	e.checkWakeupScheduleWith(start.Add(2*time.Minute), rpc, exec, refresh)
+	waitWakeupIdle(t, e)
+	if res := e.snapshot().Wakeup.Results["cx"]; sends != 2 || res.RetryAt != "" {
+		t.Fatalf("expected one verified retry, sends=%d result=%+v", sends, res)
+	}
+	e.checkWakeupScheduleWith(start.Add(4*time.Minute), rpc, exec, refresh)
+	waitWakeupIdle(t, e)
+	if sends != 2 {
+		t.Fatalf("verified window must stop retries: sends=%d", sends)
 	}
 }

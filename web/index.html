@@ -381,7 +381,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.43</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.44</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -535,7 +535,6 @@ tbody tr:focus-within>td{background:var(--hover)}
             <h2 class="wakeup-block-title" data-i18n="3. 防重与补发策略">3. 防重与补发策略</h2>
           </div>
           <div class="wakeup-inline">
-            <label class="wakeup-check" for="wakeup-skip-active"><input id="wakeup-skip-active" type="checkbox"><span data-i18n="跳过已激活的 5 小时窗口">跳过已激活的 5 小时窗口</span></label>
             <label class="wakeup-check" for="wakeup-auto-reset"><input id="wakeup-auto-reset" type="checkbox"><span data-i18n="5 小时窗口重置后也自动补发">5 小时窗口重置后也自动补发</span></label>
           </div>
         </section>
@@ -597,8 +596,8 @@ const cardCache=new Map(), accountErrors=new Map();
 const actionJobs=new Map(), accountNotes=new Map(), pendingRedeem=new Map();
 let wakeupJob=null;
 const wakeupForm={draft:null,dirty:false,saving:false,error:null,notice:null,hintsLoadedKey:''};
-const wakeupAccountJobs=new Map(), wakeupExcludeJobs=new Set();
-const wakeupModelHints={claude:[],codex:[],'antigravity:gemini':[]};
+const wakeupAccountJobs=new Map(), wakeupExcludeJobs=new Set(), wakeupTestButtons=new Map();
+let wakeupDiscovery=null;
 let pageSize = 20,requestJob=null,requestStatusKey='';
 let accountSearch='',accountState='',accountSort='default',accountPage=0,accountSize=12;
 // The full signed-query inputs, not just the cursor, belong to one history snapshot.
@@ -717,7 +716,7 @@ const translations={
   '未能读取（请求失败）':'Could not read (request failed)','未能读取（客户端版本）':'Could not read (CLI version)','未能读取（入口不受支持）':'Could not read (surface unsupported)','未能读取（无资格）':'Could not read (not eligible)','未能读取（不可用）':'Could not read (unavailable)','未能读取（响应格式异常）':'Could not read (invalid response)',
   '定时唤醒':'Scheduled wakeup','定时唤醒 · {summary}':'Wakeup · {summary}','定时唤醒 · 锁定 5 小时窗口':'Scheduled Wakeup · Lock 5h Window',
   '按计划向每个已启用账户发送一条极简消息，提前开启并锁定 5 小时额度计时周期。通过 CPA 宿主直接定向执行，不泄露令牌。':'Sends one minimal message per enabled account on schedule to start and lock its 5-hour quota window. Executed through the CPA host without exposing tokens.',
-  '启用定时唤醒':'Enable scheduled wakeup','跳过已激活的 5 小时窗口':'Skip active 5-hour windows',
+  '启用定时唤醒':'Enable scheduled wakeup',
   '触发模式':'Trigger mode','每天固定时间':'Daily fixed times','5 小时窗口重置后自动':'Auto after 5h window resets','每天固定时间 + 重置后自动':'Daily times + after reset',
   '时区（用于每天固定时间）':'Timezone (for daily times)','定时唤醒时区':'Wakeup timezone','同步本机':'Use browser TZ',
   '每天执行时间（最多 12 个）':'Daily times (up to 12)','添加唤醒时间':'Add wakeup time','添加时间':'Add time','移除 {time}':'Remove {time}',
@@ -745,7 +744,7 @@ const translations={
   '唤醒消息过长或包含非法字符。':'Wakeup message is too long or contains control characters.',
   '参与账户：{included} / {total} 个已启用（已排除 {excluded}）':'Included: {included} / {total} enabled ({excluded} excluded)','参与账户：{included} / {total} 个已启用':'Included: {included} / {total} enabled',
   '暂无已启用账户':'No enabled accounts','选择账户':'Manage accounts','收起账户':'Hide accounts','清除排除':'Clear exclusions','选择参与定时唤醒的账户':'Choose accounts included in scheduled wakeup',
-  '按当前配置立即唤醒（已勾选跳过已激活窗口）':'Run now using current settings (skips active 5h windows)','按当前配置立即唤醒全部符合条件的账户':'Run now for all eligible accounts',
+  '按当前配置立即唤醒全部符合条件的账户':'Run now for all eligible accounts',
   '最近结果统计':'Latest results','上次唤醒：已唤醒':'Last wakeup: Sent','上次唤醒：已跳过':'Last wakeup: Skipped','上次唤醒：失败':'Last wakeup: Failed','唤醒失败':'Wakeup failed',
   '按 Cron 周期定时向每个已启用账户发极简消息（如 6:00、11:00、16:00、21:00），保证白天拥有更多满血 5 小时窗口。':'Send a minimal message to each enabled account on a Cron schedule (e.g. 6:00, 11:00, 16:00, 21:00) to lock more daytime 5-hour windows.',
   '定时计划（Cron）':'Cron schedule','1. 定时计划（Cron · 每 5 小时）':'1. Schedule (Cron · every 5h)','选预设、按周期生成，或直接输入 5 段 Cron':'Pick a preset, generate a 5h cadence, or edit 5-field Cron',
@@ -761,7 +760,7 @@ const translations={
   '发送消息（越短越省额度）':'Message text (shorter uses fewer tokens)','Claude 唤醒模型':'Claude wakeup model','Codex 唤醒模型':'Codex wakeup model',
   '仅唤醒 Gemini':'Gemini wakeup only','Antigravity Gemini 组唤醒模型':'Antigravity Gemini wakeup model',
   'Antigravity 仅支持使用 Gemini 文本模型唤醒。':'Antigravity wakeup requires a Gemini text model.',
-  '自动（轻量，如 {model}）':'Auto (lightweight, e.g. {model})','自定义模型…':'Custom model…','输入自定义模型名':'Enter custom model name',
+  '自动（轻量，如 {model}）':'Auto (lightweight, e.g. {model})','自动（按账户选择模型）':'Auto (select per account)','自定义模型…':'Custom model…','输入自定义模型名':'Enter custom model name',
   '策略与账户范围':'Rules and account scope','3. 策略与账户范围':'3. Rules & account scope','5 小时窗口重置后也自动补发':'Also auto-wake after 5h window resets',
   '下次 {time}':'Next {time}','Cron 定时':'Cron schedule','Cron 定时 + 重置补发':'Cron + post-reset',
   '关':'Off','开':'On','运行中':'Running','刷新状态':'Refresh status',
@@ -777,7 +776,7 @@ const translations={
   '测试全部账户':'Test all accounts','立即唤醒':'Wake now','测试中…':'Testing…','OK':'OK','额度已用完':'Quota exhausted','用完':'Exhausted',
   '触发：测试全部':'Trigger: Test all','该账户额度已用完（429 / 冷却中）。':'Quota exhausted (HTTP 429 / cooling down).',
   '该账户当前周期额度已用完。':'Account quota is exhausted for the current window.',
-  '5 小时窗口已确认':'5-hour window confirmed','已发送，窗口待确认':'Sent, window unconfirmed',
+  '5 小时窗口已确认':'5-hour window confirmed','新窗口未开启，{time} 自动重试':'No new window yet, retrying {time}','已发送，窗口待确认':'Sent, window unconfirmed',
   '5 小时窗口已确认，重置时间：{time}':'5-hour window confirmed; resets at {time}',
   '已发送唤醒消息，但刷新后尚未确认 5 小时窗口。':'Wakeup message sent, but a 5-hour window could not be confirmed.',
   '已确认 Gemini 5 小时窗口，重置时间见唤醒记录。':'Gemini 5-hour window confirmed. See the wakeup result for its reset time.',
@@ -943,7 +942,7 @@ function acceptSnapshot(snapshot){
   const quotas=quotaContent(snapshot);
   if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
   if(requests!==requestStamp){renderRequests();requestStamp=requests;}
-  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(snapshot?.wakeup?.config);renderWakeupPage(!wakeupForm.dirty);restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
+  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(snapshot?.wakeup?.config);renderWakeupPage(!wakeupForm.dirty);if(tab==='wakeup')loadWakeupModelHints();restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
 }
 function updateSyncInfo(){
   if(tab==='requests'){
@@ -1080,6 +1079,7 @@ function syncAccountControls(){
     if(entry.button.getAttribute('aria-busy')!==String(busy))entry.button.setAttribute('aria-busy',String(busy));
     if(!accountErrors.has(id)&&!accountJobs.has(id)){const error=data?.account_refresh?.[id]?.error||entry.backendError;const text=error?message(errorKey(error,'账户额度刷新失败，请稍后重试。')):'';if(entry.error.textContent!==text)entry.error.textContent=text;entry.error.hidden=!text;}
   }
+  for(const [id,button] of wakeupTestButtons)button.disabled=wakeupTestBlocked(id);
   syncHeader();
 }
 function updateHeaderStatus(){
@@ -1249,7 +1249,7 @@ const defaultCronExpr='0 6,11,16,21 * * *';
 const wakeupModelSlots=[
   {key:'claude',selectId:'wakeup-model-select-claude',inputId:'wakeup-model-claude',provider:'claude',defaults:['claude-haiku-4-5-20251001','claude-haiku-4-5','claude-3-5-haiku-20241022','claude-sonnet-4-6','claude-sonnet-4-5-20250929']},
   {key:'codex',selectId:'wakeup-model-select-codex',inputId:'wakeup-model-codex',provider:'codex',defaults:['gpt-5.1-codex-mini','gpt-5.4-mini','gpt-5.3-codex-spark','gpt-5.4-nano','gpt-5-mini','gpt-5.6-luna','gpt-6-luna','gpt-5.5','gpt-5.2-codex','gpt-5.3-codex','gpt-5.4']},
-  {key:'antigravity:gemini',selectId:'wakeup-model-select-ag-gemini',inputId:'wakeup-model-ag-gemini',provider:'antigravity',defaults:['gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3-flash']}
+  {key:'antigravity:gemini',selectId:'wakeup-model-select-ag-gemini',inputId:'wakeup-model-ag-gemini',provider:'antigravity',defaults:[]}
 ];
 function isNonChatWakeupModelJS(model){
   const l=String(model||'').toLowerCase();
@@ -1262,7 +1262,8 @@ function wakeupModelWeight(model){
   const l=String(model||'').toLowerCase();
   if(isNonChatWakeupModelJS(l))return 100;
   if(['astra','opus','fable','xhigh','thinking','-pro','pro-','sol','terra','research','max'].some(k=>l.includes(k)))return 80;
-  if(['haiku','nano','mini','flash-lite','lite','spark'].some(k=>l.includes(k)))return 10;
+  const variant=l.replace(/^gemini-/,''); // The family name itself contains “mini”.
+  if(['haiku','nano','mini','flash-lite','lite','spark'].some(k=>variant.includes(k)))return 10;
   if(['flash','luna','fast'].some(k=>l.includes(k)))return 20;
   return 30;
 }
@@ -1383,7 +1384,6 @@ function defaultWakeupDraft(source){
     auto_reset:mode==='reset'||mode==='both',
     times:list(cfg.times).filter(v=>/^\d{2}:\d{2}$/.test(String(v))),
     timezone_offset_min:Number.isInteger(cfg.timezone_offset_min)?cfg.timezone_offset_min:browserTimezoneOffsetMin(),
-    skip_active_window:typeof cfg.skip_active_window==='boolean'?cfg.skip_active_window:true,
     providers:{claude:providers.claude!==false,codex:providers.codex!==false,antigravity:providers.antigravity!==false},
     excluded_auth_ids:list(cfg.excluded_auth_ids).map(String),
     models:{claude:String(models.claude||''),codex:String(models.codex||''),'antigravity:gemini':[models['antigravity:gemini'],models.antigravity].map(m=>String(m||'').trim()).find(isGeminiWakeupModelJS)||''},
@@ -1394,7 +1394,7 @@ function defaultWakeupDraft(source){
 const wakeupModeLabel=mode=>mode==='reset'?t('5 小时窗口重置后自动'):mode==='both'?t('Cron 定时 + 重置补发'):t('Cron 定时');
 const wakeupTriggerLabel=trigger=>({schedule:'触发：定时',reset:'触发：重置',manual:'触发：手动',test:'触发：测试全部',account:'触发：单账户'}[trigger]||'');
 function wakeupReasonText(reason){return reason?message(errorKey(reason,'唤醒请求失败，请稍后重试。')):'';}
-const pendingWakeupWindow=res=>res.status==='sent'&&res.provider==='antigravity'&&!list(res.groups).some(g=>g.group==='gemini'&&g.status==='sent'&&g.window_reset_at);
+const pendingWakeupWindow=res=>res.status==='sent'&&(Boolean(res.retry_at)||res.provider==='antigravity'&&!list(res.groups).some(g=>g.group==='gemini'&&g.status==='sent'&&g.window_reset_at));
 const wakeupDisplayStatus=res=>pendingWakeupWindow(res)?'unconfirmed':res.status||'skipped';
 function wakeupGroupSummary(g){
   const text=g.status==='sent'?[g.model,g.window_reset_at?t('5 小时窗口已确认，重置时间：{time}',{time:when(g.window_reset_at)}):t('已发送，窗口待确认')].filter(Boolean).join(' · '):g.status==='failed'?wakeupReasonText(g.reason):wakeupStatusLabel(g.status);
@@ -1420,11 +1420,12 @@ function formatAccountWakeupSummary(res){
   const prefix=(res.at?clock(res.at)+' ':'')+label;
   if(list(res.groups).length){
     const detail=res.groups.map(wakeupGroupSummary).join(' | ');
-    return prefix+' · '+detail;
+    return prefix+' · '+detail+(res.retry_at?' · '+t('新窗口未开启，{time} 自动重试',{time:when(res.retry_at)}):'');
   }
   const tail=[];
   if(res.model)tail.push(res.model);
   if(res.reason)tail.push(wakeupReasonText(res.reason));
+  if(res.retry_at)tail.push(t('新窗口未开启，{time} 自动重试',{time:when(res.retry_at)}));
   return tail.length?prefix+' · '+tail.join(' · '):prefix;
 }
 function syncWakeupTabBadge(){
@@ -1471,7 +1472,7 @@ function populateWakeupTimezoneOptions(selectedMin){
   sel.replaceChildren(...nodes);sel.value=String(selectedMin);
 }
 function wakeupSlotModelOptions(slot){
-  const hints=list(wakeupModelHints[slot.key]).filter(m=>!isNonChatWakeupModelJS(m));
+  const hints=list(currentWakeupDiscovery()?.hints[slot.key]).filter(m=>!isNonChatWakeupModelJS(m));
   const merged=[...new Set([...hints,...slot.defaults])];
   const hintSet=new Set(hints);
   // Sort lightest models first; prefer models actually exposed by CPA within the same weight tier.
@@ -1497,7 +1498,7 @@ function populateWakeupModelSelects(){
     const recommended=options.find(m=>wakeupModelWeight(m)<50)||slot.defaults[0];
     const nodes=[];
     const autoOpt=document.createElement('option');autoOpt.value='';
-    autoOpt.textContent=t('自动（轻量，如 {model}）',{model:recommended});
+    autoOpt.textContent=recommended?t('自动（轻量，如 {model}）',{model:recommended}):t('自动（按账户选择模型）');
     nodes.push(autoOpt);
     for(const m of options){const opt=document.createElement('option');opt.value=m;opt.textContent=m;nodes.push(opt);}
     const customOpt=document.createElement('option');customOpt.value='__custom__';customOpt.textContent=t('自定义模型…');
@@ -1513,27 +1514,54 @@ function populateWakeupModelSelects(){
     $('wakeup-row-'+p).classList.toggle('off',d.providers[p]===false);
   }
 }
-async function loadWakeupModelHints(){
-  if(!key||!data)return;
-  wakeupForm.hintsLoadedKey=key;
+function currentWakeupDiscovery(){
+  return key&&wakeupForm.hintsLoadedKey===key&&wakeupDiscovery?.key===key?wakeupDiscovery:null;
+}
+function loadWakeupModelHints(force=false){
+  if(!key||!data)return Promise.resolve();
+  const previous=currentWakeupDiscovery();
+  const quotaRoster=JSON.stringify(list(data.quotas).map(q=>[q.auth_id,q.provider,Boolean(q.disabled)]).sort());
+  // Wait for an in-flight load; reload once if the account list changed meanwhile.
+  if(previous?.running)return previous.promise.then(()=>previous.quotaRoster===quotaRoster?undefined:loadWakeupModelHints());
+  if(previous&&!force&&previous.quotaRoster===quotaRoster)return Promise.resolve();
+  const job={key,quotaRoster,running:true,hints:{}};
+  wakeupDiscovery=job;wakeupForm.hintsLoadedKey=key;
+  job.promise=fetchWakeupModelHints(job);
+  return job.promise;
+}
+async function fetchWakeupModelHints(job){
+  const current=()=>currentWakeupDiscovery()===job&&guessKey()===job.key;
   const seen=new Set(),targets=[];
-  for(const q of list(data.quotas)){
-    if(q.disabled||!q.auth_id||seen.has(q.provider))continue;
+  for(const q of enabledWakeupAccounts()){
+    if(q.provider!=='antigravity'&&seen.has(q.provider))continue;
     seen.add(q.provider);targets.push(q);
   }
-  for(const q of targets){
-    try{
-      const res=await api('/v0/management/auth-files/models?name='+encodeURIComponent(q.auth_id));
-      const ids=list(res?.models).map(m=>String(m?.id||'').trim()).filter(Boolean);
-      if(!ids.length)continue;
-      if(q.provider==='antigravity'){
-        wakeupModelHints['antigravity:gemini']=ids.filter(isGeminiWakeupModelJS);
-      }else{
-        wakeupModelHints[q.provider]=ids;
-      }
-      populateWakeupModelSelects();
-    }catch{}
+  const hints=new Map(wakeupModelSlots.map(slot=>[slot.key,new Set()]));
+  for(let i=0;i<targets.length;i+=4){
+    const batch=await Promise.all(targets.slice(i,i+4).map(async q=>{
+      try{
+        const res=await api('/v0/management/auth-files/models?name='+encodeURIComponent(q.auth_id));
+        return [q.provider,list(res?.models).map(m=>String(typeof m==='string'?m:m?.id||'').trim()).filter(Boolean)];
+      }catch{return [q.provider,[]];}
+    }));
+    if(!current())return;
+    for(const [provider,ids] of batch){
+      const slot=provider==='antigravity'?'antigravity:gemini':provider;
+      for(const id of ids)if(provider!=='antigravity'||isGeminiWakeupModelJS(id))hints.get(slot).add(id);
+    }
   }
+  if(!current())return;
+  job.hints=Object.fromEntries([...hints].map(([slot,models])=>[slot,[...models]]));
+  // A saved model may appear as custom until the catalog loads; switch back once it is listed.
+  const draft=ensureWakeupDraft();
+  for(const slot of wakeupModelSlots){
+    if(draft.customModelMode?.[slot.key]&&wakeupSlotModelOptions(slot).includes(String(draft.models[slot.key]||'')))draft.customModelMode[slot.key]=false;
+  }
+  job.running=false;populateWakeupModelSelects();
+}
+async function refreshWakeupPage(){
+  await load(false);
+  if(tab==='wakeup')await loadWakeupModelHints(true);
 }
 function renderWakeupCronPreview(){
   const d=ensureWakeupDraft(),box=$('wakeup-cron-preview'),cron=String(d.cron||'').trim();
@@ -1585,8 +1613,15 @@ function accountFiveHourBrief(q){
   const pct=remainingPercent(five);
   return pct==null?t('5h 未知'):t('5h 剩 {pct}%',{pct:pct.toFixed(0)});
 }
+function enabledWakeupAccounts(){
+  return list(data?.quotas).filter(q=>!q.disabled&&q.auth_id&&wakeupModelSlots.some(slot=>slot.provider===q.provider));
+}
+function wakeupTestBlocked(id){
+  return Boolean(wakeupForm.saving||wakeupJob||data?.wakeup?.running||list(data?.wakeup?.running_auth_ids).includes(id)||accountBusy(id));
+}
 function renderWakeupAccounts(){
-  const d=ensureWakeupDraft(),enabledAccounts=list(data?.quotas).filter(q=>!q.disabled);
+  wakeupTestButtons.clear();
+  const d=ensureWakeupDraft(),enabledAccounts=enabledWakeupAccounts();
   const excludedSet=new Set(list(d.excluded_auth_ids));
   const included=enabledAccounts.filter(q=>d.providers[q.provider]!==false&&!excludedSet.has(q.auth_id));
   const excludedEnabled=enabledAccounts.filter(q=>excludedSet.has(q.auth_id)).length;
@@ -1629,7 +1664,7 @@ function renderWakeupAccounts(){
       wrap.append(makeWakeupBadge(wakeupDisplayStatus(res),formatAccountWakeupSummary(res)));
     }
     const testBtn=add(wrap,'button','button wakeup-account-test',waking?'测试中…':'测试');
-    testBtn.type='button';testBtn.disabled=busy||waking||accountBusy(q.auth_id);
+    testBtn.type='button';testBtn.disabled=wakeupTestBlocked(q.auth_id);wakeupTestButtons.set(q.auth_id,testBtn);
     testBtn.title=t('唤醒 {name}（立即发送极简消息锁定 5 小时窗口）',{name:credentialName(q)});
     testBtn.setAttribute('aria-label',testBtn.title);
     testBtn.onclick=()=>runAccountWakeup(q.auth_id);
@@ -1670,14 +1705,14 @@ function renderWakeupStatusAndResults(){
   renderWakeupResults();
   $('wakeup-save').disabled=busy||readOnly||!data;
   $('wakeup-save').textContent=t(wakeupForm.saving?'保存中…':'保存设置');
-  const hasEnabled=list(data?.quotas).some(q=>!q.disabled);
+  const hasEnabled=enabledWakeupAccounts().length>0;
   const runningTest=(wakeupJob?.force)||state.running&&state.last_run_trigger==='test';
   $('wakeup-test-all').disabled=busy||!hasEnabled||!data;
   $('wakeup-test-all').textContent=t(runningTest?'测试中…':'测试全部账户');
   $('wakeup-test-all').title=t('强制给每个符合条件的已启用账户发一次测试消息（不跳过已激活的 5 小时窗口；已满额账户将显示“额度已用完”）');
   $('wakeup-run-now').disabled=busy||!hasEnabled||!data;
   $('wakeup-run-now').textContent=t(((wakeupJob&&!wakeupJob.force)||(state.running&&state.last_run_trigger!=='test'))?'唤醒中…':'立即唤醒');
-  $('wakeup-run-now').title=t(d.skip_active_window?'按当前配置立即唤醒（已勾选跳过已激活窗口）':'按当前配置立即唤醒全部符合条件的账户');
+  $('wakeup-run-now').title=t('按当前配置立即唤醒全部符合条件的账户');
   syncWakeupTabBadge();
 }
 function renderWakeupPage(syncFields=true){
@@ -1685,7 +1720,6 @@ function renderWakeupPage(syncFields=true){
   const busy=Boolean(wakeupForm.saving)||Boolean(wakeupJob)||Boolean(state.running);
   if(syncFields){
     $('wakeup-enabled').checked=d.enabled;$('wakeup-enabled').disabled=busy||readOnly||!data;
-    $('wakeup-skip-active').checked=d.skip_active_window;$('wakeup-skip-active').disabled=busy||readOnly||!data;
     $('wakeup-auto-reset').checked=Boolean(d.auto_reset);$('wakeup-auto-reset').disabled=busy||readOnly||!data;
     populateWakeupGenSelects();
     for(const id of ['wakeup-gen-start','wakeup-gen-min','wakeup-gen-step','wakeup-gen-end','wakeup-gen-days'])$(id).disabled=busy||readOnly||!data;
@@ -1709,7 +1743,6 @@ function renderWakeupPage(syncFields=true){
 function readWakeupFormIntoDraft(){
   const d=ensureWakeupDraft();
   d.enabled=Boolean($('wakeup-enabled').checked);
-  d.skip_active_window=Boolean($('wakeup-skip-active').checked);
   d.auto_reset=Boolean($('wakeup-auto-reset').checked);
   d.cron=String($('wakeup-cron').value??'');
   d.timezone_offset_min=Number($('wakeup-tz').value)||0;
@@ -1753,7 +1786,6 @@ function buildWakeupPayload(d){
     mode,
     cron,
     timezone_offset_min:Number(d.timezone_offset_min)||0,
-    skip_active_window:Boolean(d.skip_active_window),
     providers,
     excluded_auth_ids:[...new Set(list(d.excluded_auth_ids).map(s=>String(s).trim()).filter(Boolean))].sort(),
     models,
@@ -1825,7 +1857,9 @@ async function runAccountWakeup(id){
   if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
   if(key!==guessKey()){await load();return;}
   const target=accountTarget(id);
-  if(!accountTargetCurrent(target)||target.disabled||accountBusy(id)||wakeupJob||data?.wakeup?.running||resetDialog||disableDialog)return;
+  if(!accountTargetCurrent(target)||target.disabled||wakeupTestBlocked(id)||resetDialog||disableDialog)return;
+  // A wakeup-page test must use the model currently shown in the form.
+  if(tab==='wakeup'&&wakeupForm.dirty&&(!await saveWakeupConfig(true)||!accountTargetCurrent(target)||wakeupTestBlocked(id)||resetDialog||disableDialog))return;
   const job={id,key,serial:loadSerial};wakeupAccountJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);syncAccountControls();renderWakeupPage(false);
   const current=()=>wakeupAccountJobs.get(id)===job&&loadSerial===job.serial;
   const authChanged=async()=>{if(guessKey()!==job.key){if(current()){wakeupAccountJobs.delete(id);await load();}return true;}return !current();};
@@ -2347,6 +2381,7 @@ function render(){
 }
 const tabOrder=['quota','requests','wakeup'];
 function setTab(selected){
+  const openingWakeup=selected==='wakeup'&&tab!=='wakeup';
   tab=tabOrder.includes(selected)?selected:'quota';
   tabOrder.forEach(name=>{const activeTab=tab===name;$('tab-'+name).setAttribute('aria-selected',String(activeTab));$('tab-'+name).tabIndex=activeTab?0:-1;$('page-'+name).classList.toggle('hide',!activeTab);});
   $('dashboard').classList.toggle('request-view',tab==='requests');syncHeader();updateSyncInfo();
@@ -2354,7 +2389,7 @@ function setTab(selected){
   if(tab==='wakeup'){
     if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
     renderWakeupPage(!wakeupForm.dirty);
-    if(key&&data&&wakeupForm.hintsLoadedKey!==key)loadWakeupModelHints();
+    loadWakeupModelHints(openingWakeup);
   }
 }
 tabOrder.forEach(name=>{
@@ -2386,7 +2421,7 @@ $('history-start').value='';$('history-end').value='';
 $('history-rolling').onclick=()=>{$('history-start').value='';$('history-end').value='';return historyChanged();};
 for(const id of ['history-start','history-end','history-model'])$(id).onchange=historyChanged;
 $('history-retry').onclick=()=>loadHistory(true);
-$('refresh').onclick=()=>tab==='requests'?refreshRequests():tab==='wakeup'?load(false):load(true);
+$('refresh').onclick=()=>tab==='requests'?refreshRequests():tab==='wakeup'?refreshWakeupPage():load(true);
 $('language').onchange=e=>setLanguage(e.target.value);
 $('persistence-enabled').onchange=e=>savePersistence(e.target.checked);
 $('reset-cancel').onclick=closeReset;$('reset-confirm').onclick=confirmReset;$('reset-retry').onclick=loadResetCredits;
@@ -2435,7 +2470,7 @@ for(const slot of wakeupModelSlots){
   $(slot.inputId).oninput=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupStatusAndResults();};
 }
 $('wakeup-clear-excluded').onclick=()=>{if(wakeupForm.saving)return;readWakeupFormIntoDraft();wakeupForm.draft.excluded_auth_ids=[];wakeupForm.dirty=true;wakeupForm.error=null;renderWakeupAccounts();renderWakeupStatusAndResults();};
-for(const id of ['wakeup-enabled','wakeup-skip-active','wakeup-auto-reset','wakeup-tz','wakeup-provider-claude','wakeup-provider-codex','wakeup-provider-antigravity']){
+for(const id of ['wakeup-enabled','wakeup-auto-reset','wakeup-tz','wakeup-provider-claude','wakeup-provider-codex','wakeup-provider-antigravity']){
   $(id).onchange=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupPage(true);};
 }
 $('wakeup-text').oninput=()=>{readWakeupFormIntoDraft();wakeupForm.error=null;renderWakeupStatusAndResults();};

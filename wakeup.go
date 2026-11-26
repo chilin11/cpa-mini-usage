@@ -17,6 +17,16 @@ import (
 	"unicode/utf8"
 )
 
+// Providers may reset a few seconds after the advertised time (clock skew,
+// whole-second truncation); a wakeup sent too early lands in the old window.
+const wakeupResetMargin = 30 * time.Second
+
+const (
+	// A wakeup that opened a new window sees a reset at least this far away.
+	wakeupOpenedMinLeft   = 4 * time.Hour
+	wakeupMaxQuickRetries = 3
+)
+
 const (
 	wakeupSlotGrace         = 10 * time.Minute
 	wakeupCooldown          = 4*time.Hour + 50*time.Minute
@@ -64,7 +74,6 @@ type WakeupConfig struct {
 	Cron              string            `json:"cron,omitempty"`
 	Times             []string          `json:"times,omitempty"`
 	TimezoneOffsetMin int               `json:"timezone_offset_min"`
-	SkipActiveWindow  bool              `json:"skip_active_window"`
 	Providers         map[string]bool   `json:"providers"`
 	ExcludedAuthIDs   []string          `json:"excluded_auth_ids,omitempty"`
 	Models            map[string]string `json:"models,omitempty"`
@@ -88,6 +97,7 @@ type WakeupAccountResult struct {
 	Reason   string              `json:"reason,omitempty"`
 	Model    string              `json:"model,omitempty"`
 	At       string              `json:"at"`
+	RetryAt  string              `json:"retry_at,omitempty"` // A fresh read showed no new window; a follow-up wakeup is queued.
 	Groups   []WakeupGroupResult `json:"groups,omitempty"`
 }
 
@@ -109,6 +119,9 @@ type WakeupState struct {
 type wakeupSentRecord struct {
 	At      time.Time `json:"at"`
 	ResetAt time.Time `json:"reset_at,omitempty"`
+	// RetryAt is set when a fresh read after the wakeup showed no new window.
+	RetryAt time.Time `json:"retry_at,omitempty"`
+	Misses  int       `json:"misses,omitempty"`
 }
 
 type persistedWakeup struct {
@@ -138,7 +151,6 @@ func defaultWakeupConfig() WakeupConfig {
 		Cron:              wakeupDefaultCron,
 		Times:             []string{"06:00", "11:00", "16:00", "21:00"},
 		TimezoneOffsetMin: offsetMin,
-		SkipActiveWindow:  true,
 		Providers: map[string]bool{
 			"claude":      true,
 			"codex":       true,
@@ -307,7 +319,6 @@ func normalizeWakeupConfig(raw WakeupConfig, fromDisk bool) (WakeupConfig, error
 		Cron:              cronExpr,
 		Times:             times,
 		TimezoneOffsetMin: raw.TimezoneOffsetMin,
-		SkipActiveWindow:  raw.SkipActiveWindow,
 		Providers:         providers,
 		ExcludedAuthIDs:   excluded,
 		Models:            models,
@@ -368,6 +379,11 @@ func (e *Engine) loadWakeupPersistence() {
 		}
 		res.AuthID = id
 		res.Reason = sanitizeWakeupReason(res.Reason)
+		if retryAt, ok := parseWindowResetTime(res.RetryAt); ok && res.Status == "sent" {
+			res.RetryAt = retryAt.Format(time.RFC3339Nano)
+		} else {
+			res.RetryAt = ""
+		}
 		if res.Model != "" && !wakeupModelPattern.MatchString(res.Model) {
 			res.Model = ""
 		}
@@ -756,22 +772,104 @@ func parseWindowResetTime(resetAt string) (time.Time, bool) {
 func isFiveHourWindowActive(win *QuotaWindow, sent wakeupSentRecord, now time.Time) bool {
 	if win != nil && win.Used > 0 {
 		if resetAt, ok := parseWindowResetTime(win.ResetAt); ok {
-			if resetAt.After(now) {
+			if now.Before(resetAt.Add(wakeupResetMargin)) {
 				return true
 			}
 		} else {
 			return true
 		}
 	}
-	if !sent.At.IsZero() {
-		if !sent.ResetAt.IsZero() && !now.Before(sent.ResetAt) && now.Sub(sent.At) >= 5*time.Minute {
-			return false
-		}
-		if now.Sub(sent.At) < wakeupCooldown {
-			return true
+	if sent.At.IsZero() {
+		return false
+	}
+	if !sent.RetryAt.IsZero() {
+		// The last wakeup was verified as not opening a new window.
+		return now.Before(sent.RetryAt)
+	}
+	if !sent.ResetAt.IsZero() && !now.Before(sent.ResetAt.Add(wakeupResetMargin)) && now.Sub(sent.At) >= 5*time.Minute {
+		return false
+	}
+	return now.Sub(sent.At) < wakeupCooldown
+}
+
+// wakeupMissBackoff spaces quick follow-ups after a wakeup that opened no window.
+func wakeupMissBackoff(misses int) time.Duration {
+	switch {
+	case misses <= 1:
+		return time.Minute
+	case misses == 2:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
+}
+
+// newWakeupSentRecord keeps the miss count only while a follow-up chain is pending,
+// so quick retries stay bounded per window.
+func newWakeupSentRecord(prev wakeupSentRecord, now time.Time) wakeupSentRecord {
+	rec := wakeupSentRecord{At: now.UTC()}
+	if !prev.RetryAt.IsZero() {
+		rec.Misses = prev.Misses
+	}
+	return rec
+}
+
+// verifyWakeupSentRecord classifies a wakeup using a quota read taken after it was sent.
+func verifyWakeupSentRecord(rec wakeupSentRecord, win *QuotaWindow, now time.Time) wakeupSentRecord {
+	if win == nil {
+		return rec
+	}
+	resetAt, valid := parseWindowResetTime(win.ResetAt)
+	if valid && resetAt.After(rec.At.Add(wakeupOpenedMinLeft)) {
+		rec.ResetAt, rec.RetryAt, rec.Misses = resetAt, time.Time{}, 0
+		return rec
+	}
+	if !valid && win.Used > 0 {
+		return rec // Usage without a reset time: cannot tell, keep the normal cooldown.
+	}
+	// The wakeup landed in a window that was already running (or none is running).
+	rec.Misses++
+	if rec.Misses > wakeupMaxQuickRetries {
+		rec.RetryAt = time.Time{}
+		return rec
+	}
+	retry := now.Add(wakeupMissBackoff(rec.Misses))
+	if valid && retry.Before(resetAt.Add(wakeupResetMargin)) {
+		retry = resetAt.Add(wakeupResetMargin)
+	}
+	rec.RetryAt = retry.UTC()
+	return rec
+}
+
+// verifyWakeupWindowLocked applies a fresh post-wakeup quota read and returns the
+// queued follow-up time (zero when the window opened or no retry remains).
+func (e *Engine) verifyWakeupWindowLocked(q AccountQuota, now time.Time) time.Time {
+	key, win := wakeupSentKey(q.AuthID, ""), q.Five
+	if q.Provider == "antigravity" {
+		key, win = wakeupSentKey(q.AuthID, wakeupGeminiGroup), nil
+		for _, g := range q.Groups {
+			if g.Key == wakeupGeminiGroup {
+				win = g.Five
+				break
+			}
 		}
 	}
-	return false
+	rec, ok := e.wakeupLastSent[key]
+	if !ok {
+		return time.Time{}
+	}
+	rec = verifyWakeupSentRecord(rec, win, now)
+	e.wakeupLastSent[key] = rec
+	return rec.RetryAt
+}
+
+func (e *Engine) wakeupRetryDueLocked(q AccountQuota, now time.Time) bool {
+	key := wakeupSentKey(q.AuthID, "")
+	if q.Provider == "antigravity" {
+		key = wakeupSentKey(q.AuthID, wakeupGeminiGroup)
+	}
+	rec := e.wakeupLastSent[key]
+	return !rec.RetryAt.IsZero() && !now.Before(rec.RetryAt)
 }
 
 func (e *Engine) updateWakeupObservedResetLocked(q AccountQuota) {
@@ -875,22 +973,25 @@ func (e *Engine) checkWakeupScheduleWith(
 		return
 	}
 
-	// 2. Check reset-triggered automatic wakeup for accounts whose observed 5h window is idle.
+	// 2. Check reset-triggered automatic wakeup for accounts whose observed 5h window is idle,
+	// plus (in every mode) follow-ups for wakeups verified as not opening a new window.
 	var resetTargets []string
-	if cfg.Mode == "reset" || cfg.Mode == "both" {
-		for id, q := range e.quotas {
-			if q.Disabled || q.FetchedAt == "" || !quotaProvider(q.Provider) || !cfg.Providers[q.Provider] || isWakeupExcluded(cfg, id) || e.wakeupRunningAuths[id] {
-				continue
-			}
-			if failAt, ok := e.wakeupLastFail[id]; ok && now.Sub(failAt) < wakeupFailedBackoff {
-				continue
-			}
-			if e.accountNeedsResetWakeupLocked(q, now) {
-				resetTargets = append(resetTargets, id)
-			}
+	resetMode := cfg.Mode == "reset" || cfg.Mode == "both"
+	for id, q := range e.quotas {
+		if q.Disabled || q.FetchedAt == "" || !quotaProvider(q.Provider) || !cfg.Providers[q.Provider] || isWakeupExcluded(cfg, id) || e.wakeupRunningAuths[id] {
+			continue
 		}
-		sort.Strings(resetTargets)
+		if !resetMode && !e.wakeupRetryDueLocked(q, now) {
+			continue
+		}
+		if failAt, ok := e.wakeupLastFail[id]; ok && now.Sub(failAt) < wakeupFailedBackoff {
+			continue
+		}
+		if e.accountNeedsResetWakeupLocked(q, now) {
+			resetTargets = append(resetTargets, id)
+		}
 	}
+	sort.Strings(resetTargets)
 	if len(resetTargets) > 0 {
 		e.wakeupRunning = true
 		e.wakeupLastRunAt = now.UTC()
@@ -1240,6 +1341,13 @@ func (e *Engine) runWakeupSubsetClaimed(
 				e.wakeupRunningAuths[entry.ID] = true
 				e.mu.Unlock()
 
+				if trigger == "reset" && refresh != nil && !e.confirmResetWakeupNeeded(entry, now, refresh) {
+					e.mu.Lock()
+					delete(e.wakeupRunningAuths, entry.ID)
+					e.mu.Unlock()
+					continue
+				}
+
 				res := e.wakeupEntry(entry, cfg, force, now, rpc, exec)
 
 				e.mu.Lock()
@@ -1293,6 +1401,28 @@ func (e *Engine) recordWakeupResult(res WakeupAccountResult, failed bool) {
 	}
 }
 
+// confirmResetWakeupNeeded re-reads the account's quota right before a reset-triggered
+// wakeup so the decision is not based on a cached read from before the reset.
+func (e *Engine) confirmResetWakeupNeeded(entry AuthEntry, now time.Time, refresh func(AuthEntry) bool) bool {
+	if !e.refreshMu.TryRLock() {
+		return true // A full refresh is running; act on the cached read.
+	}
+	started := time.Now().UTC()
+	ok := refresh(entry)
+	e.refreshMu.RUnlock()
+	if !ok {
+		return true
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	q, has := e.quotas[entry.ID]
+	fetchedAt, valid := parseWindowResetTime(q.FetchedAt)
+	if !has || !valid || fetchedAt.Before(started) {
+		return true
+	}
+	return e.accountNeedsResetWakeupLocked(q, now)
+}
+
 func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) bool) {
 	if !e.refreshMu.TryRLock() {
 		return
@@ -1302,7 +1432,18 @@ func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) boo
 	if refresh(entry) {
 		e.mu.Lock()
 		if q, ok := e.quotas[entry.ID]; ok {
-			e.updateWakeupObservedResetLocked(q)
+			if fetchedAt, valid := parseWindowResetTime(q.FetchedAt); valid && !fetchedAt.Before(started) && q.Error == "" {
+				retryAt := e.verifyWakeupWindowLocked(q, time.Now().UTC())
+				if res, ok := e.wakeupResults[entry.ID]; ok && res.Status == "sent" {
+					res.RetryAt = ""
+					if !retryAt.IsZero() {
+						res.RetryAt = retryAt.Format(time.RFC3339Nano)
+					}
+					e.wakeupResults[entry.ID] = res
+				}
+			} else {
+				e.updateWakeupObservedResetLocked(q)
+			}
 			if fetchedAt, valid := parseWindowResetTime(q.FetchedAt); entry.Provider == "antigravity" && valid && !fetchedAt.Before(started) && q.Error == "" {
 				res := e.wakeupResults[entry.ID]
 				// Copy the slice so snapshots already handed to readers remain immutable.
@@ -1368,22 +1509,8 @@ func (e *Engine) wakeupEntry(
 			At:       ts,
 		}
 	}
-	if !force && cfg.SkipActiveWindow {
-		var five *QuotaWindow
-		if hasQuota {
-			five = quota.Five
-		}
-		if isFiveHourWindowActive(five, sent, now) {
-			return WakeupAccountResult{
-				AuthID:   entry.ID,
-				Provider: entry.Provider,
-				Name:     entry.Name,
-				Status:   "skipped",
-				Reason:   wakeupReasonWindow,
-				At:       ts,
-			}
-		}
-	}
+	// Always send: the active-window check runs on cached quota and misjudged windows that
+	// were about to reset. A post-send fresh read verifies the window and queues a retry.
 	usedModel, failure := tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
 	if failure != "" {
 		status := "failed"
@@ -1406,7 +1533,7 @@ func (e *Engine) wakeupEntry(
 		}
 	}
 	e.mu.Lock()
-	e.wakeupLastSent[wakeupSentKey(entry.ID, "")] = wakeupSentRecord{At: now.UTC()}
+	e.wakeupLastSent[wakeupSentKey(entry.ID, "")] = newWakeupSentRecord(sent, now)
 	e.mu.Unlock()
 	return WakeupAccountResult{
 		AuthID:   entry.ID,
@@ -1444,8 +1571,6 @@ func (e *Engine) wakeupAntigravityEntry(
 	switch {
 	case isQuotaWindowExhausted(five, now) || isQuotaWindowExhausted(week, now):
 		g.Status, g.Reason = "exhausted", wakeupReasonExhausted
-	case !force && cfg.SkipActiveWindow && isFiveHourWindowActive(five, sent, now):
-		g.Status, g.Reason = "skipped", wakeupReasonWindow
 	default:
 		if configuredGeminiWakeupModel(cfg) == "" {
 			models, failure := antigravityWakeupCatalog(entry, rpc)
@@ -1461,7 +1586,7 @@ func (e *Engine) wakeupAntigravityEntry(
 		case g.Reason == "":
 			g.Status = "sent"
 			e.mu.Lock()
-			e.wakeupLastSent[key] = wakeupSentRecord{At: now.UTC()}
+			e.wakeupLastSent[key] = newWakeupSentRecord(sent, now)
 			e.mu.Unlock()
 		case g.Reason == wakeupErrRateLimited:
 			g.Status = "exhausted"
@@ -1502,7 +1627,7 @@ func isLightWakeupModel(model string) bool {
 	if isNonChatWakeupModel(model) || isHeavyWakeupModel(model) {
 		return false
 	}
-	l := strings.ToLower(model)
+	l := strings.TrimPrefix(strings.ToLower(model), "gemini-") // The family name itself contains “mini”.
 	for _, token := range []string{"haiku", "nano", "mini", "flash-lite", "lite", "spark", "flash", "luna", "fast"} {
 		if strings.Contains(l, token) {
 			return true
@@ -1738,9 +1863,12 @@ func executeWakeupModel(entry AuthEntry, model string, message string, rpc func(
 		// A fixed 16-token cap can truncate output before a thinking model
 		// completes. Only specify an effort on models with a known low setting.
 		delete(requestBody, "max_tokens")
-		switch model {
-		case "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash":
+		switch {
+		case model == "gemini-3.1-flash-lite" || model == "gemini-3.5-flash-lite" || model == "gemini-3-flash":
 			requestBody["reasoning_effort"] = "minimal"
+		case strings.HasPrefix(strings.ToLower(model), "gemini-4-"):
+			// CPA's Gemini 4 catalog supports "low", not "minimal".
+			requestBody["reasoning_effort"] = "low"
 		}
 	}
 	payload, err := json.Marshal(requestBody)

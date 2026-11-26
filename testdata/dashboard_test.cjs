@@ -1971,6 +1971,54 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert.equal(d.elements.get('tab-wakeup').children[0].textContent, 'Scheduled wakeup');
 });
 
+test('wakeup lists enabled Antigravity accounts and sends the selected Gemini 4', async () => {
+  const enabled={auth_id:'ag-on',provider:'antigravity',name:'enabled@example.test'};
+  const disabled={auth_id:'ag-off',provider:'antigravity',name:'disabled@example.test',disabled:true};
+  const extra={auth_id:'ag-extra',provider:'antigravity',name:'extra@example.test'};
+  const model='gemini-4-argon-high',calls=[];
+  let accounts=[disabled],results={},finished='';
+  let config={mode:'daily',cron:'0 6,11,16,21 * * *',providers:{claude:true,codex:true,antigravity:true},models:{'antigravity:gemini':model}};
+  const snapshot=()=>({quotas:accounts,wakeup:{config,results,last_run_finished_at:finished}});
+  const d=dashboard(login(),async (url,options)=>{
+    calls.push({url,options});
+    if(url.includes('/auth-files/models?')){
+      return reply({models:(url.endsWith('ag-on')?[model,'gemini-4-carbon-high','gemini-3.5-flash-lite','gemini-4-image','claude-sonnet-4-6']:['gemini-4-neon-xhigh',model]).map(id=>({id}))});
+    }
+    if(url.endsWith('/wakeup/config')){config=JSON.parse(options.body);return reply({wakeup:snapshot().wakeup});}
+    if(url.endsWith('/wakeup/run')){
+      finished='2026-11-25T06:00:03Z';
+      results={'ag-on':{...enabled,status:'sent',model:config.models['antigravity:gemini'],at:finished,groups:[{group:'gemini',status:'sent',model:config.models['antigravity:gemini']}]}};
+      return reply({account_result_at:''},202);
+    }
+    return reply(snapshot());
+  });
+  await d.api.load();d.api.setTab('wakeup');await new Promise(resolve=>setImmediate(resolve));
+  assert.match(d.elements.get('wakeup-scope-text').textContent,/暂无已启用账户/);
+  const select=d.elements.get('wakeup-model-select-ag-gemini');
+  assert.equal(select.value,'__custom__');
+  d.elements.get('wakeup-text').value='hello';d.elements.get('wakeup-text').oninput();
+  accounts=[disabled,enabled];await d.elements.get('refresh').onclick();
+  assert.equal(select.value,model);
+  assert.equal(d.elements.get('wakeup-model-ag-gemini').hidden,true);
+  const rows=d.elements.get('wakeup-accounts-list').children;
+  assert.equal(rows.length,1);
+  assert(descendants(rows[0]).some(node=>node.textContent===enabled.name));
+  const testButton=descendants(rows[0]).find(node=>node.className==='button wakeup-account-test');
+  assert.equal(testButton.disabled,false);
+  assert.deepEqual(select.children.slice(1,-1).map(node=>node.value),['gemini-3.5-flash-lite',model,'gemini-4-carbon-high']);
+  await testButton.onclick();
+  const mutations=calls.filter(c=>c.options.method==='POST');
+  assert.deepEqual(mutations.map(c=>c.url.split('/').at(-1)),['config','run']);
+  assert(!calls.some(c=>c.url.endsWith('/wakeup/accounts')),'wakeup must use the existing snapshot roster');
+  assert.equal(JSON.parse(mutations[0].options.body).models['antigravity:gemini'],model);
+  assert.deepEqual(JSON.parse(mutations[1].options.body),{auth_id:'ag-on',force:true});
+  assert.match(d.elements.get('wakeup-message-box').textContent,/尚未确认 5 小时窗口/);
+  accounts=[disabled,enabled,extra];await d.elements.get('refresh').onclick();
+  assert.equal(select.children.filter(node=>node.value===model).length,1);
+  assert(select.children.some(node=>node.value==='gemini-4-neon-xhigh'));
+  assert(!calls.some(c=>c.url.includes('name=ag-off')),'disabled account catalog was queried');
+});
+
 test('Google Antigravity wakeup errors never display reset-credit disabled copy and surface CPA TOS auto-disable badge', async () => {
   const sample = {
     quotas: [
