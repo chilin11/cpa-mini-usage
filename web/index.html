@@ -164,6 +164,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .wakeup-preview.invalid{color:var(--bad);background:var(--bad-soft)}
 .wakeup-preview-chip{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font:550 11px/1.4 var(--mono);font-variant-numeric:tabular-nums}
 .wakeup-preview-chip:first-of-type{border-color:var(--edge);background:var(--accent-soft);color:var(--accent)}
+.wakeup-preview-tz-warn{color:var(--warm);font-weight:550}
 .wakeup-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink);cursor:pointer}
 .wakeup-check input{width:14px;height:14px;margin:0;accent-color:var(--accent);cursor:pointer}
 .wakeup-msg-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -381,7 +382,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.45</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.46</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -752,7 +753,7 @@ const translations={
   '快速生成每 5 小时 Cron':'Quick 5-hour Cron generator','从':'From','起始小时':'Start hour','分钟':'Minute','起，每':'every','间隔小时':'Interval hours','3 小时':'3h','4 小时':'4h','5 小时':'5h','6 小时':'6h','8 小时':'8h','12 小时':'12h',
   '至':'until','截止小时':'End hour','重复日期':'Days','每天':'Every day','工作日':'Weekdays','周末':'Weekends',
   'Cron 表达式（分 时 日 月 周）':'Cron expression (min hour day month dow)','时区':'Timezone','本机':'Local',
-  '接下来执行：':'Next runs:','今天':'Today','明天':'Tomorrow','周日':'Sun','周一':'Mon','周二':'Tue','周三':'Wed','周四':'Thu','周五':'Fri','周六':'Sat',
+  '接下来执行：':'Next runs:','与本机 {local} 不同，下次即本机 {time}':'Differs from local {local}; next is {time} local','今天':'Today','明天':'Tomorrow','周日':'Sun','周一':'Mon','周二':'Tue','周三':'Wed','周四':'Thu','周五':'Fri','周六':'Sat',
   'Cron 表达式无效（需要 5 段：分 时 日 月 周，例如 0 6,11,16,21 * * *）。':'Invalid Cron expression (5 fields required: min hour day month dow, e.g. 0 6,11,16,21 * * *).',
   '仅在 5 小时窗口重置后自动唤醒（未设置 Cron）。':'Will only wake automatically after 5-hour windows reset (no Cron set).',
   '请填写有效的 5 段 Cron 表达式，或勾选“5 小时窗口重置后也自动补发”。':'Enter a valid 5-field Cron expression or enable post-reset auto wakeup.',
@@ -942,7 +943,7 @@ function acceptSnapshot(snapshot){
   const quotas=quotaContent(snapshot);
   if(quotas!==quotaStamp){renderQuotas();quotaStamp=quotas;}
   if(requests!==requestStamp){renderRequests();requestStamp=requests;}
-  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(snapshot?.wakeup?.config);renderWakeupPage(!wakeupForm.dirty);if(tab==='wakeup')loadWakeupModelHints();restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
+  updateCountdowns();updateSyncInfo();syncAccountControls();updatePersistence();if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(snapshot?.wakeup?.config,snapshot?.wakeup?.persisted);renderWakeupPage(!wakeupForm.dirty);if(tab==='wakeup')loadWakeupModelHints();restoreFocus(resetDialog||disableDialog?focused:focused?.startsWith('reset-')||focused?.startsWith('disable-')?'':focused);
 }
 function updateSyncInfo(){
   if(tab==='requests'){
@@ -1371,19 +1372,20 @@ function syncBuilderFromCron(expr){
   const dowField=spec.norm.split(' ')[4];
   if(['*','1-5','0,6'].includes(dowField))$('wakeup-gen-days').value=dowField;
 }
-function defaultWakeupDraft(source){
+function defaultWakeupDraft(source,persisted=true){
   const cfg=source&&typeof source==='object'?source:{};
   const providers=cfg.providers&&typeof cfg.providers==='object'?cfg.providers:{};
   const models=cfg.models&&typeof cfg.models==='object'?cfg.models:{};
   const mode=['daily','reset','both'].includes(cfg.mode)?cfg.mode:'daily';
   const rawCron=String(cfg.cron||'').trim();
   const cron=rawCron||legacyTimesToCron(cfg.times)||(mode==='reset'?'':defaultCronExpr);
+  const useSavedTz=persisted!==false&&Number.isInteger(cfg.timezone_offset_min);
   return {
     enabled:Boolean(cfg.enabled),
     cron,
     auto_reset:mode==='reset'||mode==='both',
     times:list(cfg.times).filter(v=>/^\d{2}:\d{2}$/.test(String(v))),
-    timezone_offset_min:Number.isInteger(cfg.timezone_offset_min)?cfg.timezone_offset_min:browserTimezoneOffsetMin(),
+    timezone_offset_min:useSavedTz?cfg.timezone_offset_min:browserTimezoneOffsetMin(),
     providers:{claude:providers.claude!==false,codex:providers.codex!==false,antigravity:providers.antigravity!==false},
     excluded_auth_ids:list(cfg.excluded_auth_ids).map(String),
     models:{claude:String(models.claude||''),codex:String(models.codex||''),'antigravity:gemini':[models['antigravity:gemini'],models.antigravity].map(m=>String(m||'').trim()).find(isGeminiWakeupModelJS)||''},
@@ -1493,7 +1495,7 @@ function wakeupSlotModelOptions(slot){
   });
 }
 function ensureWakeupDraft(){
-  if(!wakeupForm.draft)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
+  if(!wakeupForm.draft)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config,data?.wakeup?.persisted);
   return wakeupForm.draft;
 }
 function populateWakeupModelSelects(){
@@ -1592,6 +1594,10 @@ function renderWakeupCronPreview(){
   const nodes=[el('span','',t('接下来执行：'))];
   for(const ms of runs)nodes.push(el('span','wakeup-preview-chip',formatCronRunChip(ms,d.timezone_offset_min)));
   nodes.push(el('span','',formatUtcOffset(d.timezone_offset_min)));
+  const localMin=browserTimezoneOffsetMin();
+  if(d.timezone_offset_min!==localMin){
+    nodes.push(el('span','wakeup-preview-tz-warn',t('与本机 {local} 不同，下次即本机 {time}',{local:formatUtcOffset(localMin),time:formatCronRunChip(runs[0],localMin)})));
+  }
   box.replaceChildren(...nodes);
 }
 function renderWakeupResults(){
@@ -1609,6 +1615,8 @@ function renderWakeupResults(){
       if(item.model)parts.push(item.model);
       if(item.reason)parts.push(wakeupReasonText(item.reason));
     }
+    const note=wakeupWindowNote(item);
+    if(note)parts.push(note);
     if(item.at)parts.push(clock(item.at));
     add(main,'span','wakeup-result-meta',parts.join(' · '));
     row.append(makeWakeupBadge(wakeupDisplayStatus(item),formatAccountWakeupSummary(item)));
@@ -1813,7 +1821,7 @@ async function saveWakeupConfig(silentNotice=false){
     if(key!==savedKey||guessKey()!==savedKey){await load();return false;}
     if(!response?.wakeup)throw failure('无法保存设置，请稍后重试。');
     data={...data,wakeup:response.wakeup};
-    wakeupForm.draft=defaultWakeupDraft(response.wakeup.config);wakeupForm.dirty=false;wakeupForm.saving=false;
+    wakeupForm.draft=defaultWakeupDraft(response.wakeup.config,response.wakeup.persisted);wakeupForm.dirty=false;wakeupForm.saving=false;
     if(!silentNotice)wakeupForm.notice='定时唤醒设置已保存。';
     syncPendingCards();renderWakeupPage(true);
     return true;
@@ -1915,7 +1923,7 @@ async function toggleAccountWakeupExclude(id,excluded){
     if(key!==savedKey||guessKey()!==savedKey){await load();return;}
     if(!response?.wakeup)throw failure('无法保存设置，请稍后重试。');
     data={...data,wakeup:response.wakeup};
-    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(response.wakeup.config);
+    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(response.wakeup.config,response.wakeup.persisted);
     else wakeupForm.draft.excluded_auth_ids=list(response.wakeup.config?.excluded_auth_ids).map(String);
     syncPendingCards();renderWakeupPage(false);
     showAccountNote(id,excluded?'此账户已排除定时唤醒。':'此账户已恢复参与定时唤醒。');
@@ -2395,7 +2403,7 @@ function setTab(selected){
   $('dashboard').classList.toggle('request-view',tab==='requests');syncHeader();updateSyncInfo();
   if(tab==='requests'&&supportsHistory()&&!historyBusy&&!historyPage)loadHistory(true);
   if(tab==='wakeup'){
-    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config);
+    if(!wakeupForm.dirty)wakeupForm.draft=defaultWakeupDraft(data?.wakeup?.config,data?.wakeup?.persisted);
     renderWakeupPage(!wakeupForm.dirty);
     loadWakeupModelHints(openingWakeup);
   }

@@ -2076,3 +2076,44 @@ test('Google Antigravity wakeup errors never display reset-credit disabled copy 
   assert.match(groupStatus('ag-manual').textContent,/窗口待确认/);
 });
 
+test('wakeup defaults unpersisted timezone to browser, flags timezone mismatch, and shows window notes in recent results', async () => {
+  const localMin = -new Date().getTimezoneOffset();
+  const otherMin = localMin === 480 ? -480 : 480;
+  const sample = (persisted) => ({
+    quotas: [
+      { auth_id: 'cx-ok', provider: 'codex', name: 'ok@example.com', five_hour: { used_percent: 1 } },
+      { auth_id: 'cx-run', provider: 'codex', name: 'run@example.com', five_hour: { used_percent: 30 } },
+      { auth_id: 'cl-retry', provider: 'claude', name: 'retry@example.com', five_hour: { used_percent: 0 } },
+    ],
+    wakeup: {
+      persisted,
+      config: { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: otherMin, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' },
+      results: {
+        'cx-ok': { auth_id: 'cx-ok', provider: 'codex', name: 'ok@example.com', status: 'sent', model: 'gpt-6-luna', at: '2026-11-26T03:14:55Z', window_reset_at: '2026-11-26T08:14:55Z' },
+        'cx-run': { auth_id: 'cx-run', provider: 'codex', name: 'run@example.com', status: 'sent', model: 'gpt-6-luna', at: '2026-11-26T03:14:55Z', window_reset_at: '2026-11-26T06:14:08Z', retry_at: '2026-11-26T06:14:38Z' },
+        'cl-retry': { auth_id: 'cl-retry', provider: 'claude', name: 'retry@example.com', status: 'sent', model: 'claude-haiku-5-5', at: '2026-11-26T03:14:55Z', retry_at: '2026-11-26T03:16:55Z' },
+      },
+    },
+  });
+
+  // Unpersisted config defaults to browser local timezone without mismatch warning.
+  const d = dashboard({ managementKey: 'key' }, async () => reply(sample(false)));
+  await d.api.load();
+  d.api.setTab('wakeup');
+  assert.equal(Number(d.elements.get('wakeup-tz').value), localMin);
+  assert.equal(descendants(d.elements.get('wakeup-cron-preview')).some(n => n.className === 'wakeup-preview-tz-warn'), false);
+
+  // Persisted config keeps saved timezone and warns clearly when it differs from browser timezone.
+  d.api.acceptSnapshot(sample(true));
+  assert.equal(Number(d.elements.get('wakeup-tz').value), otherMin);
+  const warn = descendants(d.elements.get('wakeup-cron-preview')).find(n => n.className === 'wakeup-preview-tz-warn');
+  assert(warn && warn.textContent.includes('与本机') && warn.textContent.includes('下次即本机'));
+
+  // Recent wakeup records list displays window confirmation, running-window and retry details inline.
+  const metas = descendants(d.elements.get('wakeup-results')).filter(n => n.className === 'wakeup-result-meta').map(n => n.textContent);
+  assert(metas.some(s => s.includes('5 小时窗口已确认，重置时间：')), `expected confirmed window note: ${metas}`);
+  assert(metas.some(s => s.includes('已有 5 小时窗口进行中') && s.includes('重置后自动唤醒')), `expected running window note: ${metas}`);
+  assert(metas.some(s => s.includes('新窗口未开启') && s.includes('自动重试')), `expected retry note: ${metas}`);
+});
+
+

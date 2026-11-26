@@ -294,6 +294,10 @@ Scheduled wakeups always send: the **Skip active 5-hour windows** option is remo
 
 A wakeup sent inside a 5-hour window that is already running is now reported as such ("5-hour window already running; wakes again after it resets") with that window's reset time, instead of "No new window yet", and its single follow-up 30 seconds after the reset no longer uses the quick-retry budget. Claude/Codex results show the confirmed reset time of a newly opened window. To avoid Claude usage-API rate limits, reset-triggered wakeups no longer re-read quota before sending (each wakeup makes only its one post-send read), and quick retries after a missed window are spaced 2, 5 and 10 minutes apart.
 
+### v0.1.46
+
+Show confirmed window reset times, already-running window notes, and queued retry times directly in the **Recent wakeup records** list for Claude and Codex accounts instead of only in badge hover tooltips. Unpersisted wakeup setups now default to the browser's local timezone rather than inheriting the CPA server/container timezone, and the Cron preview highlights when the selected timezone differs from the browser timezone along with the next run converted to local time.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
