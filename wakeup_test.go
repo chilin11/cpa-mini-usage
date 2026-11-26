@@ -486,7 +486,7 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		attempts++
 		return model, wakeupErrModelUnavail
 	}
-	res := e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, true, time.Now().UTC(), nil, exec)
+	res := e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now().UTC(), wakeupSentRecord{}, nil, exec)
 	if attempts != 1 || res.Status != "failed" || res.Reason != wakeupErrModelUnavail {
 		t.Fatalf("explicit user model must not silently fall back: attempts=%d res=%+v", attempts, res)
 	}
@@ -498,7 +498,7 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		attempts++
 		return model, wakeupErrRateLimited
 	}
-	res = e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, true, time.Now().UTC(), nil, exec429)
+	res = e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now().UTC(), wakeupSentRecord{}, nil, exec429)
 	if attempts != 1 || res.Status != "exhausted" || res.Reason != wakeupErrRateLimited {
 		t.Fatalf("429 must stop immediately as exhausted: attempts=%d res=%+v", attempts, res)
 	}
@@ -776,7 +776,7 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 		called = true
 		return model, ""
 	}
-	res := e.wakeupEntry(AuthEntry{ID: "codex-full", Provider: "codex"}, e.wakeupConfig, true, now, nil, execShouldNotRun)
+	res := e.wakeupEntry(AuthEntry{ID: "codex-full", Provider: "codex"}, e.wakeupConfig, "test", "", now, wakeupSentRecord{}, nil, execShouldNotRun)
 	if called || res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
 		t.Fatalf("expected 100%% used account to report exhausted without calling model: called=%v res=%+v", called, res)
 	}
@@ -800,7 +800,7 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 	execAuthNotFound := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
 		return model, wakeupErrModelUnavail
 	}
-	res = e.wakeupEntry(entries[0], e.wakeupConfig, true, now, nil, execAuthNotFound)
+	res = e.wakeupEntry(entries[0], e.wakeupConfig, "test", "", now, wakeupSentRecord{}, nil, execAuthNotFound)
 	if res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
 		t.Fatalf("expected cooling account auth_not_found to report exhausted, got %+v", res)
 	}
@@ -944,24 +944,44 @@ func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
 	}
 
 	sent := wakeupSentRecord{At: at}
-	if rec, reset := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 1, ResetAt: at.Add(5 * time.Hour).Format(time.RFC3339)}, at.Add(time.Second)); !rec.RetryAt.IsZero() || rec.ResetAt.IsZero() || rec.Misses != 0 || !reset.Equal(at.Add(5*time.Hour)) {
-		t.Fatalf("opened window must be confirmed: %+v", rec)
+	if rec, reset, existing := verifyWakeupSentRecord("codex", sent, &QuotaWindow{Used: 1, ResetAt: at.Add(5 * time.Hour).Format(time.RFC3339)}, at.Add(time.Second)); !rec.RetryAt.IsZero() || rec.ResetAt.IsZero() || rec.Misses != 0 || existing || !reset.Equal(at.Add(5*time.Hour)) {
+		t.Fatalf("opened codex window must be confirmed: rec=%+v existing=%v", rec, existing)
 	}
-	// Landed in the expiring window (resets 6s after the send).
+	// Codex window started 1h earlier (4h01m remaining) must be recognized as already running, not newly opened.
+	hourOld := &QuotaWindow{Used: 1, ResetAt: at.Add(4*time.Hour + time.Minute).Format(time.RFC3339)}
+	if rec, reset, existing := verifyWakeupSentRecord("codex", sent, hourOld, at.Add(time.Second)); !existing || !rec.RetryAt.IsZero() || !rec.ResetAt.Equal(at.Add(4*time.Hour+time.Minute)) || !reset.Equal(at.Add(4*time.Hour+time.Minute)) {
+		t.Fatalf("1h-old codex window must be marked existing without queuing retry: rec=%+v existing=%v", rec, existing)
+	}
+	// Claude aligns a new window to the top of the clock hour (e.g. 09:03:12 -> 13:59:59).
+	claudeAt := time.Date(2026, 11, 26, 9, 3, 12, 0, time.UTC)
+	claudeNew := time.Date(2026, 11, 26, 13, 59, 59, 0, time.UTC)
+	if rec, reset, existing := verifyWakeupSentRecord("claude", wakeupSentRecord{At: claudeAt}, &QuotaWindow{Used: 1, ResetAt: claudeNew.Format(time.RFC3339)}, claudeAt.Add(time.Second)); existing || !rec.RetryAt.IsZero() || !reset.Equal(claudeNew) {
+		t.Fatalf("claude top-of-hour new window must be confirmed: rec=%+v existing=%v", rec, existing)
+	}
+	claudePrev := time.Date(2026, 11, 26, 12, 59, 59, 0, time.UTC)
+	if rec, reset, existing := verifyWakeupSentRecord("claude", wakeupSentRecord{At: claudeAt}, &QuotaWindow{Used: 1, ResetAt: claudePrev.Format(time.RFC3339)}, claudeAt.Add(time.Second)); !existing || !rec.RetryAt.IsZero() || !reset.Equal(claudePrev) {
+		t.Fatalf("claude prior-hour window must be marked existing without queuing retry: rec=%+v existing=%v", rec, existing)
+	}
+	// Landed in the expiring window (resets 6s after the send): 1st miss retries right past the reset margin.
 	old := &QuotaWindow{Used: 40, ResetAt: at.Add(6 * time.Second).Format(time.RFC3339)}
-	rec, reset := verifyWakeupSentRecord(sent, old, at.Add(2*time.Second))
-	if rec.Misses != 1 || !reset.IsZero() || !rec.RetryAt.Equal(at.Add(2*time.Second+2*time.Minute)) {
-		t.Fatalf("miss must queue a two-minute retry: %+v", rec)
+	rec, reset, existing := verifyWakeupSentRecord("codex", sent, old, at.Add(2*time.Second))
+	if rec.Misses != 1 || existing || !reset.IsZero() || !rec.RetryAt.Equal(at.Add(6*time.Second+wakeupResetMargin)) {
+		t.Fatalf("first miss on expiring window must retry right past reset margin: rec=%+v existing=%v", rec, existing)
 	}
-	// Sent in the middle of a running window: follow up right after it ends.
+	// Second miss backs off so providers are not spammed.
+	rec2, _, _ := verifyWakeupSentRecord("codex", rec, old, at.Add(40*time.Second))
+	if rec2.Misses != 2 || !rec2.RetryAt.Equal(at.Add(40*time.Second+5*time.Minute)) {
+		t.Fatalf("second miss must back off 5m: rec=%+v", rec2)
+	}
+	// Sent in the middle of a running window (2h remaining): record reset, do NOT queue off-Cron retry.
 	long := &QuotaWindow{Used: 40, ResetAt: at.Add(2 * time.Hour).Format(time.RFC3339)}
-	if rec, reset := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, long, at.Add(time.Second)); !rec.RetryAt.Equal(at.Add(2*time.Hour+wakeupResetMargin)) || rec.Misses != wakeupMaxQuickRetries || !reset.Equal(at.Add(2*time.Hour)) {
-		t.Fatalf("running window must queue a follow-up after its reset without using retries: %+v", rec)
+	if rec, reset, existing := verifyWakeupSentRecord("codex", wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, long, at.Add(time.Second)); !existing || !rec.RetryAt.IsZero() || rec.Misses != 0 || !rec.ResetAt.Equal(at.Add(2*time.Hour)) || !reset.Equal(at.Add(2*time.Hour)) {
+		t.Fatalf("running window must record reset without queuing an off-schedule retry: rec=%+v existing=%v", rec, existing)
 	}
-	if rec, _ := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, old, at); !rec.RetryAt.IsZero() {
+	if rec, _, _ := verifyWakeupSentRecord("codex", wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, old, at); !rec.RetryAt.IsZero() {
 		t.Fatalf("quick retries must be bounded: %+v", rec)
 	}
-	if rec, _ := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 3}, at); rec != sent {
+	if rec, _, _ := verifyWakeupSentRecord("codex", sent, &QuotaWindow{Used: 3}, at); rec != sent {
 		t.Fatalf("usage without a reset time must keep the record: %+v", rec)
 	}
 
@@ -1027,5 +1047,758 @@ func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
 	waitWakeupIdle(t, e)
 	if sends != 2 {
 		t.Fatalf("verified window must stop retries: sends=%d", sends)
+	}
+}
+
+func TestWakeupBothModeRestsBeforeCronSlot(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.load()
+	e.wakeupConfig = WakeupConfig{
+		Enabled:           true,
+		Mode:              "both",
+		Cron:              "0 6,11,16,21 * * *",
+		TimezoneOffsetMin: -480,
+		Providers:         map[string]bool{"claude": true, "codex": true, "antigravity": true},
+		Message:           "hi",
+	}
+	loc := wakeupZone(-480)
+	var mu sync.Mutex
+	sends := 0
+	rpc := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			return map[string]any{"files": []any{
+				map[string]any{"id": "cx", "auth_index": "i1", "provider": "codex", "email": "cx@example.com"},
+			}}, nil
+		}
+		return nil, nil
+	}
+	exec := func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		mu.Lock()
+		sends++
+		mu.Unlock()
+		return model, ""
+	}
+	setIdleAt := func(ts time.Time) {
+		e.mu.Lock()
+		e.quotas["cx"] = AccountQuota{
+			AuthID: "cx", Provider: "codex", Name: "cx@example.com",
+			FetchedAt: ts.UTC().Format(time.RFC3339Nano),
+			Five:      &QuotaWindow{Used: 0},
+		}
+		e.mu.Unlock()
+	}
+
+	// Overnight 02:01 and 05:01 PST: next Cron is 06:00 (< 5h05m away) -> must rest so 06:00 aligns.
+	for _, h := range []int{2, 5} {
+		ts := time.Date(2026, 11, 26, h, 1, 0, 0, loc)
+		setIdleAt(ts)
+		e.checkWakeupScheduleWith(ts, rpc, exec, nil)
+		waitWakeupIdle(t, e)
+		if sends != 0 {
+			t.Fatalf("both mode must not auto-wake at %02d:01 before 06:00 Cron slot (sends=%d)", h, sends)
+		}
+	}
+	// At 06:00 PST, the Cron slot fires cleanly.
+	at0600 := time.Date(2026, 11, 26, 6, 0, 12, 0, loc)
+	setIdleAt(at0600)
+	e.checkWakeupScheduleWith(at0600, rpc, exec, nil)
+	waitWakeupIdle(t, e)
+	if sends != 1 {
+		t.Fatalf("expected 06:00 Cron slot to fire, sends=%d", sends)
+	}
+
+	// With a once-daily 06:00 Cron + auto-reset, 11:01 PST has 18h59m until next Cron (>= 5h05m) -> auto-wakes.
+	e.mu.Lock()
+	e.wakeupConfig.Cron = "0 6 * * *"
+	e.wakeupLastSent["cx"] = wakeupSentRecord{At: at0600.UTC(), ResetAt: at0600.Add(5 * time.Hour).UTC()}
+	e.mu.Unlock()
+	at1101 := time.Date(2026, 11, 26, 11, 1, 0, 0, loc)
+	setIdleAt(at1101)
+	e.checkWakeupScheduleWith(at1101, rpc, exec, nil)
+	waitWakeupIdle(t, e)
+	if sends != 2 {
+		t.Fatalf("both mode should auto-wake when next Cron is >= 5h05m away, sends=%d", sends)
+	}
+}
+
+func TestWakeupPersistenceMigratesLegacyRetriesTogether(t *testing.T) {
+	at := time.Date(2026, 11, 26, 21, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name, provider               string
+		status, resetSide            string // resetSide is account or Gemini; empty for v0.1.44 or a quick retry.
+		delay, groupOffset           time.Duration
+		migrate, modern, staleResult bool
+		zeroMisses                   bool
+	}{
+		{name: "v45-short", provider: "codex", delay: 20*time.Minute + wakeupResetMargin, resetSide: "account", migrate: true},
+		{name: "v46-long", provider: "claude", delay: 2*time.Hour + wakeupResetMargin, resetSide: "account", migrate: true},
+		{name: "v46-Gemini-group-only", provider: "antigravity", delay: 6*time.Minute + wakeupResetMargin, resetSide: "gemini", migrate: true, zeroMisses: true},
+		{name: "v46-Gemini-group-formula-tolerance", provider: "antigravity", delay: 7 * time.Minute, resetSide: "gemini", groupOffset: 6*time.Minute + 28*time.Second, migrate: true, zeroMisses: true},
+		{name: "v46-Gemini-late-verification", provider: "antigravity", delay: 6*time.Minute + 40*time.Second, resetSide: "gemini", groupOffset: 5*time.Minute + 10*time.Second, zeroMisses: true},
+		{name: "v44-Gemini-existing-window-with-miss-count", provider: "antigravity", delay: 20*time.Minute + wakeupResetMargin, resetSide: "gemini", migrate: true},
+		{name: "v46-Gemini-observed-expiring-window", provider: "antigravity", delay: 2 * time.Minute, resetSide: "gemini", groupOffset: 10 * time.Second},
+		{name: "v46-Gemini-observed-at-five-minute-boundary", provider: "antigravity", delay: 5*time.Minute + wakeupResetMargin, resetSide: "gemini", groupOffset: 5 * time.Minute},
+		{name: "v46-Gemini-account-only", provider: "antigravity", delay: 20*time.Minute + wakeupResetMargin, resetSide: "account", migrate: true},
+		{name: "v44-Codex", provider: "codex", delay: 16*time.Minute + wakeupResetMargin, migrate: true},
+		{name: "v44-Gemini", provider: "antigravity", delay: 2*time.Hour + wakeupResetMargin, migrate: true},
+		{name: "quick-2m", provider: "codex", delay: 2 * time.Minute},
+		{name: "quick-5m", provider: "antigravity", delay: 5 * time.Minute},
+		{name: "quick-10m", provider: "claude", delay: 10 * time.Minute},
+		{name: "new-late-verification", provider: "codex", delay: 20 * time.Minute, modern: true},
+		{name: "new-exhausted", provider: "antigravity", status: "exhausted", delay: 40 * time.Second, modern: true},
+		{name: "stale-result-keep-later-quick-retry", provider: "codex", delay: 20*time.Minute + wakeupResetMargin, resetSide: "account", migrate: true, staleResult: true},
+	}
+	cfg := defaultWakeupConfig()
+	cfg.Enabled, cfg.Mode = true, "reset"
+	saved := persistedWakeup{
+		Config: cfg, LastSent: make(map[string]wakeupSentRecord), Results: make(map[string]WakeupAccountResult),
+	}
+	for _, tc := range cases {
+		retry := at.Add(tc.delay)
+		res := WakeupAccountResult{Provider: tc.provider, Status: tc.status, At: at.Format(time.RFC3339Nano), RetryAt: retry.Format(time.RFC3339Nano)}
+		if res.Status == "" {
+			res.Status = "sent"
+		}
+		reset := retry.Add(-wakeupResetMargin).Format(time.RFC3339Nano)
+		if tc.resetSide == "account" {
+			res.WindowResetAt = reset
+		}
+		if tc.provider == "antigravity" {
+			g := WakeupGroupResult{Group: "gemini", Status: res.Status, At: res.At}
+			if tc.resetSide == "gemini" {
+				g.WindowResetAt = reset
+				if tc.groupOffset != 0 {
+					g.WindowResetAt = at.Add(tc.groupOffset).Format(time.RFC3339Nano)
+				}
+			}
+			res.Groups = []WakeupGroupResult{g}
+		}
+		rec := wakeupSentRecord{At: at, RetryAt: retry, Misses: 1}
+		if tc.zeroMisses {
+			rec.Misses = 0
+		}
+		if tc.staleResult {
+			rec.At, rec.RetryAt = at.Add(time.Minute), at.Add(3*time.Minute)
+		}
+		if tc.modern {
+			rec.RetrySource, rec.RetrySlot, rec.RetryUntil = "schedule", "slot", at.Add(30*time.Minute)
+		}
+		saved.Results[tc.name] = res
+		key := tc.name
+		if tc.provider == "antigravity" {
+			key += "#gemini"
+		}
+		saved.LastSent[key] = rec
+	}
+	saved.LastSent["without-results"] = wakeupSentRecord{At: at, RetryAt: at.Add(45*time.Minute + wakeupResetMargin), Misses: 1}
+	saved.LastSent["without-results-zero-misses"] = wakeupSentRecord{At: at, RetryAt: at.Add(8*time.Minute + wakeupResetMargin)}
+	data, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEngine()
+	e.dir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(e.dir, wakeupConfigFileName), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	e.load()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			key := wakeupRecordKey(tc.name, tc.provider)
+			rec, res := e.wakeupLastSent[key], e.wakeupResults[tc.name]
+			want := saved.Results[tc.name]
+			if res.AuthID != tc.name || res.Status != want.Status {
+				t.Fatalf("state not reloaded: %+v", res)
+			}
+			if tc.migrate {
+				reset := at.Add(tc.delay - wakeupResetMargin)
+				if tc.groupOffset != 0 {
+					reset = at.Add(tc.groupOffset)
+				}
+				if res.RetryAt != "" || !res.WindowExisting || res.WindowResetAt != reset.Format(time.RFC3339Nano) {
+					t.Fatalf("existing window result not migrated: %+v", res)
+				}
+				if !tc.staleResult && (!rec.RetryAt.IsZero() || !rec.ResetAt.Equal(reset) || rec.Misses != 0 || !rec.legacyRetry()) {
+					t.Fatalf("existing window send record not migrated: %+v", rec)
+				}
+			} else if res.RetryAt != want.RetryAt || res.WindowExisting || res.WindowResetAt != "" {
+				t.Fatalf("quick retry result changed: %+v", res)
+			}
+			if !tc.migrate || tc.staleResult {
+				wantRec := saved.LastSent[key]
+				wantRec.RetryUntil = wantRec.At.Add(wakeupQuickRetryWindow)
+				if rec != wantRec {
+					t.Fatalf("quick retry record=%+v, want %+v", rec, wantRec)
+				}
+			}
+			if tc.provider == "antigravity" && (len(res.Groups) != 1 || res.Groups[0].WindowResetAt != res.WindowResetAt) {
+				t.Fatalf("Gemini reset differs between account and group: %+v", res)
+			}
+		})
+	}
+	if rec := e.wakeupLastSent["without-results"]; !rec.RetryAt.IsZero() || !rec.ResetAt.Equal(at.Add(45*time.Minute)) {
+		t.Fatalf("standalone legacy record was not migrated: %+v", rec)
+	}
+	if rec := e.wakeupLastSent["without-results-zero-misses"]; !rec.RetryAt.IsZero() || !rec.ResetAt.Equal(at.Add(8*time.Minute)) {
+		t.Fatalf("standalone zero-miss record was not migrated: %+v", rec)
+	}
+}
+
+func TestWakeupReloadsLegacyRetryOriginAndDispatchesIt(t *testing.T) {
+	slotAt := time.Date(2026, 11, 26, 11, 0, 0, 0, time.UTC)
+	ts := func(t time.Time) string { return t.Format(time.RFC3339Nano) }
+	firedAt := func(at time.Time) string { return fmt.Sprintf(`{%q:%q}`, cronSlotKey(at, 0), ts(at)) }
+	for _, tc := range []struct {
+		name, wantSource, lastTrigger                     string
+		fired, mode, cron                                 string
+		sendOffset, lastRunOffset, resetDelay, retryDelay time.Duration
+		existing                                          bool
+	}{
+		{name: "fired-slot", wantSource: "schedule", lastTrigger: "manual", lastRunOffset: 2 * time.Second,
+			fired: fmt.Sprintf(`{%q:%q,%q:%q,%q:%q}`, cronSlotKey(slotAt, 0), ts(slotAt), "older", ts(slotAt.Add(-5*time.Minute)), "late", ts(slotAt.Add(2*time.Second)))},
+		{name: "last-run-schedule", wantSource: "schedule", lastTrigger: "schedule", fired: firedAt(slotAt)},
+		{name: "no-evidence", lastTrigger: "schedule"},
+		{name: "manual-wins-over-slot", wantSource: "manual", lastTrigger: "manual", lastRunOffset: -time.Second, fired: firedAt(slotAt)},
+		{name: "test", wantSource: "test", lastTrigger: "test"},
+		{name: "account", wantSource: "account", lastTrigger: "account", lastRunOffset: time.Second},
+		{name: "manual-outside-batch", lastTrigger: "manual", lastRunOffset: -2 * time.Second},
+		{name: "reset-after-cron", wantSource: "reset", lastTrigger: "reset", fired: firedAt(slotAt),
+			mode: "both", cron: "0 11,16 * * *", sendOffset: 10 * time.Minute},
+		{name: "no-batch-evidence-after-cron", lastTrigger: "manual", lastRunOffset: -2 * time.Second, fired: firedAt(slotAt),
+			mode: "both", cron: "0 11,16 * * *", sendOffset: 10 * time.Minute},
+		{name: "v44-existing-window-does-not-retry", lastTrigger: "schedule", fired: firedAt(slotAt.Add(10 * time.Hour)),
+			cron: "0 21 * * *", sendOffset: 10 * time.Hour, resetDelay: 20 * time.Minute, retryDelay: 20*time.Minute + 30*time.Second, existing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := slotAt.Add(tc.sendOffset)
+			resetAt, due := at.Add(tc.resetDelay), at.Add(tc.retryDelay)
+			if tc.resetDelay == 0 {
+				resetAt = at.Add(10 * time.Second)
+			}
+			if tc.retryDelay == 0 {
+				due = at.Add(2 * time.Minute)
+			}
+			fired, mode, cron := tc.fired, tc.mode, tc.cron
+			if mode == "" {
+				mode = "daily"
+			}
+			if cron == "" {
+				cron = "0 11 * * *"
+			}
+			if fired == "" {
+				// Keep the next Cron slot away from the retry tick so a new run
+				// cannot mask a missing retry dispatch.
+				fired, cron = "{}", "0 12 * * *"
+			}
+			body := fmt.Sprintf(`{
+				"config":{"enabled":true,"mode":%q,"cron":%q,"timezone_offset_min":0,
+					"providers":{"antigravity":true},"models":{"antigravity:gemini":"gemini-3.5-flash-lite"}},
+				"fired_slots":%s,"last_run_at":%q,"last_run_trigger":%q,
+				"last_sent":{"ag#gemini":{"at":%q,"retry_at":%q,"misses":1}},
+				"results":{"ag":{"provider":"antigravity","status":"sent","at":%q,"retry_at":%q,
+					"groups":[{"group":"gemini","status":"sent","at":%q,"window_reset_at":%q}]}}
+			}`, mode, cron, fired, ts(at.Add(tc.lastRunOffset)), tc.lastTrigger, ts(at), ts(due), ts(at), ts(due), ts(at), ts(resetAt))
+			e := newEngine()
+			e.dir = t.TempDir()
+			if err := os.WriteFile(filepath.Join(e.dir, wakeupConfigFileName), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			e.load()
+			rec, res := e.wakeupLastSent["ag#gemini"], e.wakeupResults["ag"]
+			wantSlot, wantRetry, wantReset, wantAdvertised := "", "", "", ""
+			wantCalls := 0
+			if tc.wantSource != "" {
+				wantRetry = ts(due)
+				if tc.wantSource != "reset" {
+					wantAdvertised, wantCalls = wantRetry, 1
+				}
+			}
+			if tc.wantSource == "schedule" {
+				wantSlot = cronSlotKey(at, 0)
+			}
+			if tc.existing {
+				wantReset = ts(resetAt)
+				if !rec.ResetAt.Equal(resetAt) {
+					t.Fatalf("existing window reset was not retained: %+v", rec)
+				}
+			}
+			if rec.RetrySource != tc.wantSource || rec.RetrySlot != wantSlot || (!rec.RetryAt.IsZero()) != (wantRetry != "") {
+				t.Fatalf("incorrect recovered retry: %+v", rec)
+			}
+			if res.RetryAt != wantRetry || res.WindowResetAt != wantReset || len(res.Groups) != 1 || res.Groups[0].WindowResetAt != wantReset || res.WindowExisting != tc.existing {
+				t.Fatalf("incorrect migrated result: %+v", res)
+			}
+			if advertised := e.wakeupStateLocked(due).Results["ag"].RetryAt; advertised != wantAdvertised {
+				t.Fatalf("advertised retry=%q, want %q", advertised, wantAdvertised)
+			}
+			e.quotas["ag"] = AccountQuota{AuthID: "ag", Provider: "antigravity", FetchedAt: ts(due),
+				Groups: []QuotaGroup{{Key: "gemini", Five: &QuotaWindow{Used: 5, ResetAt: ts(resetAt)}}}}
+			rpc := func(method string, _ any) (any, error) {
+				if method != "host.auth.list" {
+					t.Errorf("unexpected RPC: %s", method)
+				}
+				return map[string]any{"files": []any{map[string]any{"id": "ag", "auth_index": "i1", "provider": "antigravity"}}}, nil
+			}
+			calls := 0
+			exec := func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				calls++
+				return model, ""
+			}
+			e.checkWakeupScheduleWith(due, rpc, exec, nil)
+			waitWakeupIdle(t, e)
+			e.checkWakeupScheduleWith(due.Add(30*time.Second), rpc, exec, nil)
+			waitWakeupIdle(t, e)
+			if calls != wantCalls {
+				t.Fatalf("dispatched %d legacy retries, want %d", calls, wantCalls)
+			}
+		})
+	}
+}
+
+func TestWakeupQuickRetryKeepsOriginalSlotAndDeadline(t *testing.T) {
+	at := time.Date(2026, 11, 26, 21, 0, 0, 0, time.UTC)
+	const slot = "2026-11-26|21:00|-480"
+	first := newWakeupSentRecord(wakeupSentRecord{}, at, "schedule", slot)
+	first, _, _ = verifyWakeupSentRecord("codex", first, &QuotaWindow{}, at)
+	if !first.RetryAt.Equal(at.Add(2*time.Minute)) || !first.RetryUntil.Equal(at.Add(30*time.Minute)) {
+		t.Fatalf("initial retry not bounded by original send: %+v", first)
+	}
+	followed := newWakeupSentRecord(first, at.Add(20*time.Minute), "reset", "")
+	if followed.RetrySource != "schedule" || followed.RetrySlot != slot || !followed.RetryUntil.Equal(first.RetryUntil) || followed.Misses != 1 {
+		t.Fatalf("follow-up lost original retry metadata: %+v", followed)
+	}
+	followed, _, _ = verifyWakeupSentRecord("codex", followed, &QuotaWindow{}, at.Add(25*time.Minute))
+	if !followed.RetryAt.Equal(first.RetryUntil) || followed.Misses != 2 {
+		t.Fatalf("retry exactly at deadline should be retained: %+v", followed)
+	}
+	next := newWakeupSentRecord(followed, followed.RetryAt, "reset", "")
+	outOfTime, _, _ := verifyWakeupSentRecord("codex", next, &QuotaWindow{}, next.At)
+	if !outOfTime.RetryAt.IsZero() || !outOfTime.legacyRetry() {
+		t.Fatalf("retry past original deadline was queued: %+v", outOfTime)
+	}
+	followed.Misses = wakeupMaxQuickRetries
+	outOfTries, _, _ := verifyWakeupSentRecord("codex", followed, &QuotaWindow{}, at)
+	if !outOfTries.RetryAt.IsZero() || !outOfTries.legacyRetry() {
+		t.Fatalf("exhausted retry retained retry metadata: %+v", outOfTries)
+	}
+	for _, delay := range []time.Duration{time.Hour, 5 * time.Hour} {
+		reset := followed.At.Add(delay)
+		confirmed, _, _ := verifyWakeupSentRecord("codex", followed, &QuotaWindow{Used: 1, ResetAt: reset.Format(time.RFC3339)}, followed.At)
+		if !confirmed.RetryAt.IsZero() || !confirmed.legacyRetry() || !confirmed.ResetAt.Equal(reset) || confirmed.Misses != 0 {
+			t.Fatalf("confirmation did not clear retry state: %+v", confirmed)
+		}
+	}
+	fresh := newWakeupSentRecord(first, followed.At, "schedule", "new-slot")
+	if fresh.RetrySlot != "new-slot" || !fresh.RetryUntil.Equal(followed.At.Add(30*time.Minute)) || fresh.Misses != 0 {
+		t.Fatalf("new schedule reused an old retry chain: %+v", fresh)
+	}
+	tooLate := first
+	tooLate.RetryAt = at.Add(time.Hour)
+	if isFiveHourWindowActive(nil, tooLate, at.Add(31*time.Minute)) {
+		t.Fatal("expired retry must not keep an idle window active")
+	}
+	e := newEngine()
+	e.wakeupConfig.Enabled = true
+	retryAt := first.RetryAt.Format(time.RFC3339Nano)
+	e.wakeupLastSent["ag#gemini"] = first
+	e.wakeupResults["ag"] = WakeupAccountResult{Provider: "antigravity", Status: "exhausted", RetryAt: retryAt}
+	if got := e.wakeupStateLocked(first.RetryUntil).Results["ag"].RetryAt; got != retryAt {
+		t.Fatalf("live retry missing from snapshot: %q", got)
+	}
+	if got := e.wakeupStateLocked(first.RetryUntil.Add(time.Nanosecond)).Results["ag"].RetryAt; got != "" {
+		t.Fatalf("snapshot advertised an expired retry: %q", got)
+	}
+	first.RetryAt = first.RetryAt.Add(time.Minute)
+	e.wakeupLastSent["ag#gemini"] = first
+	if got := e.wakeupStateLocked(at).Results["ag"].RetryAt; got != "" {
+		t.Fatalf("snapshot advertised a different queued retry: %q", got)
+	}
+	delete(e.wakeupLastSent, "ag#gemini")
+	if got := e.wakeupStateLocked(at).Results["ag"].RetryAt; got != "" {
+		t.Fatalf("snapshot advertised a missing queued retry: %q", got)
+	}
+	if e.wakeupResults["ag"].RetryAt != retryAt {
+		t.Fatal("snapshot must not modify persisted tracking")
+	}
+}
+
+func TestWakeupQuickRetryCannotBypassCronRestAfterExpiryOrFromReset(t *testing.T) {
+	now := time.Date(2026, 11, 27, 4, 0, 0, 0, wakeupZone(-480))
+	for _, tc := range []struct {
+		name, mode, source string
+		age                time.Duration
+		wantSend           bool
+	}{
+		{name: "schedule-follow-up", mode: "both", source: "schedule", age: 5 * time.Minute, wantSend: true},
+		{name: "missed-overnight", mode: "both", source: "schedule", age: 7 * time.Hour},
+		{name: "old-no-deadline", mode: "both", age: 7 * time.Hour},
+		{name: "live-legacy-source-rests", mode: "both", age: 5 * time.Minute},
+		{name: "unknown-source-rests", mode: "both", source: "unknown", age: 5 * time.Minute},
+		{name: "legacy-source-can-run-when-auto-reset-allowed", mode: "reset", age: 5 * time.Minute, wantSend: true},
+		{name: "ordinary-reset-rests", mode: "both", source: "reset", age: 5 * time.Minute},
+		{name: "reset-only-does-not-rest", mode: "reset", source: "reset", age: 5 * time.Minute, wantSend: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			e.dir = t.TempDir()
+			e.wakeupConfig = WakeupConfig{Enabled: true, Mode: tc.mode, Cron: "0 6,11,16,21 * * *", TimezoneOffsetMin: -480,
+				Providers: map[string]bool{"codex": true}}
+			e.quotas["cx"] = AccountQuota{AuthID: "cx", Provider: "codex", FetchedAt: now.Format(time.RFC3339), Five: &QuotaWindow{}}
+			at := now.Add(-tc.age)
+			rec := wakeupSentRecord{At: at, RetryAt: at.Add(2 * time.Minute), Misses: 1, RetrySource: tc.source}
+			if tc.source != "" {
+				rec.RetryUntil = at.Add(30 * time.Minute)
+			}
+			e.wakeupLastSent["cx"] = rec
+			e.wakeupResults["cx"] = WakeupAccountResult{Provider: "codex", Status: "sent", RetryAt: rec.RetryAt.Format(time.RFC3339Nano)}
+			if advertised := e.wakeupStateLocked(now).Results["cx"].RetryAt; (advertised != "") != tc.wantSend {
+				t.Fatalf("snapshot retry_at=%q, want retry available=%v", advertised, tc.wantSend)
+			}
+			sent := false
+			e.checkWakeupScheduleWith(now, func(string, any) (any, error) {
+				return map[string]any{"files": []any{map[string]any{"id": "cx", "auth_index": "i1", "provider": "codex"}}}, nil
+			}, func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				sent = true
+				return model, ""
+			}, nil)
+			waitWakeupIdle(t, e)
+			if sent != tc.wantSend {
+				t.Fatalf("sent=%v, want %v (retry=%+v)", sent, tc.wantSend, rec)
+			}
+		})
+	}
+}
+
+func TestWakeupFailedFollowUpConsumesQueuedRetry(t *testing.T) {
+	for _, tc := range []struct {
+		mode, provider, failure, status string
+	}{
+		{mode: "daily", provider: "codex", failure: wakeupErrRateLimited, status: "exhausted"},
+		{mode: "reset", provider: "antigravity", failure: wakeupErrAuthFailed, status: "failed"},
+	} {
+		t.Run(tc.mode+"/"+tc.provider+"/"+tc.failure, func(t *testing.T) {
+			due := time.Now().UTC()
+			key := wakeupRecordKey("acct", tc.provider)
+			retry := wakeupSentRecord{
+				At: due.Add(-2 * time.Minute), RetryAt: due, Misses: 1, RetrySource: "schedule", RetrySlot: "slot",
+			}
+			if tc.mode == "reset" {
+				// Model 11:00 send, 11:05 observed reset and 11:05:30 claim.
+				retry.At, retry.ResetAt = due.Add(-5*time.Minute-30*time.Second), due.Add(-30*time.Second)
+				retry.RetrySource, retry.RetrySlot = "reset", ""
+			}
+			firstAt := retry.At
+			retry.RetryUntil = firstAt.Add(30 * time.Minute)
+			e := newEngine()
+			e.dir = t.TempDir()
+			e.wakeupConfig = WakeupConfig{
+				Enabled: true, Mode: tc.mode, Cron: fmt.Sprintf("0 %d * * *", (due.Hour()+12)%24),
+				Providers: map[string]bool{tc.provider: true}, Models: map[string]string{wakeupGeminiKey: "gemini-3.5-flash-lite"},
+			}
+			e.wakeupLastSent[key] = retry
+			e.wakeupResults["acct"] = WakeupAccountResult{AuthID: "acct", Provider: tc.provider, Status: "sent",
+				At: firstAt.Format(time.RFC3339Nano), RetryAt: due.Format(time.RFC3339Nano)}
+			q := AccountQuota{AuthID: "acct", Provider: tc.provider, FetchedAt: due.Format(time.RFC3339Nano), Five: &QuotaWindow{}}
+			if tc.provider == "antigravity" {
+				q.Groups = []QuotaGroup{{Key: "gemini", Five: &QuotaWindow{}}}
+			}
+			e.quotas["acct"] = q
+			rpc := func(_ string, _ any) (any, error) {
+				return map[string]any{"files": []any{map[string]any{"id": "acct", "auth_index": "i1", "provider": tc.provider}}}, nil
+			}
+			if err := e.writeWakeupLocked(firstAt); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			var reloaded *Engine
+			var claimAt time.Time
+			exec := func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				calls++
+				e.mu.RLock()
+				claimed := e.wakeupLastSent[key]
+				claimAt = claimed.At
+				if claimAt.Before(due) || !claimed.ResetAt.IsZero() || !claimed.RetryAt.IsZero() {
+					t.Errorf("claim time and consumed retry must be recorded before model I/O: %+v", claimed)
+				}
+				if pending := e.wakeupResults["acct"].RetryAt; pending != "" {
+					t.Errorf("stored result promised another attempt while the consumed retry ran: %s", pending)
+				}
+				e.mu.RUnlock()
+				// Simulate a restart using only the disk state visible before the model
+				// returns and the original batch can persist any final result.
+				reloaded = newEngine()
+				reloaded.dir = e.dir
+				reloaded.load()
+				return model, tc.failure
+			}
+			e.checkWakeupScheduleWith(due, rpc, exec, nil)
+			waitWakeupIdle(t, e)
+			if res := e.wakeupResults["acct"]; calls != 1 || res.Status != tc.status || res.Reason != tc.failure || res.RetryAt != "" {
+				t.Fatalf("failed follow-up must not requeue: calls=%d result=%+v", calls, res)
+			}
+			if rec := reloaded.wakeupLastSent[key]; !rec.At.Equal(claimAt) || !rec.ResetAt.IsZero() || !rec.RetryAt.IsZero() {
+				t.Fatalf("consumption was not persisted at model dispatch: %+v", rec)
+			}
+			if res := reloaded.wakeupResults["acct"]; res.Status != "sent" || res.RetryAt != "" {
+				t.Fatalf("pre-dispatch write did not clear the historical result retry: %+v", res)
+			}
+			if reloaded.wakeupConfig.Mode != tc.mode {
+				t.Fatalf("reload used %q mode, want %q", reloaded.wakeupConfig.Mode, tc.mode)
+			}
+			reloaded.quotas["acct"] = q
+			replays := 0
+			// Quota is still fresh and idle; stale reset evidence must not bypass cooldown.
+			reloaded.checkWakeupScheduleWith(claimAt.Add(6*time.Minute), rpc, func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				replays++
+				return model, ""
+			}, nil)
+			waitWakeupIdle(t, reloaded)
+			if replays != 0 {
+				t.Fatalf("reloaded engine replayed a consumed retry: calls=%d", replays)
+			}
+			failedAt := e.wakeupLastFail["acct"]
+			afterBackoff := failedAt.Add(15*time.Minute + time.Second)
+			if failedAt.IsZero() || !afterBackoff.Before(retry.RetryUntil) {
+				t.Fatalf("test must reach the end of failure backoff before the original deadline: failedAt=%v retry=%+v", failedAt, retry)
+			}
+			e.checkWakeupScheduleWith(afterBackoff, rpc, exec, nil)
+			waitWakeupIdle(t, e)
+			if calls != 1 {
+				t.Fatalf("failed follow-up fired again after backoff: calls=%d", calls)
+			}
+		})
+	}
+}
+
+func TestWakeupDoesNotDispatchRetryWhenClaimCannotPersist(t *testing.T) {
+	due := time.Date(2026, 11, 26, 11, 2, 0, 0, time.UTC)
+	for _, readOnly := range []bool{true, false} {
+		name := "write-error"
+		if readOnly {
+			name = "read-only"
+		}
+		t.Run(name, func(t *testing.T) {
+			e := newEngine()
+			e.dir = t.TempDir()
+			if readOnly {
+				e.blockStorageWrites("test partial load")
+			} else if err := os.Mkdir(filepath.Join(e.dir, wakeupConfigFileName), 0700); err != nil {
+				t.Fatal(err)
+			}
+			e.wakeupConfig = WakeupConfig{Enabled: true, Mode: "daily", Cron: "0 12 * * *", Providers: map[string]bool{"codex": true}}
+			rec := wakeupSentRecord{At: due.Add(-2 * time.Minute), RetryAt: due, RetrySource: "schedule", Misses: 1, RetryUntil: due.Add(28 * time.Minute)}
+			e.wakeupLastSent["cx"] = rec
+			retryAt := due.Format(time.RFC3339)
+			e.wakeupResults["cx"] = WakeupAccountResult{Provider: "codex", Status: "sent", RetryAt: retryAt}
+			e.quotas["cx"] = AccountQuota{Provider: "codex", AuthID: "cx", FetchedAt: retryAt, Five: &QuotaWindow{}}
+			calls := 0
+			e.checkWakeupScheduleWith(due, func(_ string, _ any) (any, error) {
+				return map[string]any{"files": []any{map[string]any{"id": "cx", "auth_index": "i1", "provider": "codex"}}}, nil
+			}, func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				calls++
+				return model, ""
+			}, nil)
+			waitWakeupIdle(t, e)
+			if calls != 0 {
+				t.Fatalf("dispatched %d retries without a successful claim write", calls)
+			}
+			if e.wakeupLastSent["cx"] != rec || e.wakeupResults["cx"].RetryAt != retryAt {
+				t.Fatal("failed claim did not restore both queue and result")
+			}
+		})
+	}
+}
+
+func TestWakeupScheduleDefersUntilExhaustedWindowResets(t *testing.T) {
+	slot := time.Date(2026, 11, 26, 11, 0, 0, 0, wakeupZone(-480))
+	for _, tc := range []struct {
+		name, provider          string
+		sendOffset, resetOffset time.Duration
+	}{
+		{name: "codex-before-reset", provider: "codex", resetOffset: 10 * time.Second},
+		{name: "claude-after-reset-within-margin", provider: "claude", sendOffset: 5 * time.Second, resetOffset: -time.Second},
+		{name: "gemini-after-reset-within-margin", provider: "antigravity", sendOffset: 5 * time.Second, resetOffset: -time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := tc.provider
+			start, reset := slot.Add(tc.sendOffset), slot.Add(tc.resetOffset)
+			retry := reset.Add(30 * time.Second)
+			e := newEngine()
+			e.dir = t.TempDir()
+			e.wakeupConfig = WakeupConfig{Enabled: true, Mode: "both", Cron: "0 6,11,16,21 * * *", TimezoneOffsetMin: -480,
+				Providers: map[string]bool{provider: true}, Models: map[string]string{wakeupGeminiKey: "gemini-3.5-flash-lite"}}
+			five, week := &QuotaWindow{Used: 100, ResetAt: reset.Format(time.RFC3339)}, &QuotaWindow{Used: 55}
+			q := AccountQuota{AuthID: "acct", Provider: provider, FetchedAt: start.Format(time.RFC3339), Five: five, Week: week}
+			key := "acct"
+			if provider == "antigravity" {
+				key = "acct#gemini"
+				q.Groups = []QuotaGroup{{Key: "gemini", Five: five, Week: week}}
+			}
+			e.quotas["acct"] = q
+			e.wakeupLastFail["acct"] = start.Add(-time.Minute)
+			rpc := func(method string, _ any) (any, error) {
+				if method != "host.auth.list" {
+					t.Errorf("unexpected RPC: %s", method)
+					return nil, errors.New("unexpected RPC")
+				}
+				return map[string]any{"files": []any{map[string]any{"id": "acct", "auth_index": "i1", "provider": provider}}}, nil
+			}
+			sends, reads := 0, 0
+			exec := func(_ AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+				sends++
+				return model, ""
+			}
+			refresh := func(AuthEntry) bool { reads++; return false }
+			e.checkWakeupScheduleWith(start, rpc, exec, refresh)
+			waitWakeupIdle(t, e)
+			res, rec := e.wakeupResults["acct"], e.wakeupLastSent[key]
+			if sends != 0 || reads != 0 || res.Status != "exhausted" || res.Reason != wakeupReasonExhausted || res.RetryAt != retry.UTC().Format(time.RFC3339Nano) {
+				t.Fatalf("slot must queue, not send or read quota: sends=%d reads=%d result=%+v", sends, reads, res)
+			}
+			if rec.RetrySource != "schedule" || rec.RetrySlot != cronSlotKey(start, -480) || rec.Misses != 1 || !rec.RetryAt.Equal(retry) || !rec.RetryUntil.Equal(rec.At.Add(30*time.Minute)) {
+				t.Fatalf("incorrect scheduled follow-up: %+v", rec)
+			}
+			if _, failed := e.wakeupLastFail["acct"]; failed {
+				t.Fatal("queued reset must clear rather than set the 15-minute backoff")
+			}
+			e.checkWakeupScheduleWith(retry.Add(-time.Second), rpc, exec, refresh)
+			waitWakeupIdle(t, e)
+			if sends != 0 || reads != 0 {
+				t.Fatalf("retry fired before reset margin: sends=%d reads=%d", sends, reads)
+			}
+			e.checkWakeupScheduleWith(retry, rpc, exec, refresh)
+			waitWakeupIdle(t, e)
+			if res := e.wakeupResults["acct"]; sends != 1 || reads != 1 || res.Status != "sent" || res.RetryAt != "" {
+				t.Fatalf("expected one scheduled follow-up during Cron rest: sends=%d reads=%d result=%+v", sends, reads, res)
+			}
+			followed := e.wakeupLastSent[key]
+			if followed.RetrySource != rec.RetrySource || followed.RetrySlot != rec.RetrySlot || !followed.RetryUntil.Equal(rec.RetryUntil) || followed.Misses != rec.Misses {
+				t.Fatalf("follow-up did not retain the scheduled chain: %+v", followed)
+			}
+		})
+	}
+}
+
+func TestWakeupScheduleOnlyDefersNearValidFiveHourReset(t *testing.T) {
+	at := time.Date(2026, 11, 26, 11, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, trigger, reset string
+		used, week           float64
+		wantRetry            bool
+	}{
+		{"at-5m", "schedule", at.Add(5 * time.Minute).Format(time.RFC3339Nano), 100, 99, true},
+		{"beyond-5m", "schedule", at.Add(5*time.Minute + time.Nanosecond).Format(time.RFC3339Nano), 100, 99, false},
+		{"at-reset", "schedule", at.Format(time.RFC3339Nano), 100, 99, true},
+		{"inside-reset-margin", "schedule", at.Add(-wakeupResetMargin + time.Nanosecond).Format(time.RFC3339Nano), 100, 99, true},
+		{"at-end-of-reset-margin", "schedule", at.Add(-wakeupResetMargin).Format(time.RFC3339Nano), 100, 99, false},
+		{"reset-unknown", "schedule", "invalid", 100, 99, false},
+		{"weekly-exhausted", "schedule", at.Add(time.Minute).Format(time.RFC3339Nano), 100, 100, false},
+		{"five-not-exhausted", "schedule", at.Add(time.Minute).Format(time.RFC3339Nano), 99, 0, false},
+		{"not-a-slot", "reset", at.Add(time.Minute).Format(time.RFC3339Nano), 100, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			retry := e.deferScheduledWakeup("acc", tc.trigger, "slot", &QuotaWindow{Used: tc.used, ResetAt: tc.reset}, &QuotaWindow{Used: tc.week}, at)
+			if _, queued := e.wakeupLastSent["acc"]; queued != tc.wantRetry || (retry != "") != tc.wantRetry {
+				t.Fatalf("queued=%v retry=%q, want queue=%v", queued, retry, tc.wantRetry)
+			}
+		})
+	}
+}
+
+func TestWakeupBatchUsesIndividualSendTimes(t *testing.T) {
+	at := time.Date(2026, 11, 26, 11, 0, 0, 0, time.UTC)
+	e := newEngine()
+	e.dir = t.TempDir()
+	cfg := defaultWakeupConfig()
+	const lag = 30 * time.Millisecond
+	files := []any{}
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("c%d", i)
+		files = append(files, map[string]any{"id": id, "auth_index": id, "provider": "codex"})
+	}
+	e.quotas["c4"] = AccountQuota{AuthID: "c4", Provider: "codex",
+		Five: &QuotaWindow{Used: 100, ResetAt: at.Add(-wakeupResetMargin + lag/2).Format(time.RFC3339Nano)}}
+	rpc := func(string, any) (any, error) { return map[string]any{"files": files}, nil }
+	exec := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		if entry.ID != "c4" {
+			time.Sleep(lag)
+		}
+		return model, ""
+	}
+	refresh := func(entry AuthEntry) bool {
+		if entry.ID != "c4" {
+			return false
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		q := e.quotas[entry.ID]
+		q.FetchedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		q.Five = &QuotaWindow{Used: 1, ResetAt: at.Add(wakeupOpenedMinLeft).Format(time.RFC3339Nano)}
+		e.quotas[entry.ID] = q
+		return true
+	}
+	e.runWakeupBatchLockedClaimed(cfg, "schedule", "slot", at, rpc, exec, refresh)
+	last, res := e.wakeupLastSent["c4"], e.wakeupResults["c4"]
+	if last.At.Before(at.Add(lag)) || last.At.Sub(at) >= time.Minute || res.At != last.At.Format(time.RFC3339Nano) {
+		t.Fatalf("late worker didn't record its own synthetic send time: rec=%+v result=%+v", last, res)
+	}
+	for id, first := range e.wakeupLastSent {
+		if id != "c4" && last.At.Sub(first.At) >= lag {
+			if res.Status != "sent" || res.RetryAt != "" || !res.WindowExisting || res.WindowResetAt == "" {
+				t.Fatalf("reset margin should have elapsed before late send; post-send read joins an old window: %+v", res)
+			}
+			return
+		}
+	}
+	t.Fatalf("the queued fifth account did not record a later send than the first wave: %+v", e.wakeupLastSent)
+}
+
+func TestWakeupGeminiUsesSameConfirmationForAccountAndGroup(t *testing.T) {
+	at := time.Date(2026, 11, 26, 11, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name                       string
+		used                       float64
+		reset                      string
+		confirmed, existing, retry bool
+	}{
+		{name: "zero-usage-fresh-reset", reset: at.Add(5 * time.Hour).Format(time.RFC3339), retry: true},
+		{name: "zero-usage-existing-reset", reset: at.Add(time.Hour).Format(time.RFC3339), retry: true},
+		{name: "negative-usage", used: -1, reset: at.Add(time.Hour).Format(time.RFC3339), retry: true},
+		{name: "used-invalid-reset", used: 1, reset: "invalid"},
+		{name: "new-window", used: 1, reset: at.Add(5 * time.Hour).Format(time.RFC3339), confirmed: true},
+		{name: "existing-window", used: 1, reset: at.Add(time.Hour).Format(time.RFC3339), confirmed: true, existing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			entry := AuthEntry{ID: "ag", Provider: "antigravity"}
+			e.wakeupLastSent["ag#gemini"] = newWakeupSentRecord(wakeupSentRecord{}, at, "schedule", "slot")
+			staleReset := at.Add(4 * time.Hour).Format(time.RFC3339)
+			before := WakeupAccountResult{AuthID: "ag", Provider: "antigravity", Status: "sent", WindowResetAt: staleReset, WindowExisting: true,
+				Groups: []WakeupGroupResult{{Group: "gemini", Status: "sent", WindowResetAt: staleReset}}}
+			e.wakeupResults["ag"] = before
+			e.refreshAfterWakeup(entry, func(entry AuthEntry) bool {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				e.quotas[entry.ID] = AccountQuota{AuthID: entry.ID, Provider: entry.Provider, FetchedAt: time.Now().UTC().Format(time.RFC3339Nano),
+					Groups: []QuotaGroup{{Key: "gemini", Five: &QuotaWindow{Used: tc.used, ResetAt: tc.reset}}}}
+				return true
+			}, func() time.Time { return at.Add(time.Second) })
+			res := e.wakeupResults["ag"]
+			wantReset := ""
+			if tc.confirmed {
+				wantReset = tc.reset
+			}
+			if res.WindowResetAt != wantReset || res.Groups[0].WindowResetAt != wantReset || res.WindowExisting != tc.existing || (res.RetryAt != "") != tc.retry {
+				t.Fatalf("invalid Gemini confirmation: %+v", res)
+			}
+			if before.Groups[0].WindowResetAt != staleReset {
+				t.Fatal("verification mutated the previously published group slice")
+			}
+			if tc.retry && res.RetryAt != at.Add(time.Second+2*time.Minute).Format(time.RFC3339Nano) {
+				t.Fatalf("unconfirmed reset must not control the retry time: %+v", res)
+			}
+		})
 	}
 }

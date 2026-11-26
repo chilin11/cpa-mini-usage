@@ -298,6 +298,15 @@ A wakeup sent inside a 5-hour window that is already running is now reported as 
 
 Show confirmed window reset times, already-running window notes, and queued retry times directly in the **Recent wakeup records** list for Claude and Codex accounts instead of only in badge hover tooltips. Unpersisted wakeup setups now default to the browser's local timezone rather than inheriting the CPA server/container timezone, and the Cron preview highlights when the selected timezone differs from the browser timezone along with the next run converted to local time.
 
+### v0.1.47
+
+Keep all accounts aligned to the configured Cron schedule without overnight phase drift:
+- **No off-schedule follow-ups for already-running windows**: a wakeup that joins an active 5-hour window now records its reset time as **5-hour window already running** (`window_existing`) instead of scheduling a post-reset retry, so out-of-phase accounts expire naturally and re-align at the next Cron slot.
+- **Automatic Cron rest gap in combined mode**: when Cron and post-reset auto-wakeup (`both`) are both enabled, reset-triggered wakeups pause whenever the next Cron slot is less than 5 hours 5 minutes away (e.g. overnight 00:55–06:00 before a 06:00 slot), preventing new windows from overlapping and breaking the Cron schedule.
+- **Provider-accurate window verification & bounded retries**: Codex and Antigravity require at least 4h55m remaining (with `Used > 0` enforced uniformly for Antigravity Gemini across account, group, UI and persistence), while Claude accounts for top-of-hour rounding (e.g. `09:03` → `13:59:59`). Quick retries carry their origin trigger, Cron slot and a fixed 30-minute deadline, persist their claim before calling the model RPC to avoid replay on crash/restart, and evaluate per-account actual send times.
+- **Scheduled slot on imminent exhausted reset**: when a Cron slot hits a 100%-used 5-hour window within `[reset-5m, reset+30s)` while weekly quota remains available, it defers one follow-up to `reset+30s` without making a premature model or quota request or triggering the 15-minute failure backoff, and displays the queued retry time inline.
+- **Safe upgrade migration**: legacy v0.1.44–v0.1.46 `wakeup.json` records are migrated atomically across `last_sent` and `results` so stale existing-window retries stop immediately while genuine scheduled short retries remain intact.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

@@ -2090,7 +2090,7 @@ test('wakeup defaults unpersisted timezone to browser, flags timezone mismatch, 
       config: { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: otherMin, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' },
       results: {
         'cx-ok': { auth_id: 'cx-ok', provider: 'codex', name: 'ok@example.com', status: 'sent', model: 'gpt-6-luna', at: '2026-11-26T03:14:55Z', window_reset_at: '2026-11-26T08:14:55Z' },
-        'cx-run': { auth_id: 'cx-run', provider: 'codex', name: 'run@example.com', status: 'sent', model: 'gpt-6-luna', at: '2026-11-26T03:14:55Z', window_reset_at: '2026-11-26T06:14:08Z', retry_at: '2026-11-26T06:14:38Z' },
+        'cx-run': { auth_id: 'cx-run', provider: 'codex', name: 'run@example.com', status: 'sent', model: 'gpt-6-luna', at: '2026-11-26T03:14:55Z', window_reset_at: '2026-11-26T06:14:08Z', window_existing: true },
         'cl-retry': { auth_id: 'cl-retry', provider: 'claude', name: 'retry@example.com', status: 'sent', model: 'claude-haiku-5-5', at: '2026-11-26T03:14:55Z', retry_at: '2026-11-26T03:16:55Z' },
       },
     },
@@ -2112,8 +2112,140 @@ test('wakeup defaults unpersisted timezone to browser, flags timezone mismatch, 
   // Recent wakeup records list displays window confirmation, running-window and retry details inline.
   const metas = descendants(d.elements.get('wakeup-results')).filter(n => n.className === 'wakeup-result-meta').map(n => n.textContent);
   assert(metas.some(s => s.includes('5 小时窗口已确认，重置时间：')), `expected confirmed window note: ${metas}`);
-  assert(metas.some(s => s.includes('已有 5 小时窗口进行中') && s.includes('重置后自动唤醒')), `expected running window note: ${metas}`);
+  assert(metas.some(s => s.includes('已有 5 小时窗口进行中，重置时间：')), `expected running window note: ${metas}`);
   assert(metas.some(s => s.includes('新窗口未开启') && s.includes('自动重试')), `expected retry note: ${metas}`);
+});
+
+test('wakeup: Antigravity existing windows never read as unconfirmed, and exhausted near-reset retries are shown inline', async () => {
+  const sample = {
+    quotas: [
+      { auth_id: 'ag-existing', provider: 'antigravity', name: 'ag-existing@example.com', groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 0 } }] },
+      { auth_id: 'ag-legacy', provider: 'antigravity', name: 'ag-legacy@example.com', groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 40 } }] },
+      { auth_id: 'ag-new', provider: 'antigravity', name: 'ag-new@example.com', groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 1 } }] },
+      { auth_id: 'cx-soon', provider: 'codex', name: 'cx-soon@example.com', five_hour: { used_percent: 100 } },
+      { auth_id: 'ag-soon', provider: 'antigravity', name: 'ag-soon@example.com', groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 100 } }] },
+    ],
+    wakeup: {
+      persisted: true,
+      config: { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' },
+      results: {
+        // New contract: account-level window_reset_at + window_existing; the Gemini group may lack its own reset time.
+        'ag-existing': { auth_id: 'ag-existing', provider: 'antigravity', name: 'ag-existing@example.com', status: 'sent', at: '2026-11-26T03:00:05Z', window_reset_at: '2026-11-26T05:20:00Z', window_existing: true, groups: [{ group: 'gemini', status: 'sent', model: 'gemini-3.5-flash-lite' }] },
+        // Legacy record: only the Gemini group reset time plus an account retry_at.
+        'ag-legacy': { auth_id: 'ag-legacy', provider: 'antigravity', name: 'ag-legacy@example.com', status: 'sent', at: '2026-11-26T03:00:04Z', retry_at: '2026-11-26T05:20:30Z', groups: [{ group: 'gemini', status: 'sent', model: 'gemini-3.5-flash-lite', window_reset_at: '2026-11-26T05:20:00Z' }] },
+        'ag-new': { auth_id: 'ag-new', provider: 'antigravity', name: 'ag-new@example.com', status: 'sent', at: '2026-11-26T03:00:03Z', window_reset_at: '2026-11-26T07:59:00Z', groups: [{ group: 'gemini', status: 'sent', model: 'gemini-3.5-flash-lite', window_reset_at: '2026-11-26T07:59:00Z' }] },
+        'cx-soon': { auth_id: 'cx-soon', provider: 'codex', name: 'cx-soon@example.com', status: 'exhausted', at: '2026-11-26T03:00:02Z', retry_at: '2026-11-26T03:00:40Z' },
+        'ag-soon': { auth_id: 'ag-soon', provider: 'antigravity', name: 'ag-soon@example.com', status: 'exhausted', at: '2026-11-26T03:00:01Z', retry_at: '2026-11-26T03:04:30Z', groups: [{ group: 'gemini', status: 'exhausted' }] },
+      },
+    },
+  };
+  const d = dashboard({ managementKey: 'key' }, async () => reply(sample));
+  await d.api.load();
+  d.api.setTab('wakeup');
+  const accountStatus = id => descendants(panel(d.elements, id)).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  const resultRow = id => descendants(d.elements.get('wakeup-results')).find(n => n.className === 'wakeup-result-row' && descendants(n).some(c => c.className === 'wakeup-result-name' && c.textContent.startsWith(id + '@')));
+  const meta = id => descendants(resultRow(id)).find(n => n.className === 'wakeup-result-meta').textContent;
+  const badge = id => descendants(resultRow(id)).find(n => String(n.className || '').startsWith('wakeup-badge '));
+
+  for (const id of ['ag-existing', 'ag-legacy']) {
+    const status = accountStatus(id);
+    assert.equal(status.className, 'account-wakeup-status sent', id);
+    assert.match(status.textContent, /已有 5 小时窗口进行中 · Gemini 模型: gemini-3\.5-flash-lite · 已有 5 小时窗口进行中，重置时间：/, id);
+    assert.equal(badge(id).className, 'wakeup-badge sent', id);
+    assert.equal(descendants(badge(id)).map(n => n.textContent).join(''), 'OK', id);
+    assert.match(meta(id), /已有 5 小时窗口进行中，重置时间：/, id);
+    for (const text of [status.textContent, meta(id), badge(id).title]) {
+      assert(!/待确认|新窗口未开启|已确认|自动重试/.test(text), `${id} contradicts itself: ${text}`);
+    }
+  }
+  // A freshly opened Antigravity window stays "confirmed", not "already running".
+  assert.equal(accountStatus('ag-new').className, 'account-wakeup-status sent');
+  assert.match(accountStatus('ag-new').textContent, /5 小时窗口已确认 · .*5 小时窗口已确认，重置时间：/);
+  assert(!/已有 5 小时窗口|待确认/.test(accountStatus('ag-new').textContent));
+
+  // Exhausted at a schedule slot with a near reset: the queued retry time is shown in both places.
+  for (const id of ['cx-soon', 'ag-soon']) {
+    assert.equal(accountStatus(id).className, 'account-wakeup-status exhausted', id);
+    assert.match(accountStatus(id).textContent, /额度已用完 · .*即将重置，.+ 自动重试$/, id);
+    assert.match(meta(id), /即将重置，.+ 自动重试/, id);
+    assert.equal(badge(id).className, 'wakeup-badge exhausted', id);
+    assert(!/新窗口未开启|待确认/.test(accountStatus(id).textContent), id);
+  }
+
+  d.api.setLanguage('en');
+  assert.match(accountStatus('ag-existing').textContent, /5-hour window already running · .*5-hour window already running; resets at /);
+  assert.match(accountStatus('ag-legacy').textContent, /5-hour window already running; resets at /);
+  assert(!/unconfirmed|No new window|retrying/.test(accountStatus('ag-legacy').textContent));
+  assert.match(accountStatus('cx-soon').textContent, /Resets soon, retrying .+$/);
+  assert.match(meta('ag-soon'), /Resets soon, retrying /);
+  assert(!/[\u4e00-\u9fff]/.test(accountStatus('cx-soon').textContent + meta('ag-soon')), 'English near-reset note must be fully translated');
+});
+
+test('wakeup: legacy Antigravity group time plus retry_at counts as a running window only under the old reset+30s queue formula', async () => {
+  const gemini = (extra = {}) => ({ group: 'gemini', status: 'sent', model: 'gemini-3.5-flash-lite', ...extra });
+  const quota = id => ({ auth_id: id, provider: 'antigravity', name: id + '@example.com', groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 1 } }] });
+  const ids = ['ag-stale', 'ag-edge', 'ag-late', 'ag-offtol', 'ag-after', 'ag-queued', 'ag-tol', 'ag-top', 'ag-noretry'];
+  const sample = {
+    quotas: ids.map(quota),
+    wakeup: {
+      persisted: true,
+      config: { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' },
+      results: {
+        // v0.1.46: sent 11:00, group observed the old window resetting 11:00:10, real quick retry at 11:02.
+        'ag-stale': { auth_id: 'ag-stale', provider: 'antigravity', name: 'ag-stale@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', retry_at: '2026-11-26T11:02:00Z', groups: [gemini({ window_reset_at: '2026-11-26T11:00:10Z' })] },
+        // Exactly at+5m is still an expiring observation.
+        'ag-edge': { auth_id: 'ag-edge', provider: 'antigravity', name: 'ag-edge@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', retry_at: '2026-11-26T11:05:30Z', groups: [gemini({ window_reset_at: '2026-11-26T11:05:00Z' })] },
+        // Verified late (11:04:40): group 11:05:10 is beyond at+5m, but 11:06:40 is not the old running-window queue (11:05:40): a real miss.
+        'ag-late': { auth_id: 'ag-late', provider: 'antigravity', name: 'ag-late@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', retry_at: '2026-11-26T11:06:40Z', groups: [gemini({ window_reset_at: '2026-11-26T11:05:10Z' })] },
+        // Just outside the ±2s tolerance of reset+30s.
+        'ag-offtol': { auth_id: 'ag-offtol', provider: 'antigravity', name: 'ag-offtol@example.com', status: 'sent', at: '2026-11-26T21:00:00Z', retry_at: '2026-11-26T21:20:32.001Z', groups: [gemini({ window_reset_at: '2026-11-26T21:20:00Z' })] },
+        // Beyond at+5m and queued at reset+30s: a legacy running window.
+        'ag-queued': { auth_id: 'ag-queued', provider: 'antigravity', name: 'ag-queued@example.com', status: 'sent', at: '2026-11-26T21:00:00Z', retry_at: '2026-11-26T21:20:30Z', groups: [gemini({ window_reset_at: '2026-11-26T21:20:00Z' })] },
+        'ag-tol': { auth_id: 'ag-tol', provider: 'antigravity', name: 'ag-tol@example.com', status: 'sent', at: '2026-11-26T21:00:00Z', retry_at: '2026-11-26T21:20:28Z', groups: [gemini({ window_reset_at: '2026-11-26T21:20:00Z' })] },
+        'ag-after': { auth_id: 'ag-after', provider: 'antigravity', name: 'ag-after@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', retry_at: '2026-11-26T11:05:31Z', groups: [gemini({ window_reset_at: '2026-11-26T11:05:01Z' })] },
+        // A top-level window_reset_at is always the confirmation.
+        'ag-top': { auth_id: 'ag-top', provider: 'antigravity', name: 'ag-top@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', window_reset_at: '2026-11-26T11:03:00Z', window_existing: true, groups: [gemini({ window_reset_at: '2026-11-26T11:03:00Z' })] },
+        // Without retry_at a near group time is still the confirmed window.
+        'ag-noretry': { auth_id: 'ag-noretry', provider: 'antigravity', name: 'ag-noretry@example.com', status: 'sent', at: '2026-11-26T11:00:00Z', groups: [gemini({ window_reset_at: '2026-11-26T11:00:10Z' })] },
+      },
+    },
+  };
+  const d = dashboard({ managementKey: 'key' }, async () => reply(sample));
+  await d.api.load();
+  d.api.setTab('wakeup');
+  const accountStatus = id => descendants(panel(d.elements, id)).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  const resultRow = id => descendants(d.elements.get('wakeup-results')).find(n => n.className === 'wakeup-result-row' && descendants(n).some(c => c.className === 'wakeup-result-name' && c.textContent.startsWith(id + '@')));
+  const meta = id => descendants(resultRow(id)).find(n => n.className === 'wakeup-result-meta').textContent;
+  const badge = id => descendants(resultRow(id)).find(n => String(n.className || '').startsWith('wakeup-badge '));
+
+  for (const id of ['ag-stale', 'ag-edge', 'ag-late', 'ag-offtol']) {
+    assert.equal(accountStatus(id).className, 'account-wakeup-status unconfirmed', id);
+    assert.equal(badge(id).className, 'wakeup-badge unconfirmed', id);
+    assert.match(accountStatus(id).textContent, /已发送，窗口待确认 · Gemini 模型: gemini-3\.5-flash-lite · 已发送，窗口待确认 · 新窗口未开启，.+ 自动重试$/, id);
+    assert.match(meta(id), /Gemini 模型: gemini-3\.5-flash-lite · 已发送，窗口待确认 · 新窗口未开启，.+ 自动重试/, id);
+    for (const text of [accountStatus(id).textContent, meta(id), badge(id).title]) {
+      assert(!/已确认|已有 5 小时窗口|重置时间/.test(text), `${id} must not claim a confirmed window: ${text}`);
+    }
+  }
+  for (const id of ['ag-after', 'ag-queued', 'ag-tol']) {
+    assert.equal(accountStatus(id).className, 'account-wakeup-status sent', id);
+    assert.equal(badge(id).className, 'wakeup-badge sent', id);
+    assert.match(accountStatus(id).textContent, /^.*已有 5 小时窗口进行中 · Gemini 模型: gemini-3\.5-flash-lite · 已有 5 小时窗口进行中，重置时间：[^·]+$/, id);
+    assert.match(meta(id), /已有 5 小时窗口进行中，重置时间：/, id);
+  }
+  assert.equal(accountStatus('ag-top').className, 'account-wakeup-status sent');
+  assert.match(meta('ag-top'), /已有 5 小时窗口进行中，重置时间：/);
+  assert.equal(accountStatus('ag-noretry').className, 'account-wakeup-status sent');
+  assert.match(accountStatus('ag-noretry').textContent, /5 小时窗口已确认 · .*5 小时窗口已确认，重置时间：/);
+  for (const id of ['ag-after', 'ag-queued', 'ag-tol', 'ag-top', 'ag-noretry']) assert(!/待确认|新窗口未开启|自动重试/.test(accountStatus(id).textContent + meta(id)), id);
+
+  d.api.setLanguage('en');
+  assert.match(accountStatus('ag-stale').textContent, /Sent, window unconfirmed · .*Sent, window unconfirmed · No new window yet, retrying .+$/);
+  assert(!/confirmed;|already running/.test(accountStatus('ag-stale').textContent));
+  assert.match(accountStatus('ag-late').textContent, /Sent, window unconfirmed · .*Sent, window unconfirmed · No new window yet, retrying .+$/);
+  assert(!/confirmed;|already running/.test(accountStatus('ag-late').textContent));
+  assert.match(accountStatus('ag-queued').textContent, /5-hour window already running · .*5-hour window already running; resets at /);
+  assert(!/unconfirmed|No new window|retrying/.test(accountStatus('ag-queued').textContent));
 });
 
 
