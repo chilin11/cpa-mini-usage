@@ -25,6 +25,8 @@ const (
 	// A wakeup that opened a new window sees a reset at least this far away.
 	wakeupOpenedMinLeft   = 4 * time.Hour
 	wakeupMaxQuickRetries = 3
+	// A post-wakeup reset this far out means the request joined a running window.
+	wakeupExistingWindowMin = 5 * time.Minute
 )
 
 const (
@@ -90,15 +92,17 @@ type WakeupGroupResult struct {
 }
 
 type WakeupAccountResult struct {
-	AuthID   string              `json:"auth_id"`
-	Provider string              `json:"provider"`
-	Name     string              `json:"name,omitempty"`
-	Status   string              `json:"status"` // "sent" | "skipped" | "failed"
-	Reason   string              `json:"reason,omitempty"`
-	Model    string              `json:"model,omitempty"`
-	At       string              `json:"at"`
-	RetryAt  string              `json:"retry_at,omitempty"` // A fresh read showed no new window; a follow-up wakeup is queued.
-	Groups   []WakeupGroupResult `json:"groups,omitempty"`
+	AuthID   string `json:"auth_id"`
+	Provider string `json:"provider"`
+	Name     string `json:"name,omitempty"`
+	Status   string `json:"status"` // "sent" | "skipped" | "failed"
+	Reason   string `json:"reason,omitempty"`
+	Model    string `json:"model,omitempty"`
+	At       string `json:"at"`
+	RetryAt  string `json:"retry_at,omitempty"` // A follow-up wakeup is queued (no new window, or joined a running one).
+	// WindowResetAt is the reset of the window observed by the fresh post-wakeup read.
+	WindowResetAt string              `json:"window_reset_at,omitempty"`
+	Groups        []WakeupGroupResult `json:"groups,omitempty"`
 }
 
 type WakeupState struct {
@@ -383,6 +387,11 @@ func (e *Engine) loadWakeupPersistence() {
 			res.RetryAt = retryAt.Format(time.RFC3339Nano)
 		} else {
 			res.RetryAt = ""
+		}
+		if resetAt, ok := parseWindowResetTime(res.WindowResetAt); ok && res.Status == "sent" {
+			res.WindowResetAt = resetAt.Format(time.RFC3339Nano)
+		} else {
+			res.WindowResetAt = ""
 		}
 		if res.Model != "" && !wakeupModelPattern.MatchString(res.Model) {
 			res.Model = ""
@@ -796,11 +805,11 @@ func isFiveHourWindowActive(win *QuotaWindow, sent wakeupSentRecord, now time.Ti
 func wakeupMissBackoff(misses int) time.Duration {
 	switch {
 	case misses <= 1:
-		return time.Minute
-	case misses == 2:
 		return 2 * time.Minute
-	default:
+	case misses == 2:
 		return 5 * time.Minute
+	default:
+		return 10 * time.Minute
 	}
 }
 
@@ -815,35 +824,43 @@ func newWakeupSentRecord(prev wakeupSentRecord, now time.Time) wakeupSentRecord 
 }
 
 // verifyWakeupSentRecord classifies a wakeup using a quota read taken after it was sent.
-func verifyWakeupSentRecord(rec wakeupSentRecord, win *QuotaWindow, now time.Time) wakeupSentRecord {
+// It also returns the reset of the observed window (new or already running), if any.
+func verifyWakeupSentRecord(rec wakeupSentRecord, win *QuotaWindow, now time.Time) (wakeupSentRecord, time.Time) {
 	if win == nil {
-		return rec
+		return rec, time.Time{}
 	}
 	resetAt, valid := parseWindowResetTime(win.ResetAt)
 	if valid && resetAt.After(rec.At.Add(wakeupOpenedMinLeft)) {
 		rec.ResetAt, rec.RetryAt, rec.Misses = resetAt, time.Time{}, 0
-		return rec
+		return rec, resetAt
 	}
 	if !valid && win.Used > 0 {
-		return rec // Usage without a reset time: cannot tell, keep the normal cooldown.
+		return rec, time.Time{} // Usage without a reset time: cannot tell, keep the normal cooldown.
 	}
-	// The wakeup landed in a window that was already running (or none is running).
+	if valid && resetAt.After(now.Add(wakeupExistingWindowMin)) {
+		// Joined a window that was already running: wake once more right after it resets.
+		// This is not a miss, so it does not use the quick-retry budget.
+		rec.RetryAt = resetAt.Add(wakeupResetMargin).UTC()
+		return rec, resetAt
+	}
+	// The wakeup landed in a window that was about to reset (or none is running).
 	rec.Misses++
 	if rec.Misses > wakeupMaxQuickRetries {
 		rec.RetryAt = time.Time{}
-		return rec
+		return rec, time.Time{}
 	}
 	retry := now.Add(wakeupMissBackoff(rec.Misses))
 	if valid && retry.Before(resetAt.Add(wakeupResetMargin)) {
 		retry = resetAt.Add(wakeupResetMargin)
 	}
 	rec.RetryAt = retry.UTC()
-	return rec
+	return rec, time.Time{}
 }
 
 // verifyWakeupWindowLocked applies a fresh post-wakeup quota read and returns the
-// queued follow-up time (zero when the window opened or no retry remains).
-func (e *Engine) verifyWakeupWindowLocked(q AccountQuota, now time.Time) time.Time {
+// queued follow-up time (zero when the window opened or no retry remains) and the
+// reset of the observed window.
+func (e *Engine) verifyWakeupWindowLocked(q AccountQuota, now time.Time) (time.Time, time.Time) {
 	key, win := wakeupSentKey(q.AuthID, ""), q.Five
 	if q.Provider == "antigravity" {
 		key, win = wakeupSentKey(q.AuthID, wakeupGeminiGroup), nil
@@ -856,11 +873,11 @@ func (e *Engine) verifyWakeupWindowLocked(q AccountQuota, now time.Time) time.Ti
 	}
 	rec, ok := e.wakeupLastSent[key]
 	if !ok {
-		return time.Time{}
+		return time.Time{}, time.Time{}
 	}
-	rec = verifyWakeupSentRecord(rec, win, now)
+	rec, windowResetAt := verifyWakeupSentRecord(rec, win, now)
 	e.wakeupLastSent[key] = rec
-	return rec.RetryAt
+	return rec.RetryAt, windowResetAt
 }
 
 func (e *Engine) wakeupRetryDueLocked(q AccountQuota, now time.Time) bool {
@@ -1341,13 +1358,6 @@ func (e *Engine) runWakeupSubsetClaimed(
 				e.wakeupRunningAuths[entry.ID] = true
 				e.mu.Unlock()
 
-				if trigger == "reset" && refresh != nil && !e.confirmResetWakeupNeeded(entry, now, refresh) {
-					e.mu.Lock()
-					delete(e.wakeupRunningAuths, entry.ID)
-					e.mu.Unlock()
-					continue
-				}
-
 				res := e.wakeupEntry(entry, cfg, force, now, rpc, exec)
 
 				e.mu.Lock()
@@ -1401,28 +1411,6 @@ func (e *Engine) recordWakeupResult(res WakeupAccountResult, failed bool) {
 	}
 }
 
-// confirmResetWakeupNeeded re-reads the account's quota right before a reset-triggered
-// wakeup so the decision is not based on a cached read from before the reset.
-func (e *Engine) confirmResetWakeupNeeded(entry AuthEntry, now time.Time, refresh func(AuthEntry) bool) bool {
-	if !e.refreshMu.TryRLock() {
-		return true // A full refresh is running; act on the cached read.
-	}
-	started := time.Now().UTC()
-	ok := refresh(entry)
-	e.refreshMu.RUnlock()
-	if !ok {
-		return true
-	}
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	q, has := e.quotas[entry.ID]
-	fetchedAt, valid := parseWindowResetTime(q.FetchedAt)
-	if !has || !valid || fetchedAt.Before(started) {
-		return true
-	}
-	return e.accountNeedsResetWakeupLocked(q, now)
-}
-
 func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) bool) {
 	if !e.refreshMu.TryRLock() {
 		return
@@ -1433,11 +1421,14 @@ func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) boo
 		e.mu.Lock()
 		if q, ok := e.quotas[entry.ID]; ok {
 			if fetchedAt, valid := parseWindowResetTime(q.FetchedAt); valid && !fetchedAt.Before(started) && q.Error == "" {
-				retryAt := e.verifyWakeupWindowLocked(q, time.Now().UTC())
+				retryAt, windowResetAt := e.verifyWakeupWindowLocked(q, time.Now().UTC())
 				if res, ok := e.wakeupResults[entry.ID]; ok && res.Status == "sent" {
-					res.RetryAt = ""
+					res.RetryAt, res.WindowResetAt = "", ""
 					if !retryAt.IsZero() {
 						res.RetryAt = retryAt.Format(time.RFC3339Nano)
+					}
+					if !windowResetAt.IsZero() {
+						res.WindowResetAt = windowResetAt.UTC().Format(time.RFC3339Nano)
 					}
 					e.wakeupResults[entry.ID] = res
 				}

@@ -944,24 +944,24 @@ func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
 	}
 
 	sent := wakeupSentRecord{At: at}
-	if rec := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 1, ResetAt: at.Add(5 * time.Hour).Format(time.RFC3339)}, at.Add(time.Second)); !rec.RetryAt.IsZero() || rec.ResetAt.IsZero() || rec.Misses != 0 {
+	if rec, reset := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 1, ResetAt: at.Add(5 * time.Hour).Format(time.RFC3339)}, at.Add(time.Second)); !rec.RetryAt.IsZero() || rec.ResetAt.IsZero() || rec.Misses != 0 || !reset.Equal(at.Add(5*time.Hour)) {
 		t.Fatalf("opened window must be confirmed: %+v", rec)
 	}
 	// Landed in the expiring window (resets 6s after the send).
 	old := &QuotaWindow{Used: 40, ResetAt: at.Add(6 * time.Second).Format(time.RFC3339)}
-	rec := verifyWakeupSentRecord(sent, old, at.Add(2*time.Second))
-	if rec.Misses != 1 || !rec.RetryAt.Equal(at.Add(2*time.Second+time.Minute)) {
-		t.Fatalf("miss must queue a one-minute retry: %+v", rec)
+	rec, reset := verifyWakeupSentRecord(sent, old, at.Add(2*time.Second))
+	if rec.Misses != 1 || !reset.IsZero() || !rec.RetryAt.Equal(at.Add(2*time.Second+2*time.Minute)) {
+		t.Fatalf("miss must queue a two-minute retry: %+v", rec)
 	}
 	// Sent in the middle of a running window: follow up right after it ends.
 	long := &QuotaWindow{Used: 40, ResetAt: at.Add(2 * time.Hour).Format(time.RFC3339)}
-	if rec := verifyWakeupSentRecord(sent, long, at.Add(time.Second)); !rec.RetryAt.Equal(at.Add(2*time.Hour + wakeupResetMargin)) {
-		t.Fatalf("running window must queue a follow-up after its reset: %+v", rec)
+	if rec, reset := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, long, at.Add(time.Second)); !rec.RetryAt.Equal(at.Add(2*time.Hour+wakeupResetMargin)) || rec.Misses != wakeupMaxQuickRetries || !reset.Equal(at.Add(2*time.Hour)) {
+		t.Fatalf("running window must queue a follow-up after its reset without using retries: %+v", rec)
 	}
-	if rec := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, old, at); !rec.RetryAt.IsZero() {
+	if rec, _ := verifyWakeupSentRecord(wakeupSentRecord{At: at, Misses: wakeupMaxQuickRetries}, old, at); !rec.RetryAt.IsZero() {
 		t.Fatalf("quick retries must be bounded: %+v", rec)
 	}
-	if rec := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 3}, at); rec != sent {
+	if rec, _ := verifyWakeupSentRecord(sent, &QuotaWindow{Used: 3}, at); rec != sent {
 		t.Fatalf("usage without a reset time must keep the record: %+v", rec)
 	}
 
@@ -1018,12 +1018,12 @@ func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
 	if sends != 1 {
 		t.Fatalf("retry fired before it was due: sends=%d", sends)
 	}
-	e.checkWakeupScheduleWith(start.Add(2*time.Minute), rpc, exec, refresh)
+	e.checkWakeupScheduleWith(start.Add(3*time.Minute), rpc, exec, refresh)
 	waitWakeupIdle(t, e)
-	if res := e.snapshot().Wakeup.Results["cx"]; sends != 2 || res.RetryAt != "" {
+	if res := e.snapshot().Wakeup.Results["cx"]; sends != 2 || res.RetryAt != "" || res.WindowResetAt == "" {
 		t.Fatalf("expected one verified retry, sends=%d result=%+v", sends, res)
 	}
-	e.checkWakeupScheduleWith(start.Add(4*time.Minute), rpc, exec, refresh)
+	e.checkWakeupScheduleWith(start.Add(6*time.Minute), rpc, exec, refresh)
 	waitWakeupIdle(t, e)
 	if sends != 2 {
 		t.Fatalf("verified window must stop retries: sends=%d", sends)
