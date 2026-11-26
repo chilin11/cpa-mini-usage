@@ -42,22 +42,21 @@ const (
 	wakeupErrRateLimited    = "rate_limited"
 	wakeupErrAuthFailed     = "auth_failed"
 	wakeupErrRequestFailed  = "request_failed"
-	wakeupErrAccountDis     = "account_disabled"
+	wakeupErrAccountDis     = "wakeup_account_disabled"
+	wakeupErrTOSViolation   = "tos_violation"
 	wakeupErrAccountMiss    = "account_not_found"
 )
 
 var (
-	wakeupTimePattern  = regexp.MustCompile(`^([01][0-9]|2[0-3]):([0-5][0-9])$`)
-	wakeupModelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/@()-]{1,128}$`)
+	wakeupTimePattern   = regexp.MustCompile(`^([01][0-9]|2[0-3]):([0-5][0-9])$`)
+	wakeupModelPattern  = regexp.MustCompile(`^[A-Za-z0-9._:/@()-]{1,128}$`)
+	geminiWakeupPattern = regexp.MustCompile(`(?i)^gemini-[a-z0-9][a-z0-9._-]*(\([a-z0-9-]+\))?$`)
 )
 
-var wakeupAllowedModelKeys = map[string]bool{
-	"claude":                 true,
-	"codex":                  true,
-	"antigravity":            true,
-	"antigravity:gemini":     true,
-	"antigravity:claude-gpt": true,
-}
+const (
+	wakeupGeminiGroup = "gemini"
+	wakeupGeminiKey   = "antigravity:" + wakeupGeminiGroup
+)
 
 type WakeupConfig struct {
 	Enabled           bool              `json:"enabled"`
@@ -73,11 +72,12 @@ type WakeupConfig struct {
 }
 
 type WakeupGroupResult struct {
-	Group  string `json:"group"`
-	Status string `json:"status"` // "sent" | "skipped" | "failed"
-	Reason string `json:"reason,omitempty"`
-	Model  string `json:"model,omitempty"`
-	At     string `json:"at"`
+	Group         string `json:"group"`
+	Status        string `json:"status"`
+	Reason        string `json:"reason,omitempty"`
+	Model         string `json:"model,omitempty"`
+	At            string `json:"at"`
+	WindowResetAt string `json:"window_reset_at,omitempty"` // Confirmed by a fresh quota read, not inferred from HTTP success.
 }
 
 type WakeupAccountResult struct {
@@ -176,6 +176,10 @@ func cloneWakeupConfig(cfg WakeupConfig) WakeupConfig {
 }
 
 func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
+	return normalizeWakeupConfig(raw, false)
+}
+
+func normalizeWakeupConfig(raw WakeupConfig, fromDisk bool) (WakeupConfig, error) {
 	mode := strings.ToLower(strings.TrimSpace(raw.Mode))
 	if mode == "" {
 		mode = "daily"
@@ -249,12 +253,29 @@ func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
 	sort.Strings(excluded)
 
 	models := make(map[string]string)
+	var legacyGemini string
 	for k, v := range raw.Models {
-		key := strings.ToLower(strings.TrimSpace(k))
-		if !wakeupAllowedModelKeys[key] {
+		key, val := strings.ToLower(strings.TrimSpace(k)), strings.TrimSpace(v)
+		switch key {
+		case "antigravity:claude-gpt":
+			// Accept old files and open dashboards without ever using this slot.
+			continue
+		case "antigravity":
+			if isGeminiWakeupModel(val) {
+				legacyGemini = val
+			}
+			continue
+		case wakeupGeminiKey:
+			if val != "" && !isGeminiWakeupModel(val) {
+				if fromDisk {
+					continue // Preserve the schedule; use automatic Gemini selection instead.
+				}
+				return WakeupConfig{}, errors.New("Antigravity wakeup requires a Gemini text model")
+			}
+		case "claude", "codex":
+		default:
 			return WakeupConfig{}, errors.New("invalid wakeup model key")
 		}
-		val := strings.TrimSpace(v)
 		if val == "" {
 			continue
 		}
@@ -262,6 +283,9 @@ func validateWakeupConfig(raw WakeupConfig) (WakeupConfig, error) {
 			return WakeupConfig{}, errors.New("invalid wakeup model name")
 		}
 		models[key] = val
+	}
+	if models[wakeupGeminiKey] == "" && legacyGemini != "" {
+		models[wakeupGeminiKey] = legacyGemini
 	}
 
 	msg := strings.TrimSpace(raw.Message)
@@ -308,7 +332,7 @@ func (e *Engine) loadWakeupPersistence() {
 		e.blockStorageWrites("Wakeup settings could not be read")
 		return
 	}
-	cfg, err := validateWakeupConfig(saved.Config)
+	cfg, err := normalizeWakeupConfig(saved.Config, true)
 	if err != nil {
 		e.blockStorageWrites("Wakeup settings could not be read")
 		return
@@ -354,6 +378,11 @@ func (e *Engine) loadWakeupPersistence() {
 					continue
 				}
 				g.Reason = sanitizeWakeupReason(g.Reason)
+				if resetAt, ok := parseWindowResetTime(g.WindowResetAt); ok && g.Status == "sent" {
+					g.WindowResetAt = resetAt.Format(time.RFC3339Nano)
+				} else {
+					g.WindowResetAt = ""
+				}
 				if g.Model != "" && !wakeupModelPattern.MatchString(g.Model) {
 					g.Model = ""
 				}
@@ -366,10 +395,14 @@ func (e *Engine) loadWakeupPersistence() {
 }
 
 func sanitizeWakeupReason(reason string) string {
+	if reason == "account_disabled" {
+		// Migrate legacy wakeup results away from the reset-credit error code.
+		return wakeupErrAccountDis
+	}
 	switch reason {
 	case "", wakeupReasonWindow, wakeupReasonDisabled, wakeupReasonExcluded, wakeupReasonProviderOff, wakeupReasonExhausted,
 		wakeupErrHostUnavail, wakeupErrHostUnsupp, wakeupErrModelUnavail, wakeupErrRateLimited,
-		wakeupErrAuthFailed, wakeupErrRequestFailed, wakeupErrAccountDis, wakeupErrAccountMiss:
+		wakeupErrAuthFailed, wakeupErrRequestFailed, wakeupErrAccountDis, wakeupErrTOSViolation, wakeupErrAccountMiss:
 		return reason
 	default:
 		return wakeupErrRequestFailed
@@ -744,7 +777,7 @@ func isFiveHourWindowActive(win *QuotaWindow, sent wakeupSentRecord, now time.Ti
 func (e *Engine) updateWakeupObservedResetLocked(q AccountQuota) {
 	if q.Provider == "antigravity" {
 		for _, g := range q.Groups {
-			if g.Five == nil {
+			if g.Key != wakeupGeminiGroup || g.Five == nil {
 				continue
 			}
 			key := wakeupSentKey(q.AuthID, g.Key)
@@ -879,16 +912,10 @@ func (e *Engine) accountNeedsResetWakeupLocked(q AccountQuota, now time.Time) bo
 		return false
 	}
 	if q.Provider == "antigravity" {
-		if len(q.Groups) == 0 {
-			return false
-		}
 		for _, g := range q.Groups {
-			if g.Five == nil {
-				continue
-			}
-			sent := e.wakeupLastSent[wakeupSentKey(q.AuthID, g.Key)]
-			if !isFiveHourWindowActive(g.Five, sent, now) {
-				return true
+			if g.Key == wakeupGeminiGroup && g.Five != nil {
+				sent := e.wakeupLastSent[wakeupSentKey(q.AuthID, wakeupGeminiGroup)]
+				return !isQuotaWindowExhausted(g.Five, now) && !isQuotaWindowExhausted(g.Week, now) && !isFiveHourWindowActive(g.Five, sent, now)
 			}
 		}
 		return false
@@ -975,11 +1002,15 @@ func (e *Engine) runSingleAccountWakeupClaimed(
 	refresh func(AuthEntry) bool,
 ) {
 	var refreshedEntry *AuthEntry
+	needAuthSync := false
 	defer func() {
 		// Refresh quota BEFORE signaling completion so polling callers immediately
 		// observe the locked 5-hour reset timestamp on the card.
 		if refreshedEntry != nil && refresh != nil {
 			e.refreshAfterWakeup(*refreshedEntry, refresh)
+		}
+		if needAuthSync && rpc != nil {
+			e.syncAuthStatus(rpc)
 		}
 		e.mu.Lock()
 		delete(e.wakeupRunningAuths, authID)
@@ -1031,6 +1062,9 @@ func (e *Engine) runSingleAccountWakeupClaimed(
 	if res.Status == "sent" {
 		refreshedEntry = target
 	}
+	if res.Reason == wakeupErrTOSViolation || res.Reason == wakeupErrAccountDis {
+		needAuthSync = true
+	}
 }
 
 func (e *Engine) runWakeupBatchLockedClaimed(
@@ -1059,6 +1093,7 @@ func (e *Engine) runWakeupSubsetClaimed(
 ) {
 	var sentEntries []AuthEntry
 	var sentMu sync.Mutex
+	needAuthSync := false
 	rollbackSlot := false
 	defer func() {
 		if len(sentEntries) > 0 && refresh != nil {
@@ -1087,6 +1122,9 @@ func (e *Engine) runWakeupSubsetClaimed(
 				}()
 			}
 			rwg.Wait()
+		}
+		if needAuthSync && rpc != nil {
+			e.syncAuthStatus(rpc)
 		}
 		e.mu.Lock()
 		if rollbackSlot && slotKey != "" {
@@ -1209,9 +1247,14 @@ func (e *Engine) runWakeupSubsetClaimed(
 				e.mu.Unlock()
 
 				e.recordWakeupResult(res, res.Status == "failed")
-				if res.Status == "sent" {
+				if res.Status == "sent" || res.Reason == wakeupErrTOSViolation || res.Reason == wakeupErrAccountDis {
 					sentMu.Lock()
-					sentEntries = append(sentEntries, entry)
+					if res.Status == "sent" {
+						sentEntries = append(sentEntries, entry)
+					}
+					if res.Reason == wakeupErrTOSViolation || res.Reason == wakeupErrAccountDis {
+						needAuthSync = true
+					}
 					sentMu.Unlock()
 				}
 			}
@@ -1255,10 +1298,32 @@ func (e *Engine) refreshAfterWakeup(entry AuthEntry, refresh func(AuthEntry) boo
 		return
 	}
 	defer e.refreshMu.RUnlock()
+	started := time.Now().UTC()
 	if refresh(entry) {
 		e.mu.Lock()
 		if q, ok := e.quotas[entry.ID]; ok {
 			e.updateWakeupObservedResetLocked(q)
+			if fetchedAt, valid := parseWindowResetTime(q.FetchedAt); entry.Provider == "antigravity" && valid && !fetchedAt.Before(started) && q.Error == "" {
+				res := e.wakeupResults[entry.ID]
+				// Copy the slice so snapshots already handed to readers remain immutable.
+				res.Groups = append([]WakeupGroupResult(nil), res.Groups...)
+				for i, result := range res.Groups {
+					if result.Status != "sent" || result.Group != wakeupGeminiGroup {
+						continue
+					}
+					for _, g := range q.Groups {
+						if g.Key == result.Group && g.Five != nil && g.Five.Used > 0 {
+							if resetAt, valid := parseWindowResetTime(g.Five.ResetAt); valid && resetAt.After(fetchedAt) {
+								res.Groups[i].WindowResetAt = resetAt.Format(time.RFC3339Nano)
+							}
+							break
+						}
+					}
+				}
+				if len(res.Groups) > 0 {
+					e.wakeupResults[entry.ID] = res
+				}
+			}
 			e.persistWakeupTrackingLocked(time.Now().UTC())
 		}
 		e.mu.Unlock()
@@ -1290,7 +1355,7 @@ func (e *Engine) wakeupEntry(
 	e.mu.RLock()
 	quota, hasQuota := e.quotas[entry.ID]
 	sent := e.wakeupLastSent[wakeupSentKey(entry.ID, "")]
-	candidates := e.wakeupCandidateModelsLocked(entry, "", cfg)
+	candidates := e.wakeupCandidateModelsLocked(entry, cfg)
 	e.mu.RUnlock()
 
 	if hasQuota && (isQuotaWindowExhausted(quota.Five, now) || isQuotaWindowExhausted(quota.Week, now)) {
@@ -1362,135 +1427,55 @@ func (e *Engine) wakeupAntigravityEntry(
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
 ) WakeupAccountResult {
 	ts := now.UTC().Format(time.RFC3339Nano)
-	type groupTarget struct {
-		key  string
-		five *QuotaWindow
-		week *QuotaWindow
-	}
+	key := wakeupSentKey(entry.ID, wakeupGeminiGroup)
+	var five, week *QuotaWindow
 	e.mu.RLock()
-	quota, hasQuota := e.quotas[entry.ID]
-	var targets []groupTarget
-	if hasQuota && len(quota.Groups) > 0 {
-		for _, g := range quota.Groups {
-			if g.Key == "gemini" || g.Key == "claude-gpt" {
-				targets = append(targets, groupTarget{key: g.Key, five: g.Five, week: g.Week})
-			}
+	for _, g := range e.quotas[entry.ID].Groups {
+		if g.Key == wakeupGeminiGroup {
+			five, week = g.Five, g.Week
+			break
 		}
 	}
-	if len(targets) == 0 {
-		targets = []groupTarget{{key: "gemini"}, {key: "claude-gpt"}}
-	}
+	sent := e.wakeupLastSent[key]
+	candidates := e.wakeupCandidateModelsLocked(entry, cfg)
 	e.mu.RUnlock()
 
-	results := make([]WakeupGroupResult, 0, len(targets))
-	sentCount, skippedCount, exhaustedCount, failedCount := 0, 0, 0, 0
-	var firstSentModel, firstReason, firstExhaustedReason string
-	for _, target := range targets {
-		e.mu.RLock()
-		sent := e.wakeupLastSent[wakeupSentKey(entry.ID, target.key)]
-		candidates := e.wakeupCandidateModelsLocked(entry, target.key, cfg)
-		e.mu.RUnlock()
-
-		if isQuotaWindowExhausted(target.five, now) || isQuotaWindowExhausted(target.week, now) {
-			exhaustedCount++
-			if firstExhaustedReason == "" {
-				firstExhaustedReason = wakeupReasonExhausted
-			}
-			results = append(results, WakeupGroupResult{
-				Group:  target.key,
-				Status: "exhausted",
-				Reason: wakeupReasonExhausted,
-				At:     ts,
-			})
-			continue
-		}
-		if !force && cfg.SkipActiveWindow && isFiveHourWindowActive(target.five, sent, now) {
-			skippedCount++
-			results = append(results, WakeupGroupResult{
-				Group:  target.key,
-				Status: "skipped",
-				Reason: wakeupReasonWindow,
-				At:     ts,
-			})
-			continue
-		}
-		usedModel, failure := tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
-		if failure != "" {
-			gStatus := "failed"
-			if failure == wakeupErrRateLimited {
-				gStatus = "exhausted"
-				exhaustedCount++
-				if firstExhaustedReason == "" {
-					firstExhaustedReason = failure
-				}
-			} else if entry.QuotaCooling && failure == wakeupErrModelUnavail {
-				gStatus = "exhausted"
-				failure = wakeupReasonExhausted
-				usedModel = ""
-				exhaustedCount++
-				if firstExhaustedReason == "" {
-					firstExhaustedReason = failure
-				}
-			} else {
-				failedCount++
-				if firstReason == "" {
-					firstReason = failure
-				}
-			}
-			results = append(results, WakeupGroupResult{
-				Group:  target.key,
-				Status: gStatus,
-				Reason: failure,
-				Model:  usedModel,
-				At:     ts,
-			})
-			if failure == wakeupErrHostUnsupp || failure == wakeupErrAuthFailed || failure == wakeupErrAccountDis {
-				break
-			}
-			continue
-		}
-		sentCount++
-		if firstSentModel == "" {
-			firstSentModel = usedModel
-		}
-		e.mu.Lock()
-		e.wakeupLastSent[wakeupSentKey(entry.ID, target.key)] = wakeupSentRecord{At: now.UTC()}
-		e.mu.Unlock()
-		results = append(results, WakeupGroupResult{
-			Group:  target.key,
-			Status: "sent",
-			Model:  usedModel,
-			At:     ts,
-		})
-	}
-
-	out := WakeupAccountResult{
-		AuthID:   entry.ID,
-		Provider: entry.Provider,
-		Name:     entry.Name,
-		At:       ts,
-		Groups:   results,
-	}
+	g := WakeupGroupResult{Group: wakeupGeminiGroup, At: ts}
 	switch {
-	case sentCount > 0:
-		out.Status = "sent"
-		out.Model = firstSentModel
-		if firstReason != "" {
-			out.Reason = firstReason
-		} else if firstExhaustedReason != "" {
-			out.Reason = firstExhaustedReason
-		}
-	case failedCount > 0:
-		out.Status = "failed"
-		out.Reason = firstReason
-	case exhaustedCount > 0:
-		out.Status = "exhausted"
-		out.Reason = firstExhaustedReason
+	case isQuotaWindowExhausted(five, now) || isQuotaWindowExhausted(week, now):
+		g.Status, g.Reason = "exhausted", wakeupReasonExhausted
+	case !force && cfg.SkipActiveWindow && isFiveHourWindowActive(five, sent, now):
+		g.Status, g.Reason = "skipped", wakeupReasonWindow
 	default:
-		out.Status = "skipped"
-		out.Reason = wakeupReasonWindow
+		if configuredGeminiWakeupModel(cfg) == "" {
+			models, failure := antigravityWakeupCatalog(entry, rpc)
+			g.Reason = failure
+			if models != nil {
+				candidates = rankAntigravityWakeupCatalog(models, candidates)
+			}
+		}
+		if g.Reason == "" {
+			g.Model, g.Reason = tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
+		}
+		switch {
+		case g.Reason == "":
+			g.Status = "sent"
+			e.mu.Lock()
+			e.wakeupLastSent[key] = wakeupSentRecord{At: now.UTC()}
+			e.mu.Unlock()
+		case g.Reason == wakeupErrRateLimited:
+			g.Status = "exhausted"
+		case entry.QuotaCooling && g.Reason == wakeupErrModelUnavail:
+			g.Status, g.Reason, g.Model = "exhausted", wakeupReasonExhausted, ""
+		default:
+			g.Status = "failed"
+		}
 	}
-	return out
+	return WakeupAccountResult{
+		AuthID: entry.ID, Provider: entry.Provider, Name: entry.Name,
+		Status: g.Status, Reason: g.Reason, Model: g.Model, At: ts,
+		Groups: []WakeupGroupResult{g},
+	}
 }
 
 func isNonChatWakeupModel(model string) bool {
@@ -1526,17 +1511,12 @@ func isLightWakeupModel(model string) bool {
 	return false
 }
 
-func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg WakeupConfig) []string {
+func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, cfg WakeupConfig) []string {
 	// Explicit user-configured model takes sole priority so we never silently bill
 	// a different/heavier model than the user requested.
 	if entry.Provider == "antigravity" {
-		if m := strings.TrimSpace(cfg.Models["antigravity:"+group]); m != "" {
+		if m := configuredGeminiWakeupModel(cfg); m != "" {
 			return []string{m}
-		}
-		if m := strings.TrimSpace(cfg.Models["antigravity"]); m != "" {
-			if group == "" || antigravityModelGroup(m) == group {
-				return []string{m}
-			}
 		}
 	} else if m := strings.TrimSpace(cfg.Models[entry.Provider]); m != "" {
 		return []string{m}
@@ -1582,23 +1562,8 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 			addModel(m)
 		}
 	case "antigravity":
-		if group == "claude-gpt" {
-			for _, m := range []string{
-				"gpt-oss-120b-medium",
-				"claude-sonnet-4-6",
-			} {
-				addModel(m)
-			}
-		} else {
-			for _, m := range []string{
-				"gemini-2.5-flash-lite",
-				"gemini-3.1-flash-lite",
-				"gemini-3.5-flash-lite",
-				"gemini-3-flash",
-				"gemini-2.5-flash",
-			} {
-				addModel(m)
-			}
+		for _, m := range []string{"gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash"} {
+			addModel(m)
 		}
 	}
 
@@ -1616,7 +1581,7 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 		if m == "" || obsSeen[m] || isNonChatWakeupModel(m) {
 			continue
 		}
-		if entry.Provider == "antigravity" && group != "" && antigravityModelGroup(m) != group {
+		if entry.Provider == "antigravity" && !isGeminiWakeupModel(m) {
 			continue
 		}
 		obsSeen[m] = true
@@ -1644,6 +1609,83 @@ func (e *Engine) wakeupCandidateModelsLocked(entry AuthEntry, group string, cfg 
 	appendUnique(normalObserved)
 	appendUnique(heavyObserved)
 	return merged
+}
+
+func isGeminiWakeupModel(model string) bool {
+	return len(model) <= wakeupMaxModelBytes && geminiWakeupPattern.MatchString(model) && !isNonChatWakeupModel(model)
+}
+
+func configuredGeminiWakeupModel(cfg WakeupConfig) string {
+	if model := strings.TrimSpace(cfg.Models[wakeupGeminiKey]); isGeminiWakeupModel(model) {
+		return model
+	}
+	return ""
+}
+
+// A nil catalog with no failure is the compatibility path for hosts that do not
+// implement host.auth.models. A known empty catalog must not trigger guessed models.
+func antigravityWakeupCatalog(entry AuthEntry, rpc func(string, any) (any, error)) ([]string, string) {
+	if rpc == nil || entry.Index == "" {
+		return nil, ""
+	}
+	data, err := rpc("host.auth.models", map[string]string{"auth_index": entry.Index})
+	if err != nil {
+		var hostErr *hostRPCError
+		if errors.As(err, &hostErr) && strings.Contains(strings.ToLower(hostErr.Detail), "unsupported host callback") {
+			return nil, ""
+		}
+		return nil, wakeupErrHostUnavail
+	}
+	envelope, _ := data.(map[string]any)
+	rows, _ := envelope["credentials"].([]any)
+	if len(rows) != 1 {
+		return nil, wakeupErrHostUnavail
+	}
+	row, _ := rows[0].(map[string]any)
+	if str(row, "id") != entry.ID || str(row, "auth_index") != entry.Index || normalizeProvider(str(row, "provider")) != entry.Provider {
+		return nil, wakeupErrHostUnavail
+	}
+	raw, ok := row["models"].([]any)
+	if !ok {
+		return nil, wakeupErrHostUnavail
+	}
+	models := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if model, ok := value.(string); ok {
+			models = append(models, model)
+		}
+	}
+	return models, ""
+}
+
+func rankAntigravityWakeupCatalog(models []string, preferred []string) []string {
+	allowed := make(map[string]bool, len(models))
+	for _, model := range models {
+		if isGeminiWakeupModel(model) {
+			allowed[model] = true
+		}
+	}
+	var candidates []string
+	for _, source := range [][]string{preferred, models} {
+		for _, model := range source {
+			if allowed[model] {
+				candidates = append(candidates, model)
+				delete(allowed, model)
+			}
+		}
+	}
+	weight := func(model string) int {
+		switch {
+		case isLightWakeupModel(model):
+			return 0
+		case isHeavyWakeupModel(model):
+			return 2
+		default:
+			return 1
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return weight(candidates[i]) < weight(candidates[j]) })
+	return candidates
 }
 
 func tryWakeupModels(
@@ -1677,18 +1719,31 @@ func tryWakeupModels(
 // native host.model.execute callback so OAuth token refresh, provider headers,
 // cloaking, and credential-scoped proxies are all handled by CPA itself.
 func executeWakeupModel(entry AuthEntry, model string, message string, rpc func(string, any) (any, error)) (string, string) {
+	if entry.Provider == "antigravity" && !isGeminiWakeupModel(model) {
+		return "", wakeupErrModelUnavail
+	}
 	prompt := strings.TrimSpace(message)
 	if prompt == "" {
 		prompt = wakeupDefaultMessage
 	}
-	payload, err := json.Marshal(map[string]any{
+	requestBody := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": wakeupDefaultMaxTokens,
 		"stream":     false,
-	})
+	}
+	if entry.Provider == "antigravity" {
+		// A fixed 16-token cap can truncate output before a thinking model
+		// completes. Only specify an effort on models with a known low setting.
+		delete(requestBody, "max_tokens")
+		switch model {
+		case "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash":
+			requestBody["reasoning_effort"] = "minimal"
+		}
+	}
+	payload, err := json.Marshal(requestBody)
 	if err != nil {
 		return model, wakeupErrRequestFailed
 	}
@@ -1721,14 +1776,30 @@ func executeWakeupModel(entry AuthEntry, model string, message string, rpc func(
 	return model, wakeupErrRequestFailed
 }
 
+func isWakeupTOSDetail(detail string) bool {
+	return strings.Contains(detail, "tos_violation") || strings.Contains(detail, "terms of service")
+}
+
+func isWakeupAccountDisabledDetail(detail string) bool {
+	return strings.Contains(detail, "auth_disabled") ||
+		strings.Contains(detail, "credential is disabled") ||
+		strings.Contains(detail, "credential disabled") ||
+		strings.Contains(detail, "account_disabled") ||
+		strings.Contains(detail, "account is disabled") ||
+		strings.Contains(detail, "auth is disabled")
+}
+
 func classifyWakeupError(err error) string {
 	var rpcErr *hostRPCError
 	if errors.As(err, &rpcErr) {
-		detail := strings.ToLower(rpcErr.Detail)
+		detail := strings.ToLower(strings.TrimSpace(rpcErr.Code + " " + rpcErr.Detail))
 		if strings.Contains(detail, "unsupported host callback") || strings.Contains(detail, "host model executor is unavailable") {
 			return wakeupErrHostUnsupp
 		}
-		if strings.Contains(detail, "disabled") {
+		if isWakeupTOSDetail(detail) {
+			return wakeupErrTOSViolation
+		}
+		if isWakeupAccountDisabledDetail(detail) {
 			return wakeupErrAccountDis
 		}
 		if rpcErr.StatusCode > 0 {
@@ -1750,15 +1821,19 @@ func classifyWakeupError(err error) string {
 }
 
 func classifyWakeupStatus(status int, detail string) string {
+	detail = strings.ToLower(detail)
+	if isWakeupTOSDetail(detail) {
+		return wakeupErrTOSViolation
+	}
+	if isWakeupAccountDisabledDetail(detail) {
+		return wakeupErrAccountDis
+	}
 	switch status {
 	case 401, 403:
 		return wakeupErrAuthFailed
 	case 429:
 		return wakeupErrRateLimited
 	case 400, 404, 422:
-		if strings.Contains(detail, "disabled") {
-			return wakeupErrAccountDis
-		}
 		return wakeupErrModelUnavail
 	default:
 		if strings.Contains(detail, "rate limit") || strings.Contains(detail, "rate_limit") || strings.Contains(detail, "quota") || strings.Contains(detail, "cooldown") || strings.Contains(detail, "usage limit") {

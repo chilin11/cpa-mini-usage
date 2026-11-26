@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,8 @@ func TestWakeupConfigValidationAndNormalization(t *testing.T) {
 		{Mode: "daily", Times: []string{"07:00"}, Providers: map[string]bool{"unknown": true}},
 		{Mode: "daily", Times: []string{"07:00"}, Models: map[string]string{"invalid": "m"}},
 		{Mode: "daily", Times: []string{"07:00"}, Models: map[string]string{"claude": "bad model with space"}},
+		{Mode: "daily", Times: []string{"07:00"}, Models: map[string]string{wakeupGeminiKey: "claude-sonnet-4-6"}},
+		{Mode: "daily", Times: []string{"07:00"}, Models: map[string]string{wakeupGeminiKey: "gemini-3-flash/claude-sonnet-4-6"}},
 		{Mode: "daily", Times: []string{"07:00"}, Message: "bad\x00ctrl"},
 		{Mode: "daily", Times: []string{"07:00"}, Message: strings.Repeat("a", wakeupMaxMessageRunes+1)},
 		{Enabled: true, Mode: "daily", Times: []string{"07:00"}, Providers: map[string]bool{"claude": false, "codex": false, "antigravity": false}},
@@ -96,10 +99,28 @@ func TestWakeupPersistenceSurvivesRestartAndCorruptTriggersReadOnly(t *testing.T
 		t.Fatalf("wakeup.json contains secret marker")
 	}
 
+	var legacy persistedWakeup
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Config.Models["antigravity:claude-gpt"] = "claude-sonnet-4-6"
+	legacy.Config.Models["antigravity"] = "gemini-3-flash"
+	legacy.Config.Models[wakeupGeminiKey] = "gpt-oss-120b-medium"
+	raw, err = json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, wakeupConfigFileName), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	restored := newEngine()
 	restored.dir = dir
 	restored.load()
 	got := restored.snapshot().Wakeup.Config
+	if restored.storageReadFailed || len(got.Models) != 2 || got.Models[wakeupGeminiKey] != "gemini-3-flash" || got.Models["claude"] != "claude-haiku-4-5-20251001" {
+		t.Fatalf("legacy Google overrides were not migrated safely: %+v", got.Models)
+	}
 	if !got.Enabled || got.Mode != "both" || got.TimezoneOffsetMin != 480 || got.Message != "hello" || len(got.ExcludedAuthIDs) != 1 || got.ExcludedAuthIDs[0] != "claude-1" {
 		t.Fatalf("restored wakeup config mismatch: %+v", got)
 	}
@@ -295,12 +316,14 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 		AuthID: "ag-1", Provider: "antigravity", Name: "g@example.com",
 		Groups: []QuotaGroup{
 			{Key: "gemini", Label: "Gemini Models", Five: &QuotaWindow{Used: 0}},
-			{Key: "claude-gpt", Label: "Claude / GPT Models", Five: &QuotaWindow{Used: 15, ResetAt: now.Add(2 * time.Hour).Format(time.RFC3339)}},
+			{Key: "claude-gpt", Label: "Claude / GPT Models", Five: &QuotaWindow{Used: 0}},
 		},
 	}
 
 	var requests []map[string]any
 	var mu sync.Mutex
+	catalogReads := 0
+	windowReset := now.Add(5 * time.Hour).Truncate(time.Second).Format(time.RFC3339)
 	rpc := func(method string, arg any) (any, error) {
 		switch method {
 		case "host.auth.list":
@@ -309,6 +332,15 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 				map[string]any{"id": "ag-1", "auth_index": "i2", "provider": "antigravity", "email": "g@example.com"},
 				map[string]any{"id": "dis-1", "auth_index": "i3", "provider": "codex", "email": "d@example.com", "disabled": true},
 			}}, nil
+		case "host.auth.models":
+			catalogReads++
+			if arg.(map[string]string)["auth_index"] != "i2" {
+				t.Errorf("model catalog not pinned: %v", arg)
+			}
+			return map[string]any{"credentials": []any{map[string]any{
+				"id": "ag-1", "auth_index": "i2", "provider": "antigravity",
+				"models": []any{"gemini-nonchat-image", "gemini-4-hydrogen-xhigh", "gemini-3.5-flash-lite", "claude-sonnet-4-6", "gpt-oss-120b-medium"},
+			}}}, nil
 		case "host.model.execute":
 			req := arg.(map[string]any)
 			mu.Lock()
@@ -329,6 +361,14 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 		refMu.Lock()
 		refreshed[entry.ID] = true
 		refMu.Unlock()
+		if entry.ID == "ag-1" {
+			e.mu.Lock()
+			q := e.quotas[entry.ID]
+			q.FetchedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			q.Groups[0].Five = &QuotaWindow{Used: 0.1, ResetAt: windowReset}
+			e.quotas[entry.ID] = q
+			e.mu.Unlock()
+		}
 		return true
 	}
 
@@ -368,18 +408,31 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 		t.Fatalf("disabled account should be skipped: %+v", snap.Results["dis-1"])
 	}
 	agRes := snap.Results["ag-1"]
-	if agRes.Status != "sent" || len(agRes.Groups) != 2 {
-		t.Fatalf("antigravity result unexpected: %+v", agRes)
+	if agRes.Status != "sent" || len(agRes.Groups) != 1 {
+		t.Fatalf("antigravity must wake only the Gemini group: %+v", agRes)
 	}
-	if agRes.Groups[0].Group != "gemini" || agRes.Groups[0].Status != "sent" || agRes.Groups[1].Group != "claude-gpt" || agRes.Groups[1].Status != "skipped" {
-		t.Fatalf("antigravity per-group wakeup unexpected: %+v", agRes.Groups)
+	if catalogReads != 1 || agRes.Groups[0].Group != "gemini" || agRes.Groups[0].Status != "sent" || agRes.Groups[0].Model != "gemini-3.5-flash-lite" || agRes.Groups[0].WindowResetAt != windowReset {
+		t.Fatalf("antigravity Gemini wakeup unexpected (catalog reads=%d): %+v", catalogReads, agRes.Groups)
+	}
+	if e.accountNeedsResetWakeupLocked(e.quotas["ag-1"], time.Now()) {
+		t.Fatal("an idle Antigravity Claude/GPT window must not trigger auto-wakeup")
+	}
+	entry := AuthEntry{ID: "ag-1", Provider: "antigravity"}
+	if model, reason := executeWakeupModel(entry, "claude-sonnet-4-6", "hi", func(string, any) (any, error) {
+		t.Fatal("Antigravity Claude must not reach any RPC")
+		return nil, nil
+	}); model != "" || reason != wakeupErrModelUnavail {
+		t.Fatalf("non-Gemini guard returned %q/%q", model, reason)
+	}
+	if got := restored.snapshot().Wakeup.Results["ag-1"].Groups; len(got) == 0 || got[0].WindowResetAt != windowReset {
+		t.Fatalf("confirmed reset time was not restored: %+v", got)
 	}
 
 	// Verify pinned wire contract sent to host.model.execute.
 	mu.Lock()
 	defer mu.Unlock()
-	if len(requests) < 3 {
-		t.Fatalf("expected at least 3 model execute calls, got %d", len(requests))
+	if len(requests) != 3 {
+		t.Fatalf("expected two standalone Claude attempts and one Antigravity Gemini attempt, got %d", len(requests))
 	}
 	for _, r := range requests {
 		if r["entry_protocol"] != "openai" || r["exit_protocol"] != "openai" || r["stream"] != false {
@@ -392,7 +445,11 @@ func TestWakeupModelExecutionPinningFallbackAndAntigravityGroups(t *testing.T) {
 		if err := json.Unmarshal(r["body"].([]byte), &body); err != nil {
 			t.Fatalf("invalid body json: %v", err)
 		}
-		if body["max_tokens"] != float64(wakeupDefaultMaxTokens) {
+		if r["auth_id"] == "ag-1" {
+			if body["max_tokens"] != nil || body["reasoning_effort"] != "minimal" || r["forced_provider"] != "antigravity" {
+				t.Fatalf("unexpected Antigravity request: %+v %+v", r, body)
+			}
+		} else if body["max_tokens"] != float64(wakeupDefaultMaxTokens) {
 			t.Fatalf("unexpected max_tokens: %+v", body)
 		}
 	}
@@ -503,8 +560,8 @@ func TestWakeupManagementRoutes(t *testing.T) {
 	if code, _ := call("/wakeup/exclude", `{"auth_id":"c1","excluded":true}`); code != 200 {
 		t.Fatalf("valid exclude status=%d, want 200", code)
 	}
-	if code, _ := call("/wakeup/run", `{"auth_id":"dis","force":true}`); code != 409 {
-		t.Fatalf("disabled account run status=%d, want 409", code)
+	if code, body := call("/wakeup/run", `{"auth_id":"dis","force":true}`); code != 409 || body["error"] != wakeupErrAccountDis {
+		t.Fatalf("disabled account run status=%d body=%+v, want 409 %s", code, body, wakeupErrAccountDis)
 	}
 	if code, _ := call("/wakeup/run", `{"auth_id":"unknown","force":true}`); code != 404 {
 		t.Fatalf("unknown account run status=%d, want 404", code)
@@ -738,7 +795,7 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 		{At: now, AuthID: "codex-a", Provider: "codex", Model: "gpt-image-2"},
 	}
 	e.mu.RLock()
-	candidates := e.wakeupCandidateModelsLocked(AuthEntry{ID: "codex-a", Provider: "codex"}, "", e.wakeupConfig)
+	candidates := e.wakeupCandidateModelsLocked(AuthEntry{ID: "codex-a", Provider: "codex"}, e.wakeupConfig)
 	e.mu.RUnlock()
 	if len(candidates) == 0 || candidates[0] != "gpt-5.1-codex-mini" {
 		t.Fatalf("expected lightweight mini model first, got %v", candidates)
@@ -750,5 +807,110 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 	}
 	if candidates[len(candidates)-1] != "gpt-6-astra" {
 		t.Fatalf("heavy flagship model gpt-6-astra should only appear last as fallback: %v", candidates)
+	}
+}
+
+func TestWakeupAntigravityTOSViolationAndDisableReason(t *testing.T) {
+	// 1. Error classification distinguishes TOS_VIOLATION, real auth_disabled, and unrelated "disabled" text.
+	if got := classifyWakeupError(&hostRPCError{
+		Method:     "host.model.execute",
+		Code:       "tos_violation",
+		StatusCode: 403,
+		Detail:     "Your account has been disabled due to TOS_VIOLATION",
+	}); got != wakeupErrTOSViolation {
+		t.Fatalf("TOS_VIOLATION classified as %q, want %q", got, wakeupErrTOSViolation)
+	}
+	if got := classifyWakeupError(&hostRPCError{
+		Method:     "host.model.execute",
+		Code:       "auth_disabled",
+		StatusCode: 409,
+		Detail:     "credential is disabled",
+	}); got != wakeupErrAccountDis {
+		t.Fatalf("auth_disabled classified as %q, want %q", got, wakeupErrAccountDis)
+	}
+	if got := classifyWakeupError(&hostRPCError{
+		Method:     "host.model.execute",
+		StatusCode: 403,
+		Detail:     "Cloud Code API has not been used in project 123 or it is disabled",
+	}); got != wakeupErrAuthFailed {
+		t.Fatalf("generic API disabled 403 classified as %q, want %q", got, wakeupErrAuthFailed)
+	}
+	if got := sanitizeWakeupReason("account_disabled"); got != wakeupErrAccountDis {
+		t.Fatalf("legacy account_disabled should migrate to %q, got %q", wakeupErrAccountDis, got)
+	}
+
+	// 2. Antigravity wakeup stops immediately on TOS_VIOLATION without hammering the second group,
+	// and syncs CPA's newly auto-disabled status + allow-listed disable_reason back into the snapshot.
+	e := newEngine()
+	e.dir = t.TempDir()
+	e.load()
+	now := time.Now().UTC()
+	e.quotas["ag-1"] = AccountQuota{
+		AuthID:   "ag-1",
+		Provider: "antigravity",
+		Name:     "google@example.com",
+		Groups: []QuotaGroup{
+			{Key: "gemini", Label: "Gemini"},
+			{Key: "claude-gpt", Label: "Claude/GPT"},
+		},
+	}
+
+	disabledByCPA := false
+	execCalls := 0
+	rpc := func(method string, _ any) (any, error) {
+		if method == "host.auth.list" {
+			row := map[string]any{
+				"id":         "ag-1",
+				"auth_index": "i-ag",
+				"provider":   "antigravity",
+				"email":      "google@example.com",
+				"disabled":   disabledByCPA,
+			}
+			if disabledByCPA {
+				row["status"] = "disabled"
+				row["status_message"] = "tos_violation"
+			} else {
+				// Non-allowlisted status messages must never leak into disable_reason.
+				row["status_message"] = "secret-internal-token-text"
+			}
+			return map[string]any{"files": []any{row}}, nil
+		}
+		if method == "host.auth.models" {
+			return nil, &hostRPCError{Method: method, Detail: "unsupported host callback host.auth.models"}
+		}
+		return nil, errors.New("unexpected rpc " + method)
+	}
+	exec := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
+		execCalls++
+		disabledByCPA = true
+		return model, wakeupErrTOSViolation
+	}
+
+	code, _, msg := e.kickWakeupRunWith("ag-1", true, now, rpc, exec, nil)
+	if code != 202 || msg != "" {
+		t.Fatalf("kickWakeupRunWith status=%d msg=%q", code, msg)
+	}
+	waitWakeupIdle(t, e)
+
+	if execCalls != 1 {
+		t.Fatalf("Antigravity TOS_VIOLATION must stop after first group, got %d exec calls", execCalls)
+	}
+	snap := e.snapshot()
+	res := snap.Wakeup.Results["ag-1"]
+	if res.Status != "failed" || res.Reason != wakeupErrTOSViolation {
+		t.Fatalf("unexpected wakeup result after TOS_VIOLATION: %+v", res)
+	}
+	var found *QuotaView
+	for i := range snap.Quotas {
+		if snap.Quotas[i].AuthID == "ag-1" {
+			found = &snap.Quotas[i]
+			break
+		}
+	}
+	if found == nil || !found.Disabled || found.DisableReason != "tos_violation" {
+		t.Fatalf("expected snapshot to reflect CPA auto-disable TOS reason, got %+v", found)
+	}
+	if got := sanitizeDisableReason(true, "some raw upstream secret error"); got != "" {
+		t.Fatalf("non-allowlisted disable reason must be stripped, got %q", got)
 	}
 }

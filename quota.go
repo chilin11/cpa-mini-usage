@@ -15,13 +15,14 @@ import (
 const allQuotaReadsFailed = "All OAuth quota reads failed; check the individual account messages"
 
 type AuthEntry struct {
-	Index        string
-	ID           string
-	Name         string
-	Provider     string
-	RawProvider  string
-	Disabled     bool
-	QuotaCooling bool
+	Index         string
+	ID            string
+	Name          string
+	Provider      string
+	RawProvider   string
+	Disabled      bool
+	DisableReason string
+	QuotaCooling  bool
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
@@ -268,7 +269,7 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, ManualResetDiagnostic: resetDiagnostic, Disabled: entry.Disabled}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, ManualResetDiagnostic: resetDiagnostic, Disabled: entry.Disabled, DisableReason: sanitizeDisableReason(entry.Disabled, entry.DisableReason)}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.updateWakeupObservedResetLocked(e.quotas[entry.ID])
 	if state, ok := e.accountRefresh[entry.ID]; ok {
@@ -297,7 +298,7 @@ func (e *Engine) refreshAntigravityQuota(entry AuthEntry, headers http.Header, c
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
-	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Groups: groups, FetchedAt: observedAt.Format(time.RFC3339Nano), Disabled: entry.Disabled}
+	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Groups: groups, FetchedAt: observedAt.Format(time.RFC3339Nano), Disabled: entry.Disabled, DisableReason: sanitizeDisableReason(entry.Disabled, entry.DisableReason)}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.updateWakeupObservedResetLocked(e.quotas[entry.ID])
 	if state, ok := e.accountRefresh[entry.ID]; ok {
@@ -361,6 +362,7 @@ func (e *Engine) recordQuotaError(a AuthEntry, message string) {
 	prior.Provider = a.Provider
 	prior.Name = a.Name
 	prior.Disabled = a.Disabled
+	prior.DisableReason = sanitizeDisableReason(a.Disabled, a.DisableReason)
 	prior.Error = message
 	if state, ok := e.accountRefresh[a.ID]; ok && !state.Refreshing {
 		state.Error = message
@@ -421,8 +423,10 @@ func parseAuthList(v any) []AuthEntry {
 		if strings.EqualFold(str(r, "status", "Status"), "disabled") {
 			disabled = true
 		}
+		statusMsg := str(r, "status_message", "StatusMessage")
+		disableReason := sanitizeDisableReason(disabled, statusMsg)
 		cooling := false
-		if unavail, _ := getAny(r, "unavailable", "Unavailable").(bool); unavail {
+		if unavail, _ := getAny(r, "unavailable", "Unavailable").(bool); unavail && !disabled {
 			cooling = true
 		}
 		if retryStr := str(r, "next_retry_after", "NextRetryAfter"); retryStr != "" {
@@ -430,12 +434,12 @@ func parseAuthList(v any) []AuthEntry {
 				cooling = true
 			}
 		}
-		if msg := strings.ToLower(str(r, "status_message", "StatusMessage")); msg != "" {
+		if msg := strings.ToLower(statusMsg); msg != "" {
 			if strings.Contains(msg, "429") || strings.Contains(msg, "quota") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit") || strings.Contains(msg, "cooldown") || strings.Contains(msg, "exhausted") || strings.Contains(msg, "usage limit") {
 				cooling = true
 			}
 		}
-		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled, QuotaCooling: cooling})
+		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled, DisableReason: disableReason, QuotaCooling: cooling})
 	}
 	return entries
 }

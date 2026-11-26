@@ -89,6 +89,7 @@ type AccountQuota struct {
 	ManualResetRemaining  *int64       `json:"manual_reset_remaining,omitempty"`
 	ManualResetDiagnostic string       `json:"manual_reset_diagnostic,omitempty"`
 	Disabled              bool         `json:"disabled,omitempty"`
+	DisableReason         string       `json:"disable_reason,omitempty"`
 	Groups                []QuotaGroup `json:"groups,omitempty"` // Antigravity shared-quota groups.
 }
 
@@ -120,7 +121,19 @@ type QuotaView struct {
 	ManualResetRemaining  *int64           `json:"manual_reset_remaining,omitempty"`
 	ManualResetDiagnostic string           `json:"manual_reset_diagnostic,omitempty"`
 	Disabled              bool             `json:"disabled,omitempty"`
+	DisableReason         string           `json:"disable_reason,omitempty"`
 	Groups                []QuotaGroupView `json:"groups,omitempty"`
+}
+
+func sanitizeDisableReason(disabled bool, raw string) string {
+	if !disabled {
+		return ""
+	}
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(lower, "tos_violation") || strings.Contains(lower, "terms of service") {
+		return "tos_violation"
+	}
+	return ""
 }
 
 // Enforce the diagnostic allow-list at both persistence and API JSON boundaries,
@@ -129,6 +142,7 @@ func (q AccountQuota) MarshalJSON() ([]byte, error) {
 	type quotaJSON AccountQuota
 	safe := quotaJSON(q)
 	safe.ManualResetDiagnostic = sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic)
+	safe.DisableReason = sanitizeDisableReason(q.Disabled, q.DisableReason)
 	return json.Marshal(safe)
 }
 
@@ -136,6 +150,7 @@ func (q QuotaView) MarshalJSON() ([]byte, error) {
 	type quotaJSON QuotaView
 	safe := quotaJSON(q)
 	safe.ManualResetDiagnostic = sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic)
+	safe.DisableReason = sanitizeDisableReason(q.Disabled, q.DisableReason)
 	return json.Marshal(safe)
 }
 
@@ -801,7 +816,7 @@ func (e *Engine) snapshot() Snapshot {
 		five, changedFive := e.resolveForecastLocked(q, "5h", now)
 		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
 		forecastsChanged = forecastsChanged || changedFive || changedWeek
-		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, ManualResetDiagnostic: sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic), Disabled: q.Disabled}
+		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, ManualResetDiagnostic: sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic), Disabled: q.Disabled, DisableReason: sanitizeDisableReason(q.Disabled, q.DisableReason)}
 		for _, g := range q.Groups {
 			gFive, c1 := e.resolveGroupForecastLocked(q, g, "5h", now)
 			gWeek, c2 := e.resolveGroupForecastLocked(q, g, "7d", now)

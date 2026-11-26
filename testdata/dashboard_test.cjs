@@ -1757,7 +1757,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   let persisted = false;
   let savedConfig = {
     enabled: false, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, skip_active_window: true,
-    providers: { claude: true, codex: true, antigravity: true }, excluded_auth_ids: [], models: {}, message: 'hi',
+    providers: { claude: true, codex: true, antigravity: true }, excluded_auth_ids: [], models: { 'antigravity:claude-gpt': 'claude-sonnet-4-6' }, message: 'hi',
   };
   let runSeq = 0;
   let results = {};
@@ -1769,6 +1769,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
       { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', five_hour: { used_percent: 0 } },
       { auth_id: 'codex-full', provider: 'codex', name: 'full@example.com', five_hour: { used_percent: 100 } },
       { auth_id: 'codex-b', provider: 'codex', name: 'bob@example.com', disabled: true, five_hour: { used_percent: 0 } },
+      { auth_id: 'ag-gemini', provider: 'antigravity', name: 'google@example.test', groups: [{ key:'claude-gpt', five_hour:{used_percent:100} },{ key:'gemini', five_hour:{used_percent:10} }] },
     ],
     persistence: { enabled: true, directory: '/tmp/cpa' },
     wakeup: {
@@ -1789,6 +1790,9 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   const d = dashboard({ managementKey: 'key' }, async (url, options = {}) => {
     calls.push({ url, options });
     if (url.startsWith('/v0/management/auth-files/models')) {
+      if (url.includes('ag-gemini')) {
+        return reply({ models: ['claude-sonnet-4-6','gpt-oss-120b-medium','gemini-3-flash-image','gemini-3.5-flash-lite'].map(id=>({id})) });
+      }
       if (url.includes('codex-full')) {
         return { ok: true, status: 200, json: async () => ({ models: [{ id: 'gpt-6-astra' }, { id: 'codex-auto-review' }, { id: 'gpt-6-luna' }, { id: 'gpt-5.1-codex-mini' }] }) };
       }
@@ -1839,7 +1843,8 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert(d.elements.get('page-quota').classes.has('hide'));
   assert.equal(d.elements.get('wakeup-cron').value, '0 6,11,16,21 * * *');
   assert.match(d.elements.get('wakeup-persist').textContent, /\/tmp\/cpa\/wakeup\.json/);
-  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：2 / 2 个已启用');
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：3 / 3 个已启用');
+  assert(descendants(d.elements.get('wakeup-accounts-list').children[2]).some(n=>n.textContent==='5h 剩 90%'));
   assert(descendants(d.elements.get('wakeup-cron-preview')).filter(n => n.className === 'wakeup-preview-chip').length === 4);
 
   // Wait a microtask for model hints fetch: auto recommendation prefers lightweight mini/haiku, never astra or auto-review.
@@ -1849,6 +1854,10 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert(!codexOpts[0].textContent.includes('astra'));
   assert(!codexOpts.some(o => o.value === 'codex-auto-review'));
   assert.match(d.elements.get('wakeup-model-select-claude').children[0].textContent, /claude-haiku-4-5-20251001/);
+  assert.doesNotMatch(html, /wakeup-model-select-ag-claude/);
+  const gemini = d.elements.get('wakeup-model-select-ag-gemini');
+  assert.match(gemini.children[0].textContent, /gemini-3\.5-flash-lite/);
+  assert(gemini.children.every(n=>!/(claude|gpt|image)/i.test(n.value||'')));
 
   // Clicking a preset updates Cron expression immediately.
   const weekdayPreset = d.elements.get('wakeup-presets').children.find(b => b.dataset.cron === '0 6,11,16,21 * * 1-5');
@@ -1884,6 +1893,13 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   d.elements.get('wakeup-model-select-claude').value = 'claude-haiku-4-5-20251001';
   d.elements.get('wakeup-model-select-claude').onchange();
   assert.equal(d.elements.get('wakeup-model-claude').hidden, true);
+  gemini.value = '__custom__';
+  gemini.onchange();
+  d.elements.get('wakeup-model-ag-gemini').value = 'claude-sonnet-4-6';
+  assert.equal(await d.api.saveWakeupConfig(), false);
+  assert.match(d.elements.get('wakeup-message-box').textContent, /仅支持使用 Gemini 文本模型/);
+  gemini.value = 'gemini-3.5-flash-lite';
+  gemini.onchange();
   const dotQuickBtn = d.elements.get('wakeup-text').parentNode.children.find(n => n.dataset?.msg === '.');
   assert(dotQuickBtn, 'expected quick message button');
   dotQuickBtn.onclick();
@@ -1897,7 +1913,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   accCheckbox.onclick();
   assert.match(d.elements.get('wakeup-scope-text').textContent, /已排除 1/);
   d.elements.get('wakeup-clear-excluded').onclick();
-  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：2 / 2 个已启用');
+  assert.equal(d.elements.get('wakeup-scope-text').textContent, '参与账户：3 / 3 个已启用');
 
   // Save valid Cron config: persistence banner confirms durable disk save across CPA updates.
   assert.equal(await d.api.saveWakeupConfig(), true);
@@ -1907,7 +1923,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   assert.equal(sentCfg.enabled, true);
   assert.equal(sentCfg.mode, 'daily');
   assert.equal(sentCfg.cron, '0 6,11,16,21 * * *');
-  assert.equal(sentCfg.models.claude, 'claude-haiku-4-5-20251001');
+  assert.deepEqual(sentCfg.models, { claude:'claude-haiku-4-5-20251001', 'antigravity:gemini':'gemini-3.5-flash-lite' });
   assert.equal(sentCfg.message, '.');
   assert.match(d.elements.get('wakeup-tab-badge').textContent, /^下次 \d{2}:\d{2}$/);
   assert.match(d.elements.get('wakeup-persist').textContent, /已持久保存/);
@@ -1953,5 +1969,62 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
   d.api.setLanguage('en', false);
   assert.match(d.elements.get('wakeup-tab-badge').textContent, /^Next \d{2}:\d{2}$/);
   assert.equal(d.elements.get('tab-wakeup').children[0].textContent, 'Scheduled wakeup');
+});
+
+test('Google Antigravity wakeup errors never display reset-credit disabled copy and surface CPA TOS auto-disable badge', async () => {
+  const sample = {
+    quotas: [
+      {
+        auth_id: 'ag-tos',
+        provider: 'antigravity',
+        name: 'google-tos@example.com',
+        disabled: true,
+        disable_reason: 'tos_violation',
+        groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 0 } }],
+      },
+      {
+        auth_id: 'ag-manual',
+        provider: 'antigravity',
+        name: 'google-manual@example.com',
+        disabled: true,
+        groups: [{ key: 'gemini', label: 'Gemini', five_hour: { used_percent: 0 } }],
+      },
+    ],
+    wakeup: {
+      config: { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, skip_active_window: true, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' },
+      results: {
+        'ag-tos': { auth_id: 'ag-tos', provider: 'antigravity', name: 'google-tos@example.com', status: 'failed', reason: 'tos_violation', at: '2026-11-25T06:00:00Z' },
+        'ag-manual': { auth_id: 'ag-manual', provider: 'antigravity', name: 'google-manual@example.com', status: 'failed', reason: 'wakeup_account_disabled', at: '2026-11-25T06:00:01Z' },
+      },
+    },
+  };
+  const d = dashboard({ managementKey: 'key' }, async () => ({ ok: true, status: 200, json: async () => sample }));
+  await d.api.load();
+
+  const tosCard = visibleAccounts(d).find(c => c.dataset.authId === 'ag-tos');
+  const manualCard = visibleAccounts(d).find(c => c.dataset.authId === 'ag-manual');
+  const tosBadge = descendants(tosCard).find(n => n.className === 'account-state tos');
+  const manualBadge = descendants(manualCard).find(n => n.className === 'account-state');
+  assert(tosBadge && tosBadge.textContent === 'CPA 自动停用 (TOS)');
+  assert(tosBadge.title.includes('TOS_VIOLATION'));
+  assert(manualBadge && manualBadge.textContent === '已禁用');
+
+  const tosStatus = descendants(tosCard).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  const manualStatus = descendants(manualCard).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  assert(tosStatus && tosStatus.textContent.includes('TOS_VIOLATION'));
+  assert(!tosStatus.textContent.includes('重置卡'));
+  assert(manualStatus && manualStatus.textContent.includes('该账户已被禁用，无法唤醒'));
+  assert(!manualStatus.textContent.includes('重置卡'));
+
+  d.api.acceptSnapshot({...sample,
+    quotas:sample.quotas.map(q=>({...q,disabled:false,disable_reason:undefined})),
+    wakeup:{...sample.wakeup,results:Object.fromEntries(Object.entries(sample.wakeup.results).map(([id,res])=>[id,{
+      ...res,status:'sent',reason:undefined,groups:[{group:'gemini',status:'sent',model:'gemini-3.5-flash-lite',window_reset_at:id==='ag-tos'?'2026-11-25T11:00:00Z':undefined}],
+    }]))},
+  });
+  const groupStatus=id=>descendants(panel(d.elements,id)).find(n=>String(n.className || '').startsWith('account-wakeup-status'));
+  assert.match(groupStatus('ag-tos').textContent,/5 小时窗口已确认.*重置时间/);
+  assert.equal(groupStatus('ag-manual').className,'account-wakeup-status unconfirmed');
+  assert.match(groupStatus('ag-manual').textContent,/窗口待确认/);
 });
 

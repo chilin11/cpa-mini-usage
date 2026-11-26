@@ -762,6 +762,7 @@ func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) bool {
 			changed = true
 		}
 		q.Disabled = entry.Disabled
+		q.DisableReason = sanitizeDisableReason(entry.Disabled, entry.DisableReason)
 		e.quotas[entry.ID] = q
 	}
 	if changed {

@@ -118,6 +118,7 @@ window.visualFixture = {
       data.recent[0].requested_model='demo-model-'.repeat(35);
     }
     if(state==='wakeup'){
+      data.quotas.push({provider:'antigravity',auth_id:'demo-ag',name:'demo-google@example.test'});
       data.wakeup={
         config:{enabled:true,mode:'daily',cron:'0 6,11,16,21 * * *',timezone_offset_min:480,skip_active_window:true,providers:{claude:true,codex:true,antigravity:true},excluded_auth_ids:[],models:{claude:'claude-haiku-4-5-20251001'},message:'hi'},
         config_path:'/demo-only/data/wakeup.json',persisted:true,
@@ -125,7 +126,8 @@ window.visualFixture = {
         results:{
           'demo-claude':{auth_id:'demo-claude',provider:'claude',name:'demo-team@example.test',status:'sent',model:'claude-haiku-4-5-20251001',at:'2026-10-09T06:00:05Z'},
           'demo-codex':{auth_id:'demo-codex',provider:'codex',name:'demo-lab@example.test',status:'skipped',reason:'window_active',at:'2026-10-09T06:00:06Z'},
-          'demo-long':{auth_id:'demo-long',provider:'codex',name:'demo-very-long-account-identifier-for-responsive-check@example.test',status:'exhausted',reason:'rate_limited',at:'2026-10-09T06:00:07Z'}
+          'demo-long':{auth_id:'demo-long',provider:'codex',name:'demo-very-long-account-identifier-for-responsive-check@example.test',status:'exhausted',reason:'rate_limited',at:'2026-10-09T06:00:07Z'},
+          'demo-ag':{auth_id:'demo-ag',provider:'antigravity',status:'sent',at:'2026-10-09T06:00:08Z',groups:[{group:'gemini',status:'sent',model:'gemini-3.5-flash-lite',window_reset_at:'2026-10-09T11:00:00Z'}]}
         }
       };
     }
@@ -167,7 +169,7 @@ window.visualFixture = {
 const params=new URLSearchParams(location.search);
 setLanguage(params.get('lang')==='en'?'en':'zh',false);
 visualFixture.show(params.get('state')||'ready');
-setTab(params.get('tab')==='requests'?'requests':'quota');
+setTab(params.get('tab')==='wakeup'?'wakeup':params.get('tab')==='requests'?'requests':'quota');
 `;
   const instrumented = pageSource.replace(/^load\(\);$/m, '')
     .replace('function guessKey(){', "function guessKey(){return window.__fixtureKey||'';")
