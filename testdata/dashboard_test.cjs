@@ -2077,7 +2077,7 @@ test('Google Antigravity wakeup errors never display reset-credit disabled copy 
 });
 
 test('wakeup defaults unpersisted timezone to browser, flags timezone mismatch, and shows window notes in recent results', async () => {
-  const localMin = -new Date().getTimezoneOffset();
+  const localMin = (-new Date().getTimezoneOffset()) || 0;
   const otherMin = localMin === 480 ? -480 : 480;
   const sample = (persisted) => ({
     quotas: [
