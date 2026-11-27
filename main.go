@@ -45,7 +45,7 @@ import (
 )
 
 const pluginID = "cpa-mini-usage"
-const pluginVersion = "0.1.48"
+const pluginVersion = "0.1.49"
 
 var host *C.cliproxy_host_api
 var initOnce sync.Once
@@ -197,6 +197,7 @@ func dispatch(method string, body []byte) []byte {
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/settings"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/consume-reset"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/reset-credits"},
+				{"Method": "POST", "Path": "/plugins/" + pluginID + "/clear-cooldown"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/config"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/exclude"},
 				{"Method": "POST", "Path": "/plugins/" + pluginID + "/wakeup/run"},
@@ -299,6 +300,22 @@ func dispatch(method string, body []byte) []byte {
 				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
 			}
 			status, result, failure := tracker.consumeReset(input.AuthID, input.RedeemRequestID, input.CreditID, input.ConfirmationToken)
+			var body []byte
+			if failure != "" {
+				body, _ = json.Marshal(map[string]any{"error": failure})
+			} else {
+				body, _ = json.Marshal(result)
+			}
+			return okEnvelope(httpResponse(status, "application/json; charset=utf-8", body))
+		}
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/"+pluginID+"/clear-cooldown") {
+			var input struct {
+				AuthID string `json:"auth_id"`
+			}
+			if len(req.Body) > 4096 || json.Unmarshal(req.Body, &input) != nil {
+				return okEnvelope(httpResponse(400, "application/json", []byte(`{"error":"invalid_auth_id"}`)))
+			}
+			status, result, failure := tracker.clearAccountCooldown(input.AuthID)
 			var body []byte
 			if failure != "" {
 				body, _ = json.Marshal(map[string]any{"error": failure})

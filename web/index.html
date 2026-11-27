@@ -255,6 +255,7 @@ select:hover:not(:disabled){border-color:var(--edge)}
 .panel.account-disabled .windows{opacity:.55}
 .account-action{padding:4px 8px;min-height:32px;font-size:11px;font-weight:500;border-color:var(--line)}
 .account-reset:not(:disabled){color:var(--accent);border-color:var(--edge)}
+.account-clear-cooldown:not(:disabled){color:var(--warm);border-color:var(--warm)}
 .account-switch{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:32px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-size:11px}
 .account-switch:hover:not(:disabled){border-color:var(--edge);background:var(--hover)}
 .account-switch:disabled{cursor:default;opacity:.65}
@@ -382,7 +383,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.48</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.49</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -712,6 +713,13 @@ const translations={
   '凭证无法读取。':'Credential could not be read.','OAuth 访问令牌不可用。':'OAuth access token unavailable.',
   '缺少 Antigravity 项目 ID。':'Antigravity project ID unavailable.','OAuth 访问令牌已过期，CPA 会自动刷新，请稍后重试。':'OAuth access token expired; CPA refreshes it automatically. Try again shortly.',
   'Gemini 模型':'Gemini models','Claude / GPT 模型':'Claude / GPT models','此分组按模型系列统计本机观测用量。':'Observed usage in this group counts only its model family.',
+  '路由冷却中':'Routing cooldown','清除冷却':'Clear cooldown','正在清除…':'Clearing…','清除 {name} 的 CPA 路由冷却':'Clear the CPA routing cooldown for {name}',
+  'CPA 暂停向此账户路由请求，预计 {time} 恢复；可点击“清除冷却”立即恢复。':'CPA has paused routing to this account until about {time}; click Clear cooldown to restore it now.','CPA 暂停向此账户路由请求；可点击“清除冷却”立即恢复。':'CPA has paused routing to this account; click Clear cooldown to restore it now.',
+  '已清除 CPA 路由冷却，账户将重新参与路由。':'CPA routing cooldown cleared; the account is back in rotation.','已使用重置卡，但未能清除 CPA 路由冷却。':'The reset credit was used, but the CPA routing cooldown could not be cleared.',
+  '当前 CPA 版本不支持清除路由冷却，管理接口兜底也未成功。':'This CPA version cannot clear routing cooldowns, and the management API fallback also failed.','CPA 中未找到该账户的路由记录。':'CPA has no routing record for this account.',
+  'CPA 清除路由冷却失败，请稍后重试。':'CPA failed to clear the routing cooldown. Please retry later.','可稍后点击“清除冷却”重试，或等待冷却自然结束。':'Click Clear cooldown later to retry, or wait for the cooldown to expire.',
+  '账户已禁用，无需清除路由冷却。':'The account is disabled; there is no routing cooldown to clear.','冷却清除请求正在处理中，请稍后重试。':'A cooldown clear is already in progress. Please retry shortly.',
+  '清除路由冷却失败（HTTP {code}），请稍后重试。':'Clearing the routing cooldown failed (HTTP {code}). Please retry later.','清除路由冷却失败，请稍后重试。':'Clearing the routing cooldown failed. Please retry later.','清除冷却响应格式异常。':'The cooldown clear response was not recognized.',
   '账户已禁用，CPA 不会再调度它。':'Account disabled; CPA will no longer route requests to it.','账户已启用。':'Account enabled.','账户状态更新失败，请稍后重试。':'Updating the account status failed. Please retry later.',
   '存储读取失败。':'Storage read failed.','价格读取失败。':'Price data unavailable.','主机接口不可用。':'Host callbacks unavailable.','主机接口请求失败。':'Host callback failed.',
   '未能读取（请求失败）':'Could not read (request failed)','未能读取（客户端版本）':'Could not read (CLI version)','未能读取（入口不受支持）':'Could not read (surface unsupported)','未能读取（无资格）':'Could not read (not eligible)','未能读取（不可用）':'Could not read (unavailable)','未能读取（响应格式异常）':'Could not read (invalid response)',
@@ -822,7 +830,8 @@ function errorKey(raw,fallback='同步失败，可手动重试。'){
   if(/^reset HTTP \d+$/.test(text))return {text:'重置接口返回 HTTP {code}。',values:{code:text.match(/\d+/)[0]}};
   return fallback; // Never echo arbitrary backend text (which may contain OAuth secrets).
 }
-const message=value=>typeof value==='object'?t(value.text,value.values):t(value);
+// An array composes several independently translated sentences (e.g. reset result + cooldown outcome).
+const message=value=>Array.isArray(value)?value.filter(Boolean).map(message).join(language==='en'?' ':''):typeof value==='object'?t(value.text,value.values):t(value);
 function applyLanguage(){
   document.documentElement.lang=language==='en'?'en':'zh-CN';document.title=t('用量与额度')+' · CPA Mini Usage';$('language').value=language;
   document.querySelectorAll('[data-i18n]').forEach(node=>node.textContent=t(node.dataset.i18n));
@@ -923,6 +932,7 @@ function updateCountdowns(){
 // An unresolved reset attempt is part of the card: it keeps the retry entry even at zero balance.
 function wakeupExcludedSet(snapshot=data){return new Set(list(snapshot?.wakeup?.config?.excluded_auth_ids));}
 function isAccountWakeupExcluded(id,snapshot=data){return wakeupExcludedSet(snapshot).has(id);}
+// The rest spread keeps live routing fields (routing_cooling, next_retry_after) in the stamp so they re-render.
 function accountContent({fetched_at,...account},snapshot=data){return JSON.stringify([account,pendingRedeem.has(account.auth_id),Boolean(snapshot?.wakeup?.config?.enabled),isAccountWakeupExcluded(account.auth_id,snapshot)]);}
 function syncPendingCards(){
   if(!data)return;const quotas=quotaContent(data);if(quotas===quotaStamp)return;
@@ -1032,7 +1042,7 @@ function failure(value){const err=Error();err.ui=value;return err;}
 async function api(path,method='GET',body,signal) {
   if(!key)throw failure('请返回 CPA 管理页面登录，插件会自动复用同源保存的登录状态。');
   const headers={'Authorization':'Bearer '+key};if(body!==undefined)headers['Content-Type']='application/json';
-  const res=await fetch(path.startsWith('/v0/management/')?path:endpoint+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),cache:'no-store',credentials:'same-origin',redirect:'error',...(signal?{signal}:{})});
+  const res=await fetch(/^\/v[08]\/management\//.test(path)?path:endpoint+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),cache:'no-store',credentials:'same-origin',redirect:'error',...(signal?{signal}:{})});
   if(res.status===401 || res.status===403){const err=failure('CPA 登录已失效或远程管理未启用，请返回 CPA 管理页面重新登录。');err.auth=true;throw err;}
   if(!res.ok){let payload;try{payload=await res.json();}catch{}const err=failure(payload?.error?errorKey(payload.error):{text:'CPA 返回 HTTP {code}，请稍后重试。',values:{code:res.status}});err.status=res.status;err.code=typeof payload?.error==='string'?payload.error:'';throw err;}
   return res.json();
@@ -1045,6 +1055,11 @@ function syncAccountControls(){
     entry.refreshIcon.textContent=busy?'…':'↻';
     const refreshName=t('刷新 {name} 的额度',{name:entry.name});entry.button.title=busy?label+' · '+refreshName:refreshName;entry.button.setAttribute('aria-label',entry.button.title);
     if(entry.reset)syncActionButton(entry.reset,job?.kind==='reset'?'正在使用…':'使用重置卡',busy||Boolean(job),job?.kind==='reset',{text:'为 {name} 使用一张重置卡',values:{name:entry.name}});
+    if(entry.clearCooldown){
+      const clearing=job?.kind==='cooldown',coolLabel=t(clearing?'正在清除…':'清除冷却');if(entry.clearCooldown.textContent!==coolLabel)entry.clearCooldown.textContent=coolLabel;
+      entry.clearCooldown.disabled=busy||Boolean(job);entry.clearCooldown.setAttribute('aria-busy',String(clearing));
+      const coolTitle=t('清除 {name} 的 CPA 路由冷却',{name:entry.name});entry.clearCooldown.title=clearing?coolLabel+' · '+coolTitle:coolTitle;entry.clearCooldown.setAttribute('aria-label',entry.clearCooldown.title);
+    }
     const waking=wakeupAccountJobs.has(id)||list(data?.wakeup?.running_auth_ids).includes(id);
     if(entry.wakeup){
       const wakeLabel=t(waking?'唤醒中…':'唤醒');if(entry.wakeup.textContent!==wakeLabel)entry.wakeup.textContent=wakeLabel;
@@ -1197,7 +1212,7 @@ function syncActionButton(button,labelKey,disabled,busy,aria){
 }
 // Keep the switch in its confirmed state until disabling is explicitly approved.
 function syncSwitch(button,job,disabled,name,refreshing){
-  const pending=job&&job.kind!=='reset',label=pending?(job.kind==='enable'?'正在启用…':'正在禁用…'):disabled?'已禁用':'已启用';
+  const pending=job&&(job.kind==='enable'||job.kind==='disable'),label=pending?(job.kind==='enable'?'正在启用…':'正在禁用…'):disabled?'已禁用':'已启用';
   button.children[1].textContent=t(label);button.setAttribute('aria-checked',String(!disabled));button.setAttribute('aria-busy',String(Boolean(pending)));button.disabled=Boolean(job)||refreshing;
   button.setAttribute('aria-label',t('账户启用状态：{name}',{name}));
   button.setAttribute('aria-haspopup',disabled?'false':'dialog');button.title=pending?t(label):t(disabled?'启用 {name}':'停用 {name}',{name});
@@ -2098,12 +2113,24 @@ async function runReset(target,credit,token){
   // A retry always reuses the original request id, credit and confirmation token.
   const pending=pendingRedeem.get(id)||{redeem:redeemID(),credit:credit||null,token:token||null,target,uncertain:false};pendingRedeem.set(id,pending);
   const job={kind:'reset',key,target};++accountMutationSerial;actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
-  let refresh=false;
+  let refresh=false,cooldownError=null;
   try{
     const body={auth_id:id,redeem_request_id:pending.redeem};if(pending.credit)body.credit_id=pending.credit;if(pending.token)body.confirmation_token=pending.token;
     const result=await api('consume-reset','POST',body);if(await actionAuthChanged(id,job))return;
     ++accountMutationSerial;pendingRedeem.delete(id);
-    const note=resetNotes[result?.code];showAccountNote(id,note?note(result.windows_reset,pending.credit):'重置接口响应格式异常。');refresh=Boolean(note);
+    const note=resetNotes[result?.code];let value=note?note(result.windows_reset,pending.credit):'重置接口响应格式异常。';refresh=Boolean(note);
+    // Newer backends also clear CPA's routing cooldown after a reset; older ones omit the field and keep the plain note.
+    if(note&&(result.code==='reset'||result.code==='already_redeemed')&&typeof result.cooldown_cleared==='boolean'){
+      let cleared=result.cooldown_cleared;
+      if(!cleared&&result.cooldown_error==='host_unsupported'){
+        showAccountNote(id,value); // The credit is spent either way; say so while the fallback runs.
+        try{cleared=await managementClearCooldown(id,()=>actionAuthChanged(id,job));}catch(err){if(await actionAuthChanged(id,job))return;if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}cleared=false;}
+        if(cleared===null)return;
+      }
+      if(cleared){++accountMutationSerial;markCooldownCleared(id);value=[value,'已清除 CPA 路由冷却，账户将重新参与路由。'];}
+      else{cooldownError=['已使用重置卡，但未能清除 CPA 路由冷却。',resetCooldownReasons[result.cooldown_error],'可稍后点击“清除冷却”重试，或等待冷却自然结束。'];showAccountError(id,cooldownError);}
+    }
+    showAccountNote(id,value);
   }catch(err){
     if(await actionAuthChanged(id,job))return;
     // Ambiguous failures keep the id. After one, busy/rate-limit/transient-auth replies are not a verdict on
@@ -2114,6 +2141,55 @@ async function runReset(target,credit,token){
     showAccountError(id,err.ui||'重置卡使用失败，请稍后重试。');
   }finally{if(actionJobs.get(id)===job){actionJobs.delete(id);syncPendingCards();syncAccountControls();}}
   if(refresh&&key===job.key){if(!loading&&!data?.quota_refreshing&&!data?.account_refresh?.[id]?.refreshing&&!accountJobs.has(id))await refreshAccount(id);else await load();}
+  // The follow-up refresh clears card errors; the uncleared-cooldown warning must outlive it.
+  if(cooldownError&&key===job.key&&accountTargetCurrent(target)){const other=accountErrors.get(id);showAccountError(id,other&&other!==cooldownError?[cooldownError,other]:cooldownError);}
+}
+// Fixed, safe copy for cooldown error codes; upstream text is never shown.
+const resetCooldownReasons={host_unsupported:'当前 CPA 版本不支持清除路由冷却，管理接口兜底也未成功。',auth_not_found:'CPA 中未找到该账户的路由记录。'};
+const clearCooldownErrors={invalid_auth_id:'无效的账户标识。',account_not_found:'未找到账户。',account_disabled:'账户已禁用，无需清除路由冷却。',cooldown_busy:'冷却清除请求正在处理中，请稍后重试。',host_unsupported:'当前 CPA 版本不支持清除路由冷却，管理接口兜底也未成功。',cooldown_reset_failed:'CPA 清除路由冷却失败，请稍后重试。','host callbacks unavailable':'主机接口不可用。'};
+// Older CPA hosts lack host.routing.reset_cooldown, so use CPA's own same-origin management API with the
+// saved key: resolve auth_index by id, then the v8 cooldown reset, falling back to v0 reset-quota on 404/405.
+// Resolves true only after a confirmed 2xx and false on any other failure; null means stale() reported a
+// logout/credential/account change between steps (already handled by it). Only auth failures throw.
+async function managementClearCooldown(id,stale){
+  const step=async call=>{let outcome=true;try{await call();}catch(err){if(err.auth)throw err;outcome=err;}return await stale()?null:outcome;};
+  let files;const read=await step(async()=>{files=await api('/v0/management/auth-files');});if(read!==true)return read===null?null:false;
+  const rows=Array.isArray(files)?files:list(files?.files),matches=rows.filter(f=>f&&typeof f==='object'&&f.id===id);
+  const index=matches.length===1?matches[0].auth_index:undefined;
+  if(!(typeof index==='string'&&index.trim()||Number.isSafeInteger(index)))return false;
+  const body={auth_index:String(index)};
+  const v8=await step(()=>api('/v8/management/routing/cooldown/reset','POST',body));if(v8===null||v8===true)return v8;
+  if(v8.status!==404&&v8.status!==405)return false;
+  const quota=await step(()=>api('/v0/management/reset-quota','POST',body));return quota===null?null:quota===true;
+}
+// Optimistically drop the live cooldown fields; the next snapshot reports CPA's actual state.
+function markCooldownCleared(id){
+  if(data)acceptSnapshot({...data,quotas:list(data.quotas).map(q=>{if(q.auth_id!==id)return q;const {routing_cooling,next_retry_after,...rest}=q;return rest;})});
+}
+async function clearCooldown(id){
+  if(typeof id!=='string'||!id.trim()){showAccountError(id,'无效的账户标识。');return;}
+  if(key!==guessKey()){await load();return;}
+  const target=accountTarget(id),q=list(data?.quotas).find(q=>q.auth_id===id);
+  if(!accountTargetCurrent(target)||target.disabled||q?.routing_cooling!==true||accountBusy(id)||resetDialog||disableDialog)return;
+  const job={kind:'cooldown',key,target};++accountMutationSerial;actionJobs.set(id,job);showAccountError(id,null);showAccountNote(id,null);
+  let cleared=false;
+  try{
+    let ok=false,failureText=null;
+    try{const result=await api('clear-cooldown','POST',{auth_id:id});ok=result?.cooldown_cleared===true;if(!ok)failureText='清除冷却响应格式异常。';}
+    catch(err){
+      if(err.auth||err.status!==501)throw err;
+      if(await actionAuthChanged(id,job))return;
+      ok=await managementClearCooldown(id,()=>actionAuthChanged(id,job));if(ok===null)return;if(!ok)failureText=clearCooldownErrors.host_unsupported;
+    }
+    if(await actionAuthChanged(id,job))return;
+    if(!ok){showAccountError(id,failureText);return;}
+    ++accountMutationSerial;cleared=true;markCooldownCleared(id);showAccountNote(id,'已清除 CPA 路由冷却，账户将重新参与路由。');
+  }catch(err){
+    if(await actionAuthChanged(id,job))return;
+    if(err.auth){++loadSerial;loading=false;clearSnapshot(true,err.ui);syncControls();return;}
+    showAccountError(id,clearCooldownErrors[err.code]||(err.status?{text:'清除路由冷却失败（HTTP {code}），请稍后重试。',values:{code:err.status}}:'清除路由冷却失败，请稍后重试。'));
+  }finally{if(actionJobs.get(id)===job){actionJobs.delete(id);syncAccountControls();}}
+  if(cleared&&key===job.key)await load();
 }
 // Enable/disable through CPA's own management API, the same call as CPA's credential switch.
 async function toggleAccount(id,disabled){
@@ -2218,6 +2294,12 @@ function renderQuotas(){
           const badge=add(text,'span','account-state'+(isTOS?' tos':''),isTOS?'CPA 自动停用 (TOS)':'已禁用');
           if(isTOS)badge.title=t('上游返回 TOS_VIOLATION（服务条款限制），CPA 已自动停用该凭证。额度查询可能仍正常，但重新启用后再次发起推理请求会被 CPA 再次自动停用，请在 CPA 中查看详情或申诉。');
         }
+        const cooling=!item.disabled&&item.routing_cooling===true;
+        if(cooling){
+          const badge=add(text,'span','account-state cooling','路由冷却中'),retry=new Date(item.next_retry_after||'').getTime();
+          badge.title=Number.isFinite(retry)&&retry>Date.now()?t('CPA 暂停向此账户路由请求，预计 {time} 恢复；可点击“清除冷却”立即恢复。',{time:when(item.next_retry_after)}):t('CPA 暂停向此账户路由请求；可点击“清除冷却”立即恢复。');
+          badge.setAttribute('aria-label',t('路由冷却中')+' · '+badge.title);
+        }
         const actions=add(head,'div','account-actions'),primary=add(actions,'div','account-primary-actions');
         const button=add(primary,'button','button account-refresh');const refreshIcon=add(button,'span','refresh-icon','↻');refreshIcon.setAttribute('aria-hidden','true');const refreshLabel=add(button,'span','','刷新');button.type='button';button.id='account-refresh-'+encodeURIComponent(id);button.setAttribute('aria-label',t('刷新 {name} 的额度',{name:credentialName(item)}));button.title=button.getAttribute('aria-label');button.onclick=()=>refreshAccount(item.auth_id);
         const error=add(panel,'p','account-error','');error.setAttribute('role','status');const note=add(panel,'p','account-note','');note.setAttribute('role','status');
@@ -2225,7 +2307,7 @@ function renderQuotas(){
         else{const grid=add(panel,'div','windows');addWindow(grid,'5 小时','5h',item.five_hour);addWindow(grid,'7 天','7d',item.seven_day);}
         const secondary=add(panel,'div','account-secondary-actions');
         const toggle=add(secondary,'button','account-switch');toggle.type='button';toggle.setAttribute('role','switch');const track=add(toggle,'span','switch-track');track.setAttribute('aria-hidden','true');add(track,'span','switch-thumb');add(toggle,'span','');toggle.id='account-toggle-'+encodeURIComponent(id);toggle.onclick=()=>toggleAccount(item.auth_id,!item.disabled);
-        let wakeup=null,wakeupToggle=null;
+        let wakeup=null,wakeupToggle=null,clearCooldownButton=null;
         const showWakeupToggle=!item.disabled&&(Boolean(data?.wakeup?.config?.enabled)||isAccountWakeupExcluded(item.auth_id));
         if(!item.disabled){
           const wakeActions=add(secondary,'div','account-wakeup-actions');
@@ -2234,6 +2316,7 @@ function renderQuotas(){
             const excluded=isAccountWakeupExcluded(item.auth_id);
             wakeupToggle=add(wakeActions,'button','button account-action account-wakeup-toggle',excluded?'定时: 关':'定时: 开');wakeupToggle.type='button';wakeupToggle.id='account-wakeup-toggle-'+encodeURIComponent(id);wakeupToggle.onclick=()=>toggleAccountWakeupExclude(item.auth_id,!isAccountWakeupExcluded(item.auth_id));
           }
+          if(cooling){clearCooldownButton=add(wakeActions,'button','button account-action account-clear-cooldown','清除冷却');clearCooldownButton.type='button';clearCooldownButton.id='account-clear-cooldown-'+encodeURIComponent(id);clearCooldownButton.onclick=()=>clearCooldown(item.auth_id);}
         }
         let reset=null,resetActions=null;
         if(Number.isSafeInteger(item.manual_reset_remaining)&&item.manual_reset_remaining>=0){
@@ -2247,7 +2330,7 @@ function renderQuotas(){
           reset=add(resetActions,'button','button account-action account-reset','使用重置卡');reset.type='button';reset.id='account-reset-'+encodeURIComponent(id);reset.onclick=()=>openReset(item.auth_id);
         }
         const wakeupStatus=add(panel,'p','account-wakeup-status','');wakeupStatus.hidden=true;
-        entry={panel,button,refreshIcon,refreshLabel,reset,wakeup,wakeupToggle,wakeupStatus,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
+        entry={panel,button,refreshIcon,refreshLabel,reset,clearCooldown:clearCooldownButton,wakeup,wakeupToggle,wakeupStatus,toggle,error,note,stamp,backendError:item.error,disabled:Boolean(item.disabled),name:credentialName(item)};cardCache.set(id,entry);showAccountError(id,accountErrors.get(id));
       }
       if(!visibleGroups.has(item.provider))visibleGroups.set(item.provider,[]);visibleGroups.get(item.provider).push(entry.panel);
   });

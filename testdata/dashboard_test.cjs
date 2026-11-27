@@ -56,7 +56,7 @@ function dashboard(stored = {}, fetcher = async () => ({ok:true,json:async()=>({
     clearTimeout(timer){if(timer===alertTimeout)alertTimeout=undefined;}, addEventListener(name,callback){events[name]=callback;},
   });
   context.window=context;
-  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, confirmDisable, toggleAccount, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, parseCronJS, nextCronRunsJS, buildCadenceCron, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
+  const instrumented = source.replace(/^load\(\);$/m, '').replace(/\}\)\(\);\s*$/, 'globalThis.dashboardTest = {tokens, fmt, remainingPercent, validEstimate, totalInput, requestMoney, loadHistory, historyParams, localMidnight, localDateValue, resetCountdown, updateCountdowns, acceptSnapshot, guessKey, load, refreshAccount, openReset, confirmReset, clearCooldown, confirmDisable, toggleAccount, saveWakeupConfig, runWakeupAll, runAccountWakeup, toggleAccountWakeupExclude, parseCronJS, nextCronRunsJS, buildCadenceCron, savePersistence, firstTokenTime, requestTPS, setLanguage, setAlert, setStatus, setTab, claudeResetDiagnostics, renderSample(sample, provider="") {data=sample; filter=provider; expanded="account"; render();}}; })();');
   vm.runInContext(instrumented, context);
   return {api: context.dashboardTest, elements, writes, document, intervals, events, advanceTime(ms){
     fakeNow+=ms;
@@ -2271,4 +2271,208 @@ test('Claude quota 429 error copy and 30-minute footer cadence render in zh and 
   assert.match(d.elements.get('footer').textContent, /every 15 min \(Claude 30 min\)/);
 });
 
+// Routing cooldown: consume-reset feedback, legacy CPA management fallback and the manual clear action.
+const coolBadge=card=>descendants(card).find(n=>n.className==='account-state cooling');
+const clearButton=card=>descendants(card).find(n=>n.className==='button account-action account-clear-cooldown');
+const flush=async(times=5)=>{for(let i=0;i<times;i++)await new Promise(r=>setImmediate(r));};
+const coolRetry=new Date(Date.now()+2*hour).toISOString();
+function coolAccounts(cooling=true,retry=coolRetry){
+  const s=actionAccounts();
+  if(cooling){Object.assign(s.quotas[0],{routing_cooling:true,next_retry_after:retry});Object.assign(s.quotas[1],{routing_cooling:true});}
+  Object.assign(s.quotas[2],{routing_cooling:true,next_retry_after:retry}); // Disabled accounts never show the cooldown UI.
+  return s;
+}
+function coolFetcher(calls,routes={},state={cooling:true}){
+  return async(url,options)=>{calls.push({url,options});
+    for(const [suffix,handler] of Object.entries(routes))if(url.endsWith(suffix))return handler(options,url);
+    if(url.endsWith('reset-credits'))return reply(creditList());
+    if(url.endsWith('consume-reset'))return reply({code:'reset',windows_reset:2,cooldown_cleared:true});
+    if(url.endsWith('refresh-account'))return reply({refresh_finished_at:'before'},202);
+    return reply({...coolAccounts(state.cooling),account_refresh:{'codex-a':{refreshing:false,finished_at:'after'}}});
+  };
+}
+const legacyFiles=()=>reply({files:[{id:'codex-zero',auth_index:'idx-zero'},{id:'codex-a',auth_index:'idx-a'}]});
+const legacyCalls=calls=>calls.filter(c=>/\/v0\/management\/auth-files$|\/v8\/management\/routing\/cooldown\/reset$|\/v0\/management\/reset-quota$/.test(c.url));
+const cooldownFailed='已使用重置卡，但未能清除 CPA 路由冷却。';
+const cooldownHint='可稍后点击“清除冷却”重试，或等待冷却自然结束。';
+const legacyFailed='当前 CPA 版本不支持清除路由冷却，管理接口兜底也未成功。';
 
+for(const language of ['zh','en'])test(`${language}: cooling accounts show a routing-cooldown badge with retry hint and a clear button; disabled accounts do not`,()=>{
+  const d=dashboard({},undefined,{language});d.api.renderSample(coolAccounts());
+  const a=panel(d.elements,'codex-a'),zero=panel(d.elements,'codex-zero'),off=panel(d.elements,'codex-off'),claude=panel(d.elements,'claude-a');
+  assert.equal(coolBadge(a).textContent,language==='en'?'Routing cooldown':'路由冷却中');
+  const time=new Date(coolRetry).toLocaleString(language==='en'?'en-US':'zh-CN',{hour12:false});
+  assert.equal(coolBadge(a).title,language==='en'?`CPA has paused routing to this account until about ${time}; click Clear cooldown to restore it now.`:`CPA 暂停向此账户路由请求，预计 ${time} 恢复；可点击“清除冷却”立即恢复。`);
+  assert.equal(coolBadge(zero).title,language==='en'?'CPA has paused routing to this account; click Clear cooldown to restore it now.':'CPA 暂停向此账户路由请求；可点击“清除冷却”立即恢复。','no retry time, no fabricated estimate');
+  assert.equal(clearButton(a).id,'account-clear-cooldown-codex-a');assert.equal(clearButton(a).textContent,language==='en'?'Clear cooldown':'清除冷却');
+  assert.equal(clearButton(a).getAttribute('aria-label'),language==='en'?'Clear the CPA routing cooldown for alice@example.com':'清除 alice@example.com 的 CPA 路由冷却');assert.equal(clearButton(a).disabled,false);
+  assert(clearButton(zero));assert(!coolBadge(off)&&!clearButton(off),'disabled accounts never show cooldown UI');assert(!coolBadge(claude)&&!clearButton(claude));
+  assert(descendants(off).some(n=>n.className==='account-state'),'the disabled badge is unchanged');
+  if(language==='en')for(const node of descendants(d.elements.get('quota-cards'))){assert(!/[\u3400-\u9fff]/.test(node.textContent),node.textContent);assert(!/[\u3400-\u9fff]/.test(node.title||''),node.title);for(const v of Object.values(node.attributes))assert(!/[\u3400-\u9fff]/.test(v),v);}
+});
+
+test('routing_cooling and next_retry_after changes re-render only the affected card',async()=>{
+  const d=dashboard(login(),async()=>reply(coolAccounts(false)));await d.api.load();
+  let a=panel(d.elements,'codex-a');const zero=panel(d.elements,'codex-zero');assert(!coolBadge(a)&&!clearButton(a));
+  d.api.acceptSnapshot(coolAccounts(true));assert.notEqual(panel(d.elements,'codex-a'),a);a=panel(d.elements,'codex-a');assert(coolBadge(a)&&clearButton(a));
+  const s=coolAccounts(true,new Date(Date.now()+5*hour).toISOString());s.quotas[1]=coolAccounts(true).quotas[1];
+  d.api.acceptSnapshot(s);assert.notEqual(panel(d.elements,'codex-a'),a,'a new retry time re-renders the card');assert.equal(panel(d.elements,'codex-zero')===zero,false,'zero changed from not cooling to cooling');
+  const z=panel(d.elements,'codex-zero');d.api.acceptSnapshot(coolAccounts(false));assert(!coolBadge(panel(d.elements,'codex-a')));assert.notEqual(panel(d.elements,'codex-zero'),z);
+  const stable=panel(d.elements,'claude-a');d.api.acceptSnapshot(coolAccounts(false));assert.equal(panel(d.elements,'claude-a'),stable,'unchanged cards keep their nodes');
+});
+
+for(const language of ['zh','en'])test(`${language}: reset with cooldown_cleared=true says so and optimistically clears the cooling badge`,async()=>{
+  const calls=[],state={cooling:true};let release;
+  const d=dashboard(login(),coolFetcher(calls,{'refresh-account':()=>new Promise(r=>release=()=>r(reply({refresh_finished_at:'before'},202)))},state),{language});
+  await d.api.load();assert(coolBadge(panel(d.elements,'codex-a')));
+  await d.api.openReset('codex-a');const pending=d.api.confirmReset();await flush();
+  const a=panel(d.elements,'codex-a');assert(!coolBadge(a),'cleared before the follow-up refresh');assert(!clearButton(a));assert(coolBadge(panel(d.elements,'codex-zero')),'other cards keep their state');
+  const want=language==='en'?'Reset credit used; 2 quota window(s) reset. CPA routing cooldown cleared; the account is back in rotation.':'已使用重置卡，重置了 2 个额度窗口。已清除 CPA 路由冷却，账户将重新参与路由。';
+  assert.equal(accountNoteNode(a).textContent,want);assert.equal(legacyCalls(calls).length,0,'no fallback when the backend cleared it');
+  state.cooling=false;release();await pending;
+  assert.equal(accountNoteNode(panel(d.elements,'codex-a')).textContent,want);assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'');assert(!coolBadge(panel(d.elements,'codex-a')));
+});
+
+test('already_redeemed also reports the cleared cooldown; other codes and old backends keep their original copy',async()=>{
+  const cases=[
+    [{code:'already_redeemed',windows_reset:0,cooldown_cleared:true},'该重置请求已处理，未重复扣除。已清除 CPA 路由冷却，账户将重新参与路由。'],
+    [{code:'reset',windows_reset:2},'已使用重置卡，重置了 2 个额度窗口。'],
+    [{code:'already_redeemed',windows_reset:0},'该重置请求已处理，未重复扣除。'],
+    [{code:'reset',windows_reset:2,cooldown_cleared:'yes',cooldown_error:'host_unsupported'},'已使用重置卡，重置了 2 个额度窗口。'],
+    [{code:'nothing_to_reset',windows_reset:0,cooldown_cleared:true},'当前没有需要重置的额度窗口。'],
+    [{code:'nothing_to_reset',windows_reset:0,cooldown_cleared:false,cooldown_error:'host_unsupported'},'当前没有需要重置的额度窗口。'],
+  ];
+  for(const [result,want] of cases){
+    const calls=[],d=dashboard(login(),coolFetcher(calls,{'consume-reset':()=>reply(result)},{cooling:true}));
+    await d.api.load();await useReset(d);const a=panel(d.elements,'codex-a');
+    assert.equal(accountNoteNode(a).textContent,want,JSON.stringify(result));assert.equal(accountError(a).textContent,'',JSON.stringify(result));
+    assert.equal(legacyCalls(calls).length,0);assert(coolBadge(a),'without cooldown_cleared=true the live state is left to the snapshot');
+  }
+});
+
+test('reset host_unsupported falls back to CPA management API: auth-files -> v8 cooldown reset -> v0 reset-quota on 404/405',async()=>{
+  for(const [v8,quota,cleared] of [[200,null,true],[404,200,true],[405,200,true],[404,404,false],[405,500,false],[500,null,false],[409,null,false]]){
+    const calls=[],state={cooling:true};
+    const d=dashboard(login(),coolFetcher(calls,{
+      'consume-reset':()=>reply({code:'reset',windows_reset:2,cooldown_cleared:false,cooldown_error:'host_unsupported'}),
+      '/v0/management/auth-files':legacyFiles,
+      '/v8/management/routing/cooldown/reset':()=>reply(v8===200?{status:'ok'}:{error:'access_token=secret upstream detail'},v8),
+      '/v0/management/reset-quota':()=>reply(quota===200?{status:'ok'}:{error:'secret-token raw'},quota),
+    },state));
+    await d.api.load();await useReset(d);
+    const legacy=legacyCalls(calls),label=`v8=${v8} quota=${quota}`;
+    assert.equal(legacy[0].url,'/v0/management/auth-files',label);assert.equal(legacy[0].options.method,'GET');assert.equal(legacy[0].options.headers.Authorization,'Bearer key');
+    assert.equal(legacy[1].url,'/v8/management/routing/cooldown/reset',label);assert.equal(legacy[1].options.method,'POST');assert.deepEqual(JSON.parse(legacy[1].options.body),{auth_index:'idx-a'});assert.equal(legacy[1].options.headers.Authorization,'Bearer key');
+    if(quota===null)assert.equal(legacy.length,2,label+': only 404/405 fall back to reset-quota');
+    else{assert.equal(legacy.length,3,label);assert.equal(legacy[2].url,'/v0/management/reset-quota');assert.equal(legacy[2].options.method,'POST');assert.deepEqual(JSON.parse(legacy[2].options.body),{auth_index:'idx-a'});}
+    const a=panel(d.elements,'codex-a'),text=accountNoteNode(a).textContent+' '+accountError(a).textContent;
+    assert(!/secret|upstream detail/.test(text),label+': upstream text never leaks');
+    if(cleared){assert.equal(accountNoteNode(a).textContent,'已使用重置卡，重置了 2 个额度窗口。已清除 CPA 路由冷却，账户将重新参与路由。',label);assert.equal(accountError(a).textContent,'',label);}
+    else{
+      assert.equal(accountNoteNode(a).textContent,'已使用重置卡，重置了 2 个额度窗口。',label+': never claims the cooldown was cleared');
+      assert.equal(accountError(a).textContent,cooldownFailed+legacyFailed+cooldownHint,label+': the warning survives the follow-up refresh');
+      assert(coolBadge(a),label);
+    }
+    assert.equal(posted(calls,'refresh-account').length,1,label);
+  }
+});
+
+test('reset fallback fails closed when auth_index cannot be resolved, and other cooldown errors skip the fallback',async()=>{
+  for(const files of [reply({files:[{id:'codex-zero',auth_index:'idx-zero'}]}),reply({files:[{id:'codex-a',auth_index:''}]}),reply({files:[{id:'codex-a',auth_index:'x'},{id:'codex-a',auth_index:'y'}]}),reply({error:'secret'},500),reply({files:'bad'})]){
+    const calls=[],d=dashboard(login(),coolFetcher(calls,{'consume-reset':()=>reply({code:'reset',windows_reset:2,cooldown_cleared:false,cooldown_error:'host_unsupported'}),'/v0/management/auth-files':()=>files}));
+    await d.api.load();await useReset(d);const a=panel(d.elements,'codex-a');
+    assert.equal(legacyCalls(calls).length,1,'no cooldown write without a unique auth_index');
+    assert.equal(accountError(a).textContent,cooldownFailed+legacyFailed+cooldownHint);assert.equal(accountNoteNode(a).textContent,'已使用重置卡，重置了 2 个额度窗口。');
+  }
+  for(const [code,reason] of [['auth_not_found','CPA 中未找到该账户的路由记录。'],['cooldown_reset_failed',''],['access_token=secret raw','']]){
+    const calls=[],d=dashboard(login(),coolFetcher(calls,{'consume-reset':()=>reply({code:'already_redeemed',windows_reset:0,cooldown_cleared:false,cooldown_error:code})}));
+    await d.api.load();await useReset(d);const a=panel(d.elements,'codex-a');
+    assert.equal(legacyCalls(calls).length,0,code);assert.equal(accountError(a).textContent,cooldownFailed+reason+cooldownHint,code);
+    assert.equal(accountNoteNode(a).textContent,'该重置请求已处理，未重复扣除。');assert(!/secret/.test(accountError(a).textContent));
+  }
+  const d=dashboard(login(),coolFetcher([],{'consume-reset':()=>reply({code:'reset',windows_reset:2,cooldown_cleared:false,cooldown_error:'cooldown_reset_failed'})}),{language:'en'});
+  await d.api.load();await useReset(d);
+  assert.equal(accountError(panel(d.elements,'codex-a')).textContent,'The reset credit was used, but the CPA routing cooldown could not be cleared. Click Clear cooldown later to retry, or wait for the cooldown to expire.');
+});
+
+test('reset fallback stops on logout or credential change and returns to sign-in on management auth failure',async()=>{
+  for(const nextKey of ['',JSON.stringify('new-key')]){
+    const stored=login(),calls=[];let release;
+    const d=dashboard(stored,coolFetcher(calls,{'consume-reset':()=>reply({code:'reset',windows_reset:2,cooldown_cleared:false,cooldown_error:'host_unsupported'}),'/v0/management/auth-files':()=>new Promise(r=>release=()=>r(legacyFiles()))}));
+    await d.api.load();await d.api.openReset('codex-a');const pending=d.api.confirmReset();await flush();
+    stored.managementKey=nextKey;release();await pending;
+    assert.equal(posted(calls,'/v8/management/routing/cooldown/reset').length,0,'no cooldown write with replaced credentials');assert.equal(posted(calls,'refresh-account').length,0);
+    const card=panel(d.elements,'codex-a');if(card){assert.equal(accountNoteNode(card).textContent,'');assert.equal(accountError(card).textContent,'');}else assert(d.elements.get('dashboard').classes.has('needs-login'));
+  }
+  const d=dashboard(login(),coolFetcher([],{'consume-reset':()=>reply({code:'reset',windows_reset:2,cooldown_cleared:false,cooldown_error:'host_unsupported'}),'/v0/management/auth-files':()=>reply({},401)}));
+  await d.api.load();await useReset(d);assert(d.elements.get('dashboard').classes.has('needs-login'));assert(!panel(d.elements,'codex-a'));
+});
+
+test('manual clear cooldown posts once, locks only its card, then clears the badge and refreshes',async()=>{
+  const calls=[],state={cooling:true};let release;
+  const d=dashboard(login(),coolFetcher(calls,{'clear-cooldown':()=>new Promise(r=>release=()=>r(reply({status:'ok',auth_id:'codex-a',cooldown_cleared:true})))},state));
+  await d.api.load();const dataReads=()=>calls.filter(c=>c.url.endsWith('/data')).length,before=dataReads();
+  const pending=clearButton(panel(d.elements,'codex-a')).onclick();
+  let a=panel(d.elements,'codex-a'),button=clearButton(a);
+  assert.equal(button.textContent,'正在清除…');assert.equal(button.disabled,true);assert.equal(button.getAttribute('aria-busy'),'true');
+  assert.equal(resetButton(a).disabled,true);assert.equal(refreshButton(a).disabled,true);assert.equal(toggleButton(a).disabled,true);
+  assert.equal(toggleButton(a).children[1].textContent,'已启用','a cooldown job is not shown as a status change');assert.equal(toggleButton(a).getAttribute('aria-busy'),'false');
+  const zero=panel(d.elements,'codex-zero');assert.equal(clearButton(zero).disabled,false);assert.equal(refreshButton(zero).disabled,false);
+  await d.api.clearCooldown('codex-a');await d.api.refreshAccount('codex-a');await d.api.openReset('codex-a');await d.api.toggleAccount('codex-a',true);await d.api.load();
+  assert.equal(posted(calls,'clear-cooldown').length,1);assert.equal(posted(calls,'refresh-account').length,0);assert.equal(posted(calls,'reset-credits').length,0);assert.equal(d.elements.get('disable-dialog').hidden,true);assert.equal(dataReads(),before);
+  const post=posted(calls,'clear-cooldown')[0];assert.equal(post.url,'/v0/management/plugins/cpa-mini-usage/clear-cooldown');assert.equal(post.options.method,'POST');assert.deepEqual(JSON.parse(post.options.body),{auth_id:'codex-a'});assert.equal(post.options.headers.Authorization,'Bearer key');
+  state.cooling=false;release();await pending;
+  a=panel(d.elements,'codex-a');assert(!coolBadge(a)&&!clearButton(a));assert.equal(accountNoteNode(a).textContent,'已清除 CPA 路由冷却，账户将重新参与路由。');assert.equal(accountError(a).textContent,'');
+  assert.equal(dataReads(),before+1,'a follow-up snapshot confirms the live state');assert.equal(legacyCalls(calls).length,0);
+  assert.equal(resetButton(a).disabled,false);assert.equal(toggleButton(a).disabled,false);
+  await d.api.clearCooldown('codex-a');assert.equal(posted(calls,'clear-cooldown').length,1,'no cooling state, no request');
+  await d.api.clearCooldown('codex-off');await d.api.clearCooldown('missing');assert.equal(posted(calls,'clear-cooldown').length,1,'disabled or unknown accounts make no request');
+});
+
+for(const language of ['zh','en'])test(`${language}: manual clear cooldown errors use fixed safe copy and keep the cooling state`,async()=>{
+  const cases=[
+    [400,{error:'invalid_auth_id'},'无效的账户标识。','Invalid account ID.'],
+    [404,{error:'account_not_found'},'未找到账户。',null],
+    [409,{error:'account_disabled'},'账户已禁用，无需清除路由冷却。','The account is disabled; there is no routing cooldown to clear.'],
+    [409,{error:'cooldown_busy'},'冷却清除请求正在处理中，请稍后重试。','A cooldown clear is already in progress. Please retry shortly.'],
+    [502,{error:'cooldown_reset_failed'},'CPA 清除路由冷却失败，请稍后重试。','CPA failed to clear the routing cooldown. Please retry later.'],
+    [502,{error:'host callbacks unavailable'},'主机接口不可用。','Host callbacks unavailable.'],
+    [500,{error:'access_token=secret raw'},'清除路由冷却失败（HTTP 500），请稍后重试。','Clearing the routing cooldown failed (HTTP 500). Please retry later.'],
+    [200,{status:'ok'},'清除冷却响应格式异常。','The cooldown clear response was not recognized.'],
+  ];
+  for(const [status,body,zh,en] of cases){
+    const calls=[],d=dashboard(login(),coolFetcher(calls,{'clear-cooldown':()=>reply(body,status)}),{language});
+    await d.api.load();const before=calls.length;await clearButton(panel(d.elements,'codex-a')).onclick();
+    const a=panel(d.elements,'codex-a'),text=accountError(a).textContent;
+    if(language==='zh')assert.equal(text,zh,JSON.stringify(body));else if(en)assert.equal(text,en,JSON.stringify(body));else assert(text&&!/[\u3400-\u9fff]/.test(text));
+    assert(!/secret/.test(text));assert.equal(accountNoteNode(a).textContent,'');assert(coolBadge(a),'never optimistically cleared on failure');assert.equal(clearButton(a).disabled,false);
+    assert.deepEqual(calls.slice(before).map(c=>c.url.split('/').pop()),['clear-cooldown'],'no fallback and no refresh after a definitive failure');
+  }
+});
+
+test('manual clear on 501 host_unsupported uses the same management API fallback',async()=>{
+  for(const [v8,quota,ok] of [[200,null,true],[404,200,true],[404,404,false]]){
+    const calls=[],state={cooling:true};
+    const d=dashboard(login(),coolFetcher(calls,{'clear-cooldown':()=>reply({error:'host_unsupported'},501),'/v0/management/auth-files':legacyFiles,
+      '/v8/management/routing/cooldown/reset':()=>{if(v8===200)state.cooling=false;return reply({error:'secret'},v8);},'/v0/management/reset-quota':()=>{if(quota===200)state.cooling=false;return reply({error:'secret'},quota);}},state));
+    await d.api.load();await d.api.clearCooldown('codex-a');
+    const legacy=legacyCalls(calls).map(c=>c.url),a=panel(d.elements,'codex-a');
+    assert.deepEqual(legacy,['/v0/management/auth-files','/v8/management/routing/cooldown/reset',...(quota?['/v0/management/reset-quota']:[])]);
+    for(const c of legacyCalls(calls).slice(1))assert.deepEqual(JSON.parse(c.options.body),{auth_index:'idx-a'});
+    if(ok){assert.equal(accountNoteNode(a).textContent,'已清除 CPA 路由冷却，账户将重新参与路由。');assert(!coolBadge(a));}
+    else{assert.equal(accountError(a).textContent,legacyFailed);assert.equal(accountNoteNode(a).textContent,'');assert(coolBadge(a));assert(!/secret/.test(accountError(a).textContent));}
+  }
+});
+
+test('manual clear replies cannot cross logout or credential replacement; auth failures return to sign-in',async()=>{
+  for(const status of [200,501])for(const nextKey of ['',JSON.stringify('new-key')]){
+    const stored=login(),calls=[];let release;
+    const d=dashboard(stored,coolFetcher(calls,{'clear-cooldown':()=>new Promise(r=>release=()=>r(status===200?reply({status:'ok',auth_id:'codex-a',cooldown_cleared:true}):reply({error:'host_unsupported'},501))),'/v0/management/auth-files':legacyFiles}));
+    await d.api.load();const pending=d.api.clearCooldown('codex-a');stored.managementKey=nextKey;release();await pending;
+    assert.equal(legacyCalls(calls).length,0,'no fallback with replaced credentials');
+    const card=panel(d.elements,'codex-a');if(card){assert.equal(accountNoteNode(card).textContent,'');assert.equal(accountError(card).textContent,'');assert(coolBadge(card));}else assert(d.elements.get('dashboard').classes.has('needs-login'));
+    assert(calls.filter(c=>c.url.endsWith('/data')).every(c=>c.options.headers.Authorization!=='Bearer key'||calls.indexOf(c)<calls.findIndex(x=>x.url.endsWith('clear-cooldown'))),'no stale-key snapshot after the reply');
+  }
+  const d=dashboard(login(),coolFetcher([],{'clear-cooldown':()=>reply({},401)}));await d.api.load();await d.api.clearCooldown('codex-a');
+  assert(d.elements.get('dashboard').classes.has('needs-login'));assert(!panel(d.elements,'codex-a'));
+});

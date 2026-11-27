@@ -314,6 +314,13 @@ Reduce Claude `/api/oauth/usage` rate-limit (HTTP 429) pressure without affectin
 - **30-minute Claude background cadence & disabled skip**: Claude background quota polling now runs every 30 minutes (Codex and Antigravity remain at 15 minutes) and skips disabled Claude accounts; manual refreshes still run immediately. Wakeup freshness scales with each provider's refresh interval (60 minutes for Claude).
 - **HTTP 429 `Retry-After` backoff**: quota reads stop immediately on HTTP 429 without a second call, respect `Retry-After` (seconds or HTTP-date) with exponential per-account backoff (30m → 60m → 120m), preserve cached quota windows on the card with a clear rate-limit notice, and skip post-wakeup usage reads while an account is backed off.
 
+### v0.1.49
+
+Clear CPA routing cooldown automatically when reset cards are redeemed so reset accounts immediately re-enter routing:
+- **Automatic CPA cooldown reset on `consume-reset`**: after Codex or Claude confirms `reset` or an idempotent retry `already_redeemed`, the plugin invokes CPA's native `host.routing.reset_cooldown` callback (clearing both credential-level and model-level cooldowns without rewriting token files on disk), clears local quota/wakeup backoffs, and reports `cooldown_cleared` / sanitized `cooldown_error` without failing the already-redeemed 200 response.
+- **External reset reconciliation on quota refresh**: when a fresh official quota read confirms a reset occurred while CPA still holds a routing cooldown (remaining reset count decreased, or a previously 100%-exhausted window recovered before its old reset timestamp while neither window is exhausted), the plugin automatically clears the stale CPA cooldown without disturbing short-term RPM/529/403 backoffs.
+- **Live cooldown visibility, manual clear & legacy CPA fallback**: `/data` exposes live non-persisted `routing_cooling` and `next_retry_after` states; cards in active routing cooldown show a **Routing cooldown** badge and a **Clear cooldown** action calling `POST /plugins/cpa-mini-usage/clear-cooldown`, with an automatic same-origin fallback to CPA's management API (`/v8/management/routing/cooldown/reset` → `/v0/management/reset-quota`) on older CPA hosts without `host.routing.reset_cooldown`.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,

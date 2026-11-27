@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -31,20 +32,36 @@ var redeemKeyPattern = regexp.MustCompile(`^[A-Za-z0-9-]{16,128}$`)
 // Credit ids are opaque provider strings; accept printable ASCII without whitespace only.
 var resetCreditIDPattern = regexp.MustCompile(`^[!-~]{1,256}$`)
 
+const (
+	cooldownErrHostUnsupported = "host_unsupported"
+	cooldownErrAuthNotFound    = "auth_not_found"
+	cooldownErrResetFailed     = "cooldown_reset_failed"
+)
+
 type ResetConsumeResult struct {
-	Code         string `json:"code"`
-	WindowsReset int64  `json:"windows_reset"`
-	codeOnly     bool   // Claude sends no window count for a non-reset outcome.
+	Code            string `json:"code"`
+	WindowsReset    int64  `json:"windows_reset"`
+	CooldownCleared *bool  `json:"cooldown_cleared,omitempty"`
+	CooldownError   string `json:"cooldown_error,omitempty"`
+	codeOnly        bool   // Claude sends no window count for a non-reset outcome.
 }
 
 func (r ResetConsumeResult) MarshalJSON() ([]byte, error) {
 	if r.codeOnly {
 		return json.Marshal(struct {
-			Code string `json:"code"`
-		}{r.Code})
+			Code            string `json:"code"`
+			CooldownCleared *bool  `json:"cooldown_cleared,omitempty"`
+			CooldownError   string `json:"cooldown_error,omitempty"`
+		}{r.Code, r.CooldownCleared, r.CooldownError})
 	}
 	type wire ResetConsumeResult
 	return json.Marshal(wire(r))
+}
+
+type ClearCooldownResult struct {
+	Status          string `json:"status"`
+	AuthID          string `json:"auth_id"`
+	CooldownCleared bool   `json:"cooldown_cleared"`
 }
 
 type ResetCredit struct {
@@ -485,7 +502,7 @@ func (e *Engine) consumeResetWith(authID, redeemKey, creditID, confirmToken stri
 		e.mu.Unlock()
 		return 409, ResetConsumeResult{}, "reset_account_changed"
 	}
-	if e.consuming[authID] {
+	if e.consuming[authID] || e.clearingCooldown[authID] {
 		e.mu.Unlock()
 		return 409, ResetConsumeResult{}, "reset_busy"
 	}
@@ -502,7 +519,7 @@ func (e *Engine) consumeResetWith(authID, redeemKey, creditID, confirmToken stri
 		return 502, ResetConsumeResult{}, failure
 	}
 	if provider == "claude" {
-		return e.consumeClaudeReset(authID, redeemKey, creditID, confirmToken, claudeResetHeaders(headers), rpc, post)
+		return e.consumeClaudeReset(authID, target.Index, redeemKey, creditID, confirmToken, claudeResetHeaders(headers), rpc, post)
 	}
 	headers.Set("Content-Type", "application/json")
 	request := map[string]string{"redeem_request_id": redeemKey}
@@ -522,18 +539,34 @@ func (e *Engine) consumeResetWith(authID, redeemKey, creditID, confirmToken stri
 		return 502, ResetConsumeResult{}, "reset response invalid"
 	}
 	// no_credit for one chosen credit says nothing about the others; the follow-up refresh does.
-	if result.Code == "reset" || (result.Code == "no_credit" && creditID == "") {
+	if result.Code == "reset" || result.Code == "already_redeemed" || (result.Code == "no_credit" && creditID == "") {
 		// The count is stale either way; the dashboard follows with a quota refresh.
 		e.mu.Lock()
-		if q, ok := e.quotas[authID]; ok && q.ManualResetRemaining != nil {
-			next := *q.ManualResetRemaining - 1
-			if result.Code == "no_credit" || next < 0 {
-				next = 0
+		if result.Code == "reset" || (result.Code == "no_credit" && creditID == "") {
+			if q, ok := e.quotas[authID]; ok && q.ManualResetRemaining != nil {
+				next := *q.ManualResetRemaining - 1
+				if result.Code == "no_credit" || next < 0 {
+					next = 0
+				}
+				q.ManualResetRemaining = &next
+				e.quotas[authID] = q
 			}
-			q.ManualResetRemaining = &next
-			e.quotas[authID] = q
+		}
+		if result.Code == "reset" || result.Code == "already_redeemed" {
+			delete(e.quotaBackoff, authID)
+			delete(e.wakeupLastFail, authID)
 		}
 		e.mu.Unlock()
+	}
+	if result.Code == "reset" || result.Code == "already_redeemed" {
+		cleared, errCode := clearRoutingCooldown(authID, "codex", target.Index, rpc)
+		result.CooldownCleared = &cleared
+		result.CooldownError = errCode
+		if cleared {
+			e.mu.Lock()
+			delete(e.routingCooldown, authID)
+			e.mu.Unlock()
+		}
 	}
 	return 200, result, ""
 }
@@ -555,7 +588,7 @@ func claudeProfileOrg(headers http.Header, rpc func(string, any) (any, error)) (
 	return strings.ToLower(profile.Organization.UUID), 200, ""
 }
 
-func (e *Engine) consumeClaudeReset(authID, key, creditID, confirmToken string, headers http.Header, rpc func(string, any) (any, error), post func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error)) (int, ResetConsumeResult, string) {
+func (e *Engine) consumeClaudeReset(authID, authIndex, key, creditID, confirmToken string, headers http.Header, rpc func(string, any) (any, error), post func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error)) (int, ResetConsumeResult, string) {
 	org, status, msg := claudeProfileOrg(headers, rpc)
 	if msg != "" {
 		return status, ResetConsumeResult{}, msg
@@ -605,7 +638,6 @@ func (e *Engine) consumeClaudeReset(authID, key, creditID, confirmToken string, 
 		return 502, ResetConsumeResult{}, "reset response invalid"
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if _, bound := e.resetBindings[confirmToken]; bound && code == "reset" {
 		if q, ok := e.quotas[authID]; ok && q.Provider == "claude" && q.ManualResetRemaining != nil {
 			var next int64
@@ -617,7 +649,141 @@ func (e *Engine) consumeClaudeReset(authID, key, creditID, confirmToken string, 
 		}
 	}
 	delete(e.resetBindings, confirmToken)
-	return 200, ResetConsumeResult{Code: code, codeOnly: code != "reset", WindowsReset: int64(len(result.Cleared))}, ""
+	if code == "reset" || code == "already_redeemed" {
+		delete(e.quotaBackoff, authID)
+		delete(e.wakeupLastFail, authID)
+	}
+	e.mu.Unlock()
+
+	out := ResetConsumeResult{Code: code, codeOnly: code != "reset", WindowsReset: int64(len(result.Cleared))}
+	if code == "reset" || code == "already_redeemed" {
+		cleared, errCode := clearRoutingCooldown(authID, "claude", authIndex, rpc)
+		out.CooldownCleared = &cleared
+		out.CooldownError = errCode
+		if cleared {
+			e.mu.Lock()
+			delete(e.routingCooldown, authID)
+			e.mu.Unlock()
+		}
+	}
+	return 200, out, ""
+}
+
+func classifyCooldownResetError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var rpcErr *hostRPCError
+	if errors.As(err, &rpcErr) {
+		detail := strings.ToLower(strings.TrimSpace(rpcErr.Code + " " + rpcErr.Detail))
+		switch {
+		case strings.Contains(detail, "unsupported host callback") || strings.Contains(detail, "unknown method") || strings.Contains(detail, "unsupported"):
+			return cooldownErrHostUnsupported
+		case strings.Contains(detail, "not found") || strings.Contains(detail, "missing auth") || strings.Contains(detail, "unknown auth"):
+			return cooldownErrAuthNotFound
+		default:
+			return cooldownErrResetFailed
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "unsupported") {
+		return cooldownErrHostUnsupported
+	}
+	if strings.Contains(msg, "not found") {
+		return cooldownErrAuthNotFound
+	}
+	return cooldownErrResetFailed
+}
+
+// clearRoutingCooldown clears CPA's in-memory and persisted routing cooldown for one
+// credential via host.routing.reset_cooldown without modifying token files on disk.
+// If the cached auth_index became stale during an upstream call, it re-reads host.auth.list
+// once and retries if a replacement index is present for the same active credential.
+func clearRoutingCooldown(authID, provider, authIndex string, rpc func(string, any) (any, error)) (bool, string) {
+	if rpc == nil {
+		return false, cooldownErrResetFailed
+	}
+	idx := strings.TrimSpace(authIndex)
+	if idx != "" {
+		if _, err := rpc("host.routing.reset_cooldown", map[string]string{"auth_index": idx}); err == nil {
+			return true, ""
+		} else {
+			errCode := classifyCooldownResetError(err)
+			if errCode != cooldownErrAuthNotFound {
+				return false, errCode
+			}
+		}
+	}
+	raw, err := rpc("host.auth.list", map[string]any{})
+	if err != nil {
+		return false, cooldownErrResetFailed
+	}
+	for _, entry := range parseAuthList(raw) {
+		if entry.ID != authID || (provider != "" && entry.Provider != provider) || !quotaProvider(entry.Provider) {
+			continue
+		}
+		if entry.Disabled || entry.Index == "" || entry.Index == idx {
+			break
+		}
+		if _, err := rpc("host.routing.reset_cooldown", map[string]string{"auth_index": entry.Index}); err == nil {
+			return true, ""
+		} else {
+			return false, classifyCooldownResetError(err)
+		}
+	}
+	return false, cooldownErrAuthNotFound
+}
+
+func (e *Engine) clearAccountCooldown(authID string) (int, ClearCooldownResult, string) {
+	return e.clearAccountCooldownWith(authID, hostRPC)
+}
+
+func (e *Engine) clearAccountCooldownWith(authID string, rpc func(string, any) (any, error)) (int, ClearCooldownResult, string) {
+	if strings.TrimSpace(authID) == "" || len(authID) > 1024 {
+		return 400, ClearCooldownResult{}, "invalid_auth_id"
+	}
+	e.mu.Lock()
+	quota, known := e.quotas[authID]
+	if !known {
+		e.mu.Unlock()
+		return 404, ClearCooldownResult{}, "account_not_found"
+	}
+	if !quotaProvider(quota.Provider) {
+		e.mu.Unlock()
+		return 400, ClearCooldownResult{}, "cooldown_unsupported"
+	}
+	if e.consuming[authID] || e.clearingCooldown[authID] {
+		e.mu.Unlock()
+		return 409, ClearCooldownResult{}, "cooldown_busy"
+	}
+	e.clearingCooldown[authID] = true
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.clearingCooldown, authID)
+		e.mu.Unlock()
+	}()
+
+	target, status, failure := knownResetAccount(authID, quota.Provider, rpc)
+	if failure != "" {
+		return status, ClearCooldownResult{}, failure
+	}
+	cleared, errCode := clearRoutingCooldown(authID, quota.Provider, target.Index, rpc)
+	if !cleared {
+		switch errCode {
+		case cooldownErrHostUnsupported:
+			return 501, ClearCooldownResult{}, cooldownErrHostUnsupported
+		case cooldownErrAuthNotFound:
+			return 404, ClearCooldownResult{}, "account_not_found"
+		default:
+			return 502, ClearCooldownResult{}, cooldownErrResetFailed
+		}
+	}
+	e.mu.Lock()
+	delete(e.routingCooldown, authID)
+	delete(e.wakeupLastFail, authID)
+	e.mu.Unlock()
+	return 200, ClearCooldownResult{Status: "ok", AuthID: authID, CooldownCleared: true}, ""
 }
 
 // providerPOST sends one POST through CPA's host HTTP client. There is deliberately no direct
@@ -764,6 +930,7 @@ func (e *Engine) syncAuthStatus(rpc func(string, any) (any, error)) bool {
 		q.Disabled = entry.Disabled
 		q.DisableReason = sanitizeDisableReason(entry.Disabled, entry.DisableReason)
 		e.quotas[entry.ID] = q
+		e.updateRoutingCooldownLocked(entry)
 	}
 	if changed {
 		e.persistQuotasLocked()

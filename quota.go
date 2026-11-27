@@ -180,14 +180,29 @@ func (e *Engine) shouldSkipBackgroundQuotaRefreshLocked(entry AuthEntry, now tim
 }
 
 type AuthEntry struct {
-	Index         string
-	ID            string
-	Name          string
-	Provider      string
-	RawProvider   string
-	Disabled      bool
-	DisableReason string
-	QuotaCooling  bool
+	Index          string
+	ID             string
+	Name           string
+	Provider       string
+	RawProvider    string
+	Disabled       bool
+	DisableReason  string
+	QuotaCooling   bool
+	NextRetryAfter string
+}
+
+func (e *Engine) updateRoutingCooldownLocked(entry AuthEntry) {
+	if entry.Disabled || !entry.QuotaCooling {
+		delete(e.routingCooldown, entry.ID)
+		return
+	}
+	var nextRetry time.Time
+	if entry.NextRetryAfter != "" {
+		if parsed, ok := parseWindowResetTime(entry.NextRetryAfter); ok {
+			nextRetry = parsed.UTC()
+		}
+	}
+	e.routingCooldown[entry.ID] = routingCooldownState{Cooling: true, NextRetryAfter: nextRetry}
 }
 
 func (e *Engine) kickFullRefresh() (string, bool) {
@@ -325,6 +340,11 @@ func (e *Engine) refreshQuotaWith(force bool, rpc func(string, any) (any, error)
 		if complete && e.pruneQuotasLocked(live) {
 			e.persistQuotasLocked()
 		}
+		for _, entry := range auths {
+			if quotaProvider(entry.Provider) {
+				e.updateRoutingCooldownLocked(entry)
+			}
+		}
 	} else {
 		// A newer sync completed during the list RPC. Don't prune its new cards
 		// or introduce identities found only in our stale list. Its pending
@@ -400,6 +420,7 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	e.mu.Lock()
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
 	e.aliases[entry.Index] = entry.ID
+	e.updateRoutingCooldownLocked(entry)
 	e.mu.Unlock()
 	headers, creds, email, failure := providerCredential(entry, rpc)
 	if email != "" {
@@ -496,7 +517,9 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	delete(e.quotaBackoff, entry.ID)
 	e.quotaUpdated = observedAt
 	e.names[entry.ID], e.names[entry.Index] = entry.Name, entry.Name
-	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
+	prior, hadPrior := e.quotas[entry.ID]
+	reconcileCooldown := shouldAutoClearResetCooldown(entry, hadPrior, prior, five, week, resetRemaining, observedAt)
+	e.rememberQuotaForecastsLocked(prior, observedAt)
 	e.quotas[entry.ID] = AccountQuota{Provider: entry.Provider, AuthID: entry.ID, Name: entry.Name, Five: five, Week: week, FetchedAt: observedAt.Format(time.RFC3339Nano), ManualResetRemaining: resetRemaining, ManualResetDiagnostic: resetDiagnostic, Disabled: entry.Disabled, DisableReason: sanitizeDisableReason(entry.Disabled, entry.DisableReason)}
 	e.rememberQuotaForecastsLocked(e.quotas[entry.ID], observedAt)
 	e.updateWakeupObservedResetLocked(e.quotas[entry.ID])
@@ -506,7 +529,46 @@ func (e *Engine) refreshAccountQuotaWith(entry AuthEntry, rpc func(string, any) 
 	}
 	e.persistQuotasLocked()
 	e.mu.Unlock()
+	if reconcileCooldown {
+		if cleared, _ := clearRoutingCooldown(entry.ID, entry.Provider, entry.Index, rpc); cleared {
+			e.mu.Lock()
+			delete(e.routingCooldown, entry.ID)
+			delete(e.wakeupLastFail, entry.ID)
+			e.mu.Unlock()
+		}
+	}
 	return true
+}
+
+func isWindowExhaustedWithFutureReset(win *QuotaWindow, now time.Time) bool {
+	if win == nil || win.Used < 100 {
+		return false
+	}
+	resetAt, ok := parseWindowResetTime(win.ResetAt)
+	return ok && resetAt.After(now)
+}
+
+// shouldAutoClearResetCooldown reconciles stale CPA routing cooldown when a fresh official
+// quota read confirms an account reset (e.g. a reset card spent outside this plugin) while
+// CPA still holds a routing cooldown. It requires positive reset evidence so short-term
+// RPM/529/403 or model-specific cooldowns are never cleared accidentally.
+func shouldAutoClearResetCooldown(entry AuthEntry, hadPrior bool, prior AccountQuota, five, week *QuotaWindow, resetRemaining *int64, observedAt time.Time) bool {
+	if entry.Disabled || !entry.QuotaCooling || (entry.Provider != "codex" && entry.Provider != "claude") {
+		return false
+	}
+	if !hadPrior || (five == nil && week == nil) {
+		return false
+	}
+	if isQuotaWindowExhausted(five, observedAt) || isQuotaWindowExhausted(week, observedAt) {
+		return false
+	}
+	if prior.ManualResetRemaining != nil && resetRemaining != nil && *resetRemaining < *prior.ManualResetRemaining {
+		return true
+	}
+	if isWindowExhaustedWithFutureReset(prior.Five, observedAt) || isWindowExhaustedWithFutureReset(prior.Week, observedAt) {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) refreshAntigravityQuota(entry AuthEntry, headers http.Header, creds map[string]any, post func(string, http.Header, []byte) (int, []byte, error)) bool {
@@ -654,23 +716,57 @@ func parseAuthList(v any) []AuthEntry {
 		}
 		statusMsg := str(r, "status_message", "StatusMessage")
 		disableReason := sanitizeDisableReason(disabled, statusMsg)
-		cooling := false
-		if unavail, _ := getAny(r, "unavailable", "Unavailable").(bool); unavail && !disabled {
-			cooling = true
-		}
+		now := time.Now().UTC()
+		unavail, _ := getAny(r, "unavailable", "Unavailable").(bool)
+		var retryAt time.Time
+		hasRetry := false
 		if retryStr := str(r, "next_retry_after", "NextRetryAfter"); retryStr != "" {
-			if retryAt, ok := parseWindowResetTime(retryStr); ok && retryAt.After(time.Now().UTC()) {
-				cooling = true
+			if parsed, ok := parseWindowResetTime(retryStr); ok {
+				retryAt, hasRetry = parsed.UTC(), true
 			}
 		}
-		if msg := strings.ToLower(statusMsg); msg != "" {
-			if strings.Contains(msg, "429") || strings.Contains(msg, "quota") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit") || strings.Contains(msg, "cooldown") || strings.Contains(msg, "exhausted") || strings.Contains(msg, "usage limit") {
-				cooling = true
+		cooling := false
+		nextRetryAfter := ""
+		if !disabled {
+			if hasRetry {
+				if retryAt.After(now) {
+					cooling = true
+					nextRetryAfter = retryAt.Format(time.RFC3339)
+				}
+			} else {
+				if unavail && !isAuthFailureStatus(statusMsg) {
+					cooling = true
+				}
+				if isQuotaCooldownStatus(statusMsg) {
+					cooling = true
+				}
 			}
 		}
-		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled, DisableReason: disableReason, QuotaCooling: cooling})
+		entries = append(entries, AuthEntry{Index: idx, ID: id, Name: name, Provider: provider, RawProvider: rawProvider, Disabled: disabled, DisableReason: disableReason, QuotaCooling: cooling, NextRetryAfter: nextRetryAfter})
 	}
 	return entries
+}
+
+func isQuotaCooldownStatus(statusMsg string) bool {
+	msg := strings.ToLower(strings.TrimSpace(statusMsg))
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "429") || strings.Contains(msg, "quota") ||
+		strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit") ||
+		strings.Contains(msg, "cooldown") || strings.Contains(msg, "exhausted") ||
+		strings.Contains(msg, "usage limit")
+}
+
+func isAuthFailureStatus(statusMsg string) bool {
+	msg := strings.ToLower(strings.TrimSpace(statusMsg))
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "unauthorized") || strings.Contains(msg, "invalid_grant") ||
+		strings.Contains(msg, "refresh_token_reused") || strings.Contains(msg, "token expired") ||
+		strings.Contains(msg, "sign in") || strings.Contains(msg, "sign-in") ||
+		strings.Contains(msg, "401")
 }
 
 // The native, unpaginated list response contains *only* files. Keep alternate
@@ -732,6 +828,7 @@ func (e *Engine) pruneQuotasLocked(live map[string]bool) bool {
 		if !live[id] {
 			delete(e.quotas, id)
 			delete(e.quotaBackoff, id)
+			delete(e.routingCooldown, id)
 			e.removeResetBindingsLocked(id)
 			delete(e.accountRefresh, id)
 			delete(e.wakeupResults, id)

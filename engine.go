@@ -111,6 +111,11 @@ type WindowEstimate struct {
 	PartialHistory         bool     `json:"partial_history"`
 }
 
+type routingCooldownState struct {
+	Cooling        bool
+	NextRetryAfter time.Time
+}
+
 type QuotaView struct {
 	Provider              string           `json:"provider"`
 	AuthID                string           `json:"auth_id"`
@@ -123,6 +128,8 @@ type QuotaView struct {
 	ManualResetDiagnostic string           `json:"manual_reset_diagnostic,omitempty"`
 	Disabled              bool             `json:"disabled,omitempty"`
 	DisableReason         string           `json:"disable_reason,omitempty"`
+	RoutingCooling        bool             `json:"routing_cooling,omitempty"`
+	NextRetryAfter        string           `json:"next_retry_after,omitempty"`
 	Groups                []QuotaGroupView `json:"groups,omitempty"`
 }
 
@@ -239,7 +246,9 @@ type Engine struct {
 	refreshMu            sync.RWMutex
 	priceRefreshMu       sync.Mutex
 	consuming            map[string]bool
-	resetBindings        map[string]resetBinding // Indexed by random confirmation token; never persisted.
+	clearingCooldown     map[string]bool
+	routingCooldown      map[string]routingCooldownState // Live CPA runtime cooldown; never persisted.
+	resetBindings        map[string]resetBinding         // Indexed by random confirmation token; never persisted.
 	lastRefresh                time.Time
 	quotaBackoff               map[string]quotaBackoffState
 	claudeCombinedBlockedUntil time.Time
@@ -271,6 +280,8 @@ func newEngine() *Engine {
 		forecasts:          make(map[string]SavedForecast),
 		accountRefresh:     make(map[string]AccountRefreshState),
 		consuming:          make(map[string]bool),
+		clearingCooldown:   make(map[string]bool),
+		routingCooldown:    make(map[string]routingCooldownState),
 		resetBindings:      make(map[string]resetBinding),
 		names:              make(map[string]string),
 		aliases:            make(map[string]string),
@@ -821,6 +832,16 @@ func (e *Engine) snapshot() Snapshot {
 		week, changedWeek := e.resolveForecastLocked(q, "7d", now)
 		forecastsChanged = forecastsChanged || changedFive || changedWeek
 		view := QuotaView{Provider: q.Provider, AuthID: q.AuthID, Name: q.Name, Five: five, Week: week, FetchedAt: q.FetchedAt, Error: q.Error, ManualResetRemaining: q.ManualResetRemaining, ManualResetDiagnostic: sanitizeManualResetDiagnostic(q.Provider, q.ManualResetRemaining, q.ManualResetDiagnostic), Disabled: q.Disabled, DisableReason: sanitizeDisableReason(q.Disabled, q.DisableReason)}
+		if !q.Disabled {
+			if rc, ok := e.routingCooldown[q.AuthID]; ok && rc.Cooling {
+				if rc.NextRetryAfter.IsZero() || rc.NextRetryAfter.After(now) {
+					view.RoutingCooling = true
+					if !rc.NextRetryAfter.IsZero() {
+						view.NextRetryAfter = rc.NextRetryAfter.UTC().Format(time.RFC3339)
+					}
+				}
+			}
+		}
 		for _, g := range q.Groups {
 			gFive, c1 := e.resolveGroupForecastLocked(q, g, "5h", now)
 			gWeek, c2 := e.resolveGroupForecastLocked(q, g, "7d", now)

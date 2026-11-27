@@ -197,6 +197,29 @@ plugins:
             else:
                 raise AssertionError("Reset route incorrectly accepted the request: " + url)
         print("PASS reset routes: credit list and consume authentication, validation and tokenless rejection without provider calls")
+        cooldown_url = refresh_url.rsplit("/", 1)[0] + "/clear-cooldown"
+        for authenticated, payload, expected, code in [
+            (False, {"auth_id": auth_id}, (401, 403), None),
+            (True, {}, (400,), "invalid_auth_id"),
+            (True, {"auth_id": "unknown"}, (404,), "account_not_found"),
+        ]:
+            headers = {"Content-Type": "application/json"}
+            if authenticated:
+                headers["Authorization"] = "Bearer " + key
+            req = urllib.request.Request(cooldown_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+            try:
+                urllib.request.urlopen(req, timeout=5)
+            except urllib.error.HTTPError as error:
+                assert error.code in expected, (cooldown_url, error.code, expected)
+                if code:
+                    assert json.loads(error.read())["error"] == code, (cooldown_url, code)
+            else:
+                raise AssertionError("Clear-cooldown route incorrectly accepted invalid/unauthenticated request")
+        req = urllib.request.Request(cooldown_url, data=json.dumps({"auth_id": auth_id}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            cleared = json.loads(response.read())
+            assert response.status == 200 and cleared.get("cooldown_cleared") is True and cleared.get("auth_id") == auth_id, cleared
+        print("PASS clear-cooldown route: real CPA host.routing.reset_cooldown callback succeeded")
         status_url = "http://127.0.0.1:18317/v0/management/auth-files/status"
         for disabled in (True, False):
             req = urllib.request.Request(status_url, data=json.dumps({"name": auth_id, "disabled": disabled}).encode(), headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="PATCH")

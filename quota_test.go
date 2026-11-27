@@ -500,3 +500,113 @@ func TestClaudeRateLimitBackoffFallbackCacheAndBackgroundCadence(t *testing.T) {
 		t.Fatalf("all-skipped Claude refresh must not set quotaError: called=%d err=%q", called, e4.quotaError)
 	}
 }
+
+func TestRefreshAccountQuotaReconcilesExternalResetCooldown(t *testing.T) {
+	future := time.Now().UTC().Add(3 * time.Hour).Format(time.RFC3339)
+
+	// Case 1: External reset card reduced remaining credits while CPA still held routing cooldown.
+	e := newEngine()
+	e.dir = t.TempDir()
+	three := int64(3)
+	e.quotas["cx"] = AccountQuota{
+		AuthID:               "cx",
+		Provider:             "codex",
+		Five:                 &QuotaWindow{Used: 80, ResetAt: future},
+		Week:                 &QuotaWindow{Used: 40, ResetAt: future},
+		ManualResetRemaining: &three,
+	}
+	e.routingCooldown["cx"] = routingCooldownState{Cooling: true, NextRetryAfter: time.Now().UTC().Add(2 * time.Hour)}
+	e.wakeupLastFail["cx"] = time.Now().UTC()
+
+	resetCalled := 0
+	rpc := func(method string, payload any) (any, error) {
+		switch method {
+		case "host.auth.get":
+			return map[string]any{"json": map[string]any{"access_token": "tok", "chatgpt_account_id": "acct"}}, nil
+		case "host.routing.reset_cooldown":
+			resetCalled++
+			if payload.(map[string]string)["auth_index"] != "idx-cx" {
+				t.Fatalf("unexpected auth_index: %#v", payload)
+			}
+			return map[string]any{"auth_index": "idx-cx", "models": []any{"gpt-5.5"}}, nil
+		}
+		t.Fatalf("unexpected RPC %s", method)
+		return nil, nil
+	}
+	get := func(url string, _ http.Header) ([]byte, error) {
+		return []byte(`{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":18000,"reset_after_seconds":18000},"secondary_window":{"used_percent":40,"limit_window_seconds":604800,"reset_after_seconds":500000}},"rate_limit_reset_credits":{"available_count":2}}`), nil
+	}
+	entry := AuthEntry{ID: "cx", Index: "idx-cx", Provider: "codex", Name: "cx@example.com", QuotaCooling: true, NextRetryAfter: future}
+	if !e.refreshAccountQuotaWith(entry, rpc, get) {
+		t.Fatal("expected refreshAccountQuotaWith to succeed")
+	}
+	if resetCalled != 1 {
+		t.Fatalf("expected 1 host.routing.reset_cooldown reconciliation call, got %d", resetCalled)
+	}
+	if _, ok := e.routingCooldown["cx"]; ok {
+		t.Fatal("expected local routingCooldown cleared after reconciliation")
+	}
+	if _, ok := e.wakeupLastFail["cx"]; ok {
+		t.Fatal("expected wakeupLastFail cleared after reconciliation")
+	}
+
+	// Case 2: Previously 100%-exhausted window with future reset time recovered early (even without reset count).
+	e2 := newEngine()
+	e2.dir = t.TempDir()
+	e2.quotas["cx2"] = AccountQuota{
+		AuthID:   "cx2",
+		Provider: "codex",
+		Five:     &QuotaWindow{Used: 100, ResetAt: future},
+		Week:     &QuotaWindow{Used: 50, ResetAt: future},
+	}
+	resetCalled = 0
+	entry2 := AuthEntry{ID: "cx2", Index: "idx-cx", Provider: "codex", Name: "cx2@example.com", QuotaCooling: true, NextRetryAfter: future}
+	if !e2.refreshAccountQuotaWith(entry2, rpc, get) {
+		t.Fatal("expected refreshAccountQuotaWith to succeed")
+	}
+	if resetCalled != 1 {
+		t.Fatalf("expected early recovery of 100%% window to trigger cooldown reset, got %d", resetCalled)
+	}
+
+	// Case 3: Short-term cooldown WITHOUT reset evidence (prior < 100%, remaining credits unchanged) must NOT clear CPA cooldown.
+	e3 := newEngine()
+	e3.dir = t.TempDir()
+	two := int64(2)
+	e3.quotas["cx3"] = AccountQuota{
+		AuthID:               "cx3",
+		Provider:             "codex",
+		Five:                 &QuotaWindow{Used: 20, ResetAt: future},
+		Week:                 &QuotaWindow{Used: 40, ResetAt: future},
+		ManualResetRemaining: &two,
+	}
+	resetCalled = 0
+	entry3 := AuthEntry{ID: "cx3", Index: "idx-cx", Provider: "codex", Name: "cx3@example.com", QuotaCooling: true, NextRetryAfter: future}
+	if !e3.refreshAccountQuotaWith(entry3, rpc, get) {
+		t.Fatal("expected refreshAccountQuotaWith to succeed")
+	}
+	if resetCalled != 0 {
+		t.Fatalf("short-term cooldown without reset evidence must not clear CPA cooldown, got %d", resetCalled)
+	}
+
+	// Case 4: Still exhausted (7d = 100%) must NOT clear CPA cooldown even if 5h recovered.
+	e4 := newEngine()
+	e4.dir = t.TempDir()
+	e4.quotas["cx4"] = AccountQuota{
+		AuthID:               "cx4",
+		Provider:             "codex",
+		Five:                 &QuotaWindow{Used: 100, ResetAt: future},
+		Week:                 &QuotaWindow{Used: 100, ResetAt: future},
+		ManualResetRemaining: &three,
+	}
+	getStillExhausted := func(url string, _ http.Header) ([]byte, error) {
+		return []byte(`{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":18000,"reset_after_seconds":18000},"secondary_window":{"used_percent":100,"limit_window_seconds":604800,"reset_after_seconds":500000}},"rate_limit_reset_credits":{"available_count":2}}`), nil
+	}
+	resetCalled = 0
+	entry4 := AuthEntry{ID: "cx4", Index: "idx-cx", Provider: "codex", Name: "cx4@example.com", QuotaCooling: true, NextRetryAfter: future}
+	if !e4.refreshAccountQuotaWith(entry4, rpc, getStillExhausted) {
+		t.Fatal("expected refreshAccountQuotaWith to succeed")
+	}
+	if resetCalled != 0 {
+		t.Fatalf("still-exhausted 7d window must not clear CPA cooldown, got %d", resetCalled)
+	}
+}

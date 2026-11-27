@@ -21,6 +21,13 @@ func actionRPC(t *testing.T, files []any) func(string, any) (any, error) {
 			return map[string]any{"files": files}, nil
 		case "host.auth.get":
 			return map[string]any{"json": map[string]any{"access_token": "secret-token", "chatgpt_account_id": "acct-1", "email": "alice@example.com"}}, nil
+		case "host.routing.reset_cooldown":
+			m, ok := payload.(map[string]string)
+			if !ok || m["auth_index"] == "" {
+				t.Errorf("invalid host.routing.reset_cooldown payload %#v", payload)
+				return nil, fmt.Errorf("invalid payload")
+			}
+			return map[string]any{"auth_index": m["auth_index"], "models": []any{}}, nil
 		}
 		t.Errorf("unexpected RPC %s", method)
 		return nil, fmt.Errorf("unexpected")
@@ -369,8 +376,13 @@ func TestConsumeResetClaudeOutcomes(t *testing.T) {
 		wantLeft := int64(2)
 		if tc.code == "reset" {
 			wantLeft--
-			if r.WindowsReset != 2 {
-				t.Fatal("wrong window count")
+			if r.WindowsReset != 2 || r.CooldownCleared == nil || !*r.CooldownCleared || r.CooldownError != "" {
+				t.Fatalf("wrong reset result: %+v", r)
+			}
+		} else if tc.code == "already_redeemed" {
+			out, _ := json.Marshal(r)
+			if string(out) != `{"code":"already_redeemed","cooldown_cleared":true}` {
+				t.Fatalf("unexpected already_redeemed response: %s", out)
 			}
 		} else if tc.code != "" {
 			out, _ := json.Marshal(r)
@@ -716,6 +728,236 @@ func TestConsumeResetSendsChosenCreditID(t *testing.T) {
 	for _, id := range []string{"has space", strings.Repeat("x", 257), "中文"} {
 		if status, _, failure := e.consumeResetWith("a", testRedeemKey, id, "", rpc, never); status != 400 || failure != "invalid_credit_id" {
 			t.Errorf("%q: %d %q", id, status, failure)
+		}
+	}
+}
+
+func TestConsumeResetClearsCPARoutingCooldownAndLocalState(t *testing.T) {
+	future := time.Now().UTC().Add(3 * time.Hour)
+	for _, code := range []string{"reset", "already_redeemed"} {
+		e := newEngine()
+		two := int64(2)
+		e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex", ManualResetRemaining: &two}
+		e.routingCooldown["a"] = routingCooldownState{Cooling: true, NextRetryAfter: future}
+		e.quotaBackoff["a"] = quotaBackoffState{Until: future, Count: 2}
+		e.wakeupLastFail["a"] = time.Now().UTC()
+		var resetCalls []string
+		base := actionRPC(t, []any{codexFile("a")})
+		rpc := func(method string, payload any) (any, error) {
+			if method == "host.routing.reset_cooldown" {
+				resetCalls = append(resetCalls, payload.(map[string]string)["auth_index"])
+			}
+			return base(method, payload)
+		}
+		post := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
+			return 200, []byte(`{"code":"` + code + `","windows_reset":1}`), nil
+		}
+		status, res, failure := e.consumeResetWith("a", testRedeemKey, "", "", rpc, post)
+		if status != 200 || failure != "" || res.Code != code {
+			t.Fatalf("%s: got %d %+v %q", code, status, res, failure)
+		}
+		if res.CooldownCleared == nil || !*res.CooldownCleared || res.CooldownError != "" {
+			t.Fatalf("%s: expected cooldown_cleared=true, got %+v", code, res)
+		}
+		if len(resetCalls) != 1 || resetCalls[0] != "idx-a" {
+			t.Fatalf("%s: expected 1 host.routing.reset_cooldown call for idx-a, got %v", code, resetCalls)
+		}
+		if _, ok := e.routingCooldown["a"]; ok {
+			t.Fatalf("%s: expected routingCooldown cleared", code)
+		}
+		if _, ok := e.quotaBackoff["a"]; ok {
+			t.Fatalf("%s: expected quotaBackoff cleared", code)
+		}
+		if _, ok := e.wakeupLastFail["a"]; ok {
+			t.Fatalf("%s: expected wakeupLastFail cleared", code)
+		}
+	}
+
+	// Non-reset codes must NOT call host.routing.reset_cooldown or emit cooldown_cleared.
+	for _, code := range []string{"nothing_to_reset", "no_credit"} {
+		e := newEngine()
+		e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}
+		e.routingCooldown["a"] = routingCooldownState{Cooling: true, NextRetryAfter: future}
+		called := 0
+		base := actionRPC(t, []any{codexFile("a")})
+		rpc := func(method string, payload any) (any, error) {
+			if method == "host.routing.reset_cooldown" {
+				called++
+			}
+			return base(method, payload)
+		}
+		post := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
+			return 200, []byte(`{"code":"` + code + `","windows_reset":0}`), nil
+		}
+		status, res, failure := e.consumeResetWith("a", testRedeemKey, "soon", "", rpc, post)
+		if status != 200 || failure != "" || called != 0 || res.CooldownCleared != nil || res.CooldownError != "" {
+			t.Fatalf("%s: unexpected cooldown action: status=%d called=%d res=%+v", code, status, called, res)
+		}
+		if _, ok := e.routingCooldown["a"]; !ok {
+			t.Fatalf("%s: must not clear local routingCooldown", code)
+		}
+	}
+}
+
+func TestConsumeResetCooldownFailuresPreserve200AndSanitizeErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		rpcErr  error
+		wantErr string
+	}{
+		{"unsupported", &hostRPCError{Method: "host.routing.reset_cooldown", Detail: "unsupported host callback host.routing.reset_cooldown secret-token"}, cooldownErrHostUnsupported},
+		{"not_found", &hostRPCError{Method: "host.routing.reset_cooldown", Detail: "auth not found for auth_index idx-a secret-token"}, cooldownErrAuthNotFound},
+		{"generic", &hostRPCError{Method: "host.routing.reset_cooldown", Detail: "core auth manager unavailable Bearer secret-token"}, cooldownErrResetFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			two := int64(2)
+			e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex", ManualResetRemaining: &two}
+			e.routingCooldown["a"] = routingCooldownState{Cooling: true}
+			base := actionRPC(t, []any{codexFile("a")})
+			rpc := func(method string, payload any) (any, error) {
+				if method == "host.routing.reset_cooldown" {
+					return nil, tc.rpcErr
+				}
+				return base(method, payload)
+			}
+			post := func(string, http.Header, []byte, func(string, any) (any, error)) (int, []byte, error) {
+				return 200, []byte(`{"code":"reset","windows_reset":2}`), nil
+			}
+			status, res, failure := e.consumeResetWith("a", testRedeemKey, "", "", rpc, post)
+			if status != 200 || failure != "" || res.Code != "reset" || res.WindowsReset != 2 {
+				t.Fatalf("reset must still return 200: status=%d failure=%q res=%+v", status, failure, res)
+			}
+			if res.CooldownCleared == nil || *res.CooldownCleared || res.CooldownError != tc.wantErr {
+				t.Fatalf("got %+v, want cooldown_cleared=false cooldown_error=%q", res, tc.wantErr)
+			}
+			if _, ok := e.routingCooldown["a"]; !ok {
+				t.Fatal("failed cooldown clear must keep local routingCooldown true")
+			}
+			raw, _ := json.Marshal(res)
+			if strings.Contains(string(raw), "secret") {
+				t.Fatalf("leaked host detail: %s", raw)
+			}
+		})
+	}
+}
+
+func TestClearRoutingCooldownRetriesStaleAuthIndexOnce(t *testing.T) {
+	listCalls := 0
+	var resetCalls []string
+	rpc := func(method string, payload any) (any, error) {
+		switch method {
+		case "host.routing.reset_cooldown":
+			idx := payload.(map[string]string)["auth_index"]
+			resetCalls = append(resetCalls, idx)
+			if idx == "old-idx" {
+				return nil, &hostRPCError{Method: method, Detail: "auth not found for auth_index old-idx"}
+			}
+			return map[string]any{"auth_index": idx, "models": []any{"gpt-5.5"}}, nil
+		case "host.auth.list":
+			listCalls++
+			return map[string]any{"files": []any{
+				map[string]any{"id": "a", "auth_index": "new-idx", "provider": "codex"},
+			}}, nil
+		}
+		t.Fatalf("unexpected RPC %s", method)
+		return nil, nil
+	}
+	cleared, errCode := clearRoutingCooldown("a", "codex", "old-idx", rpc)
+	if !cleared || errCode != "" || listCalls != 1 || len(resetCalls) != 2 || resetCalls[0] != "old-idx" || resetCalls[1] != "new-idx" {
+		t.Fatalf("cleared=%v err=%q listCalls=%d resetCalls=%v", cleared, errCode, listCalls, resetCalls)
+	}
+}
+
+func TestClearAccountCooldownEndpointLogic(t *testing.T) {
+	e := newEngine()
+	e.quotas["a"] = AccountQuota{AuthID: "a", Provider: "codex"}
+	e.quotas["d"] = AccountQuota{AuthID: "d", Provider: "claude"}
+	e.routingCooldown["a"] = routingCooldownState{Cooling: true, NextRetryAfter: time.Now().UTC().Add(time.Hour)}
+	e.wakeupLastFail["a"] = time.Now().UTC()
+
+	// Validation & missing account
+	if s, _, msg := e.clearAccountCooldownWith("", nil); s != 400 || msg != "invalid_auth_id" {
+		t.Fatalf("empty id: %d %q", s, msg)
+	}
+	if s, _, msg := e.clearAccountCooldownWith("missing", nil); s != 404 || msg != "account_not_found" {
+		t.Fatalf("missing id: %d %q", s, msg)
+	}
+	// Disabled account rejected before host.routing.reset_cooldown
+	disFile := codexFile("d")
+	disFile["provider"] = "claude"
+	disFile["disabled"] = true
+	if s, _, msg := e.clearAccountCooldownWith("d", actionRPC(t, []any{disFile})); s != 409 || msg != "account_disabled" {
+		t.Fatalf("disabled: %d %q", s, msg)
+	}
+	// Busy against consume-reset
+	e.consuming["a"] = true
+	if s, _, msg := e.clearAccountCooldownWith("a", nil); s != 409 || msg != "cooldown_busy" {
+		t.Fatalf("busy: %d %q", s, msg)
+	}
+	delete(e.consuming, "a")
+
+	// Unsupported host maps to 501
+	unsupRPC := func(method string, payload any) (any, error) {
+		if method == "host.routing.reset_cooldown" {
+			return nil, &hostRPCError{Method: method, Detail: "unsupported host callback"}
+		}
+		return actionRPC(t, []any{codexFile("a")})(method, payload)
+	}
+	if s, _, msg := e.clearAccountCooldownWith("a", unsupRPC); s != 501 || msg != cooldownErrHostUnsupported {
+		t.Fatalf("unsupported: %d %q", s, msg)
+	}
+
+	// Success clears local routingCooldown and wakeupLastFail
+	s, res, msg := e.clearAccountCooldownWith("a", actionRPC(t, []any{codexFile("a")}))
+	if s != 200 || msg != "" || !res.CooldownCleared || res.AuthID != "a" || res.Status != "ok" {
+		t.Fatalf("success: %d %+v %q", s, res, msg)
+	}
+	if _, ok := e.routingCooldown["a"]; ok {
+		t.Fatal("routingCooldown not cleared")
+	}
+	if _, ok := e.wakeupLastFail["a"]; ok {
+		t.Fatal("wakeupLastFail not cleared")
+	}
+}
+
+func TestSyncAuthStatusExposesLiveRoutingCooldownOnly(t *testing.T) {
+	e := newEngine()
+	e.dir = t.TempDir()
+	future := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	past := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second)
+	files := []any{
+		map[string]any{"id": "cool", "auth_index": "i1", "provider": "codex", "unavailable": true, "next_retry_after": future.Format(time.RFC3339)},
+		map[string]any{"id": "expired", "auth_index": "i2", "provider": "codex", "unavailable": true, "next_retry_after": past.Format(time.RFC3339), "status_message": "credential_quota"},
+		map[string]any{"id": "unauth", "auth_index": "i3", "provider": "codex", "unavailable": true, "status_message": "unauthorized (refresh token invalid)"},
+		map[string]any{"id": "disabled", "auth_index": "i4", "provider": "codex", "disabled": true, "unavailable": true, "next_retry_after": future.Format(time.RFC3339), "status_message": "429 quota"},
+	}
+	e.syncAuthStatus(actionRPC(t, files))
+	snap := e.snapshot()
+	byID := map[string]QuotaView{}
+	for _, q := range snap.Quotas {
+		byID[q.AuthID] = q
+	}
+	if !byID["cool"].RoutingCooling || byID["cool"].NextRetryAfter != future.Format(time.RFC3339) {
+		t.Fatalf("cool view = %+v", byID["cool"])
+	}
+	if byID["expired"].RoutingCooling || byID["expired"].NextRetryAfter != "" {
+		t.Fatalf("expired view must not report cooling: %+v", byID["expired"])
+	}
+	if byID["unauth"].RoutingCooling {
+		t.Fatalf("401 unauthorized view must not report routing cooling: %+v", byID["unauth"])
+	}
+	if byID["disabled"].RoutingCooling {
+		t.Fatalf("disabled view must not report routing cooling: %+v", byID["disabled"])
+	}
+	// Snapshot must stop advertising cooling once stored NextRetryAfter passes.
+	e.mu.Lock()
+	e.routingCooldown["cool"] = routingCooldownState{Cooling: true, NextRetryAfter: past}
+	e.mu.Unlock()
+	for _, q := range e.snapshot().Quotas {
+		if q.AuthID == "cool" && (q.RoutingCooling || q.NextRetryAfter != "") {
+			t.Fatalf("elapsed retry time must not appear cooling: %+v", q)
 		}
 	}
 }

@@ -38,3 +38,29 @@ func TestRegistrationMatchesCPA8022(t *testing.T) {
 		})
 	}
 }
+
+func TestManagementRegistersClearCooldownRoute(t *testing.T) {
+	initOnce.Do(func() {})
+	var reg struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Routes []struct {
+				Method string `json:"Method"`
+				Path   string `json:"Path"`
+			} `json:"Routes"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(dispatch("management.register", []byte(`{}`)), &reg); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range reg.Result.Routes {
+		if r.Method == "POST" && r.Path == "/plugins/"+pluginID+"/clear-cooldown" {
+			found = true
+			break
+		}
+	}
+	if !reg.OK || !found {
+		t.Fatalf("clear-cooldown route missing from management.register: %+v", reg)
+	}
+}
