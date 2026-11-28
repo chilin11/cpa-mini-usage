@@ -136,6 +136,12 @@ type wakeupSentRecord struct {
 	RetrySlot   string    `json:"retry_slot,omitempty"`
 	RetryUntil  time.Time `json:"retry_until,omitempty"`
 	Misses      int       `json:"misses,omitempty"`
+	// Only used by this send's immediate quota verification, never persisted.
+	priorResetAt time.Time
+}
+
+type wakeupSendAttempt struct {
+	at, priorResetAt time.Time
 }
 
 type persistedWakeup struct {
@@ -998,17 +1004,26 @@ func (rec *wakeupSentRecord) clearRetry() {
 	rec.RetrySource, rec.RetrySlot, rec.Misses = "", "", 0
 }
 
-// Only an automatic follow-up continues the original retry chain. A new slot or
-// a manual run starts its own chain, even if the previous one is still pending.
-func newWakeupSentRecord(prev wakeupSentRecord, now time.Time, trigger, slotKey string) wakeupSentRecord {
+// Only a retry claimed before dispatch continues the original chain. Preserve
+// that deadline even if a fallback candidate succeeds after it has passed.
+func newWakeupSentRecord(claimedRetry wakeupSentRecord, sentAt time.Time, trigger, slotKey string) wakeupSentRecord {
 	rec := wakeupSentRecord{
-		At: now, RetrySource: trigger, RetrySlot: slotKey, RetryUntil: now.Add(wakeupQuickRetryWindow),
+		At: sentAt, RetrySource: trigger, RetrySlot: slotKey, RetryUntil: sentAt.Add(wakeupQuickRetryWindow),
 	}
-	if trigger == "reset" && prev.hasPendingRetry(now) && !now.Before(prev.RetryAt) {
-		rec.RetrySource, rec.RetrySlot = prev.RetrySource, prev.RetrySlot
-		rec.RetryUntil, rec.Misses = prev.retryDeadline(), prev.Misses
+	if trigger == "reset" && !claimedRetry.RetryAt.IsZero() {
+		rec.RetrySource, rec.RetrySlot = claimedRetry.RetrySource, claimedRetry.RetrySlot
+		rec.RetryUntil, rec.Misses = claimedRetry.retryDeadline(), claimedRetry.Misses
 	}
 	return rec
+}
+
+func (e *Engine) recordWakeupSend(key, trigger, slotKey string, retry wakeupSentRecord, attempt wakeupSendAttempt) string {
+	rec := newWakeupSentRecord(retry, attempt.at, trigger, slotKey)
+	rec.priorResetAt = attempt.priorResetAt
+	e.mu.Lock()
+	e.wakeupLastSent[key] = rec
+	e.mu.Unlock()
+	return attempt.at.Format(time.RFC3339Nano)
 }
 
 // isNewWakeupWindow reports whether resetAt matches a fresh 5-hour window opened
@@ -1033,7 +1048,11 @@ func verifyWakeupSentRecord(provider string, rec wakeupSentRecord, win *QuotaWin
 		// Without usage, Gemini's timestamp isn't evidence of any active window.
 		valid = false
 	}
-	if valid && isNewWakeupWindow(provider, rec.At, resetAt) {
+	// A timestamp already seen on an active window cannot confirm a fresh one.
+	// Still let it reach the expiring-window branch when close to reset.
+	sameWindow := !rec.priorResetAt.IsZero() && resetAt.Equal(rec.priorResetAt)
+	rec.priorResetAt = time.Time{}
+	if valid && !sameWindow && isNewWakeupWindow(provider, rec.At, resetAt) {
 		rec.ResetAt = resetAt
 		rec.clearRetry()
 		return rec, resetAt, false
@@ -1075,20 +1094,24 @@ func verifyWakeupSentRecord(provider string, rec wakeupSentRecord, win *QuotaWin
 	return rec, time.Time{}, false
 }
 
+func wakeupQuotaWindows(q AccountQuota) (five, week *QuotaWindow) {
+	if q.Provider != "antigravity" {
+		return q.Five, q.Week
+	}
+	for _, g := range q.Groups {
+		if g.Key == wakeupGeminiGroup {
+			return g.Five, g.Week
+		}
+	}
+	return nil, nil
+}
+
 // verifyWakeupWindowLocked applies a fresh post-wakeup quota read and returns the
 // queued quick-retry time (zero when a window is running or no retry remains),
 // the reset of the observed window, and whether it joined an already-running window.
 func (e *Engine) verifyWakeupWindowLocked(q AccountQuota, now time.Time) (time.Time, time.Time, bool) {
-	key, win := wakeupRecordKey(q.AuthID, q.Provider), q.Five
-	if q.Provider == "antigravity" {
-		win = nil
-		for _, g := range q.Groups {
-			if g.Key == wakeupGeminiGroup {
-				win = g.Five
-				break
-			}
-		}
-	}
+	key := wakeupRecordKey(q.AuthID, q.Provider)
+	win, _ := wakeupQuotaWindows(q)
 	rec, ok := e.wakeupLastSent[key]
 	if !ok {
 		return time.Time{}, time.Time{}, false
@@ -1416,7 +1439,7 @@ func (e *Engine) runSingleAccountWakeupClaimed(
 		}, false)
 		return
 	}
-	res := e.wakeupEntry(*target, cfg, "account", "", runNow(), wakeupSentRecord{}, rpc, exec)
+	res := e.wakeupEntry(*target, cfg, "account", "", runNow, wakeupSentRecord{}, rpc, exec)
 	e.recordWakeupResult(res, res.Status == "failed")
 	if res.Status == "sent" {
 		refreshedEntry = target
@@ -1596,21 +1619,21 @@ func (e *Engine) runWakeupSubsetClaimed(
 					e.mu.Unlock()
 					continue
 				}
-				sentAt := runNow()
 				var retry wakeupSentRecord
 				if trigger == "reset" {
+					claimAt := runNow()
 					key := wakeupRecordKey(entry.ID, entry.Provider)
 					prev := e.wakeupLastSent[key]
 					// Recheck eligibility because this worker may begin after the retry
 					// deadline or after Cron rest has started.
-					allowAutoReset := e.allowAutoResetLocked(cfg, sentAt)
-					due := prev.retryDue(sentAt, allowAutoReset)
+					allowAutoReset := e.allowAutoResetLocked(cfg, claimAt)
+					due := prev.retryDue(claimAt, allowAutoReset)
 					if !allowAutoReset && !due {
 						e.mu.Unlock()
 						continue
 					}
 					if due {
-						if !e.claimWakeupRetryLocked(entry.ID, key, prev, sentAt) {
+						if !e.claimWakeupRetryLocked(entry.ID, key, prev, claimAt) {
 							e.mu.Unlock()
 							continue
 						}
@@ -1621,7 +1644,7 @@ func (e *Engine) runWakeupSubsetClaimed(
 				e.wakeupRunningAuths[entry.ID] = true
 				e.mu.Unlock()
 
-				res := e.wakeupEntry(entry, cfg, trigger, slotKey, sentAt, retry, rpc, exec)
+				res := e.wakeupEntry(entry, cfg, trigger, slotKey, runNow, retry, rpc, exec)
 
 				e.mu.Lock()
 				delete(e.wakeupRunningAuths, entry.ID)
@@ -1776,15 +1799,16 @@ func (e *Engine) wakeupEntry(
 	entry AuthEntry,
 	cfg WakeupConfig,
 	trigger, slotKey string,
-	now time.Time,
+	runNow func() time.Time,
 	retry wakeupSentRecord,
 	rpc func(string, any) (any, error),
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
 ) WakeupAccountResult {
-	ts := now.UTC().Format(time.RFC3339Nano)
 	if entry.Provider == "antigravity" {
-		return e.wakeupAntigravityEntry(entry, cfg, trigger, slotKey, now, retry, rpc, exec)
+		return e.wakeupAntigravityEntry(entry, cfg, trigger, slotKey, runNow, retry, rpc, exec)
 	}
+	now := runNow().UTC()
+	ts := now.Format(time.RFC3339Nano)
 	key := wakeupRecordKey(entry.ID, entry.Provider)
 	e.mu.RLock()
 	quota := e.quotas[entry.ID]
@@ -1805,7 +1829,7 @@ func (e *Engine) wakeupEntry(
 	}
 	// Always send: the active-window check runs on cached quota and misjudged windows that
 	// were about to reset. A post-send fresh read verifies the window and queues a retry.
-	usedModel, failure := tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
+	usedModel, failure, attempt := e.tryWakeupModels(entry, candidates, cfg.Message, runNow, rpc, exec)
 	if failure != "" {
 		status := "failed"
 		if failure == wakeupErrRateLimited {
@@ -1826,16 +1850,13 @@ func (e *Engine) wakeupEntry(
 			At:       ts,
 		}
 	}
-	e.mu.Lock()
-	e.wakeupLastSent[key] = newWakeupSentRecord(retry, now, trigger, slotKey)
-	e.mu.Unlock()
 	return WakeupAccountResult{
 		AuthID:   entry.ID,
 		Provider: entry.Provider,
 		Name:     entry.Name,
 		Status:   "sent",
 		Model:    usedModel,
-		At:       ts,
+		At:       e.recordWakeupSend(key, trigger, slotKey, retry, attempt),
 	}
 }
 
@@ -1843,21 +1864,16 @@ func (e *Engine) wakeupAntigravityEntry(
 	entry AuthEntry,
 	cfg WakeupConfig,
 	trigger, slotKey string,
-	now time.Time,
+	runNow func() time.Time,
 	retry wakeupSentRecord,
 	rpc func(string, any) (any, error),
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
 ) WakeupAccountResult {
-	ts := now.UTC().Format(time.RFC3339Nano)
+	now := runNow().UTC()
+	ts := now.Format(time.RFC3339Nano)
 	key := wakeupSentKey(entry.ID, wakeupGeminiGroup)
-	var five, week *QuotaWindow
 	e.mu.RLock()
-	for _, g := range e.quotas[entry.ID].Groups {
-		if g.Key == wakeupGeminiGroup {
-			five, week = g.Five, g.Week
-			break
-		}
-	}
+	five, week := wakeupQuotaWindows(e.quotas[entry.ID])
 	candidates := e.wakeupCandidateModelsLocked(entry, cfg)
 	e.mu.RUnlock()
 
@@ -1874,15 +1890,14 @@ func (e *Engine) wakeupAntigravityEntry(
 				candidates = rankAntigravityWakeupCatalog(models, candidates)
 			}
 		}
+		var attempt wakeupSendAttempt
 		if g.Reason == "" {
-			g.Model, g.Reason = tryWakeupModels(entry, candidates, cfg.Message, rpc, exec)
+			g.Model, g.Reason, attempt = e.tryWakeupModels(entry, candidates, cfg.Message, runNow, rpc, exec)
 		}
 		switch {
 		case g.Reason == "":
 			g.Status = "sent"
-			e.mu.Lock()
-			e.wakeupLastSent[key] = newWakeupSentRecord(retry, now, trigger, slotKey)
-			e.mu.Unlock()
+			g.At = e.recordWakeupSend(key, trigger, slotKey, retry, attempt)
 		case g.Reason == wakeupErrRateLimited:
 			g.Status = "exhausted"
 		case entry.QuotaCooling && g.Reason == wakeupErrModelUnavail:
@@ -1893,7 +1908,7 @@ func (e *Engine) wakeupAntigravityEntry(
 	}
 	return WakeupAccountResult{
 		AuthID: entry.ID, Provider: entry.Provider, Name: entry.Name,
-		Status: g.Status, Reason: g.Reason, Model: g.Model, At: ts, RetryAt: retryAt,
+		Status: g.Status, Reason: g.Reason, Model: g.Model, At: g.At, RetryAt: retryAt,
 		Groups: []WakeupGroupResult{g},
 	}
 }
@@ -2108,31 +2123,40 @@ func rankAntigravityWakeupCatalog(models []string, preferred []string) []string 
 	return candidates
 }
 
-func tryWakeupModels(
+func (e *Engine) tryWakeupModels(
 	entry AuthEntry,
 	candidates []string,
 	message string,
+	runNow func() time.Time,
 	rpc func(string, any) (any, error),
 	exec func(AuthEntry, string, string, func(string, any) (any, error)) (string, string),
-) (string, string) {
-	if len(candidates) == 0 {
-		return "", wakeupErrModelUnavail
-	}
+) (string, string, wakeupSendAttempt) {
 	lastModel := ""
 	lastErr := wakeupErrModelUnavail
 	for _, model := range candidates {
+		// A catalog lookup or failed candidate may delay this send. Read only the
+		// in-memory window and timestamp the candidate itself, not its worker.
+		e.mu.RLock()
+		win, _ := wakeupQuotaWindows(e.quotas[entry.ID])
+		attempt := wakeupSendAttempt{at: runNow().UTC()}
+		if win != nil && win.Used > 0 {
+			if resetAt, ok := parseWindowResetTime(win.ResetAt); ok && attempt.at.Before(resetAt.Add(wakeupResetMargin)) {
+				attempt.priorResetAt = resetAt
+			}
+		}
+		e.mu.RUnlock()
 		usedModel, failure := exec(entry, model, message, rpc)
 		if failure == "" {
-			return usedModel, ""
+			return usedModel, "", attempt
 		}
 		lastModel = model
 		lastErr = failure
 		// Only try the next candidate when this specific model is unavailable/unsupported.
 		if failure != wakeupErrModelUnavail {
-			return lastModel, lastErr
+			break
 		}
 	}
-	return lastModel, lastErr
+	return lastModel, lastErr, wakeupSendAttempt{}
 }
 
 // executeWakeupModel sends one minimal chat request pinned to entry.ID via CPA's

@@ -486,7 +486,7 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		attempts++
 		return model, wakeupErrModelUnavail
 	}
-	res := e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now().UTC(), wakeupSentRecord{}, nil, exec)
+	res := e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now, wakeupSentRecord{}, nil, exec)
 	if attempts != 1 || res.Status != "failed" || res.Reason != wakeupErrModelUnavail {
 		t.Fatalf("explicit user model must not silently fall back: attempts=%d res=%+v", attempts, res)
 	}
@@ -498,7 +498,7 @@ func TestWakeupStopsOnRateLimitAuthAndExplicitModel(t *testing.T) {
 		attempts++
 		return model, wakeupErrRateLimited
 	}
-	res = e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now().UTC(), wakeupSentRecord{}, nil, exec429)
+	res = e.wakeupEntry(AuthEntry{ID: "c1", Provider: "claude"}, e.wakeupConfig, "test", "", time.Now, wakeupSentRecord{}, nil, exec429)
 	if attempts != 1 || res.Status != "exhausted" || res.Reason != wakeupErrRateLimited {
 		t.Fatalf("429 must stop immediately as exhausted: attempts=%d res=%+v", attempts, res)
 	}
@@ -776,7 +776,8 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 		called = true
 		return model, ""
 	}
-	res := e.wakeupEntry(AuthEntry{ID: "codex-full", Provider: "codex"}, e.wakeupConfig, "test", "", now, wakeupSentRecord{}, nil, execShouldNotRun)
+	clock := func() time.Time { return now }
+	res := e.wakeupEntry(AuthEntry{ID: "codex-full", Provider: "codex"}, e.wakeupConfig, "test", "", clock, wakeupSentRecord{}, nil, execShouldNotRun)
 	if called || res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
 		t.Fatalf("expected 100%% used account to report exhausted without calling model: called=%v res=%+v", called, res)
 	}
@@ -800,7 +801,7 @@ func TestWakeupExhaustedDetectionAndLightModelOrdering(t *testing.T) {
 	execAuthNotFound := func(entry AuthEntry, model string, _ string, _ func(string, any) (any, error)) (string, string) {
 		return model, wakeupErrModelUnavail
 	}
-	res = e.wakeupEntry(entries[0], e.wakeupConfig, "test", "", now, wakeupSentRecord{}, nil, execAuthNotFound)
+	res = e.wakeupEntry(entries[0], e.wakeupConfig, "test", "", clock, wakeupSentRecord{}, nil, execAuthNotFound)
 	if res.Status != "exhausted" || res.Reason != wakeupReasonExhausted {
 		t.Fatalf("expected cooling account auth_not_found to report exhausted, got %+v", res)
 	}
@@ -1047,6 +1048,109 @@ func TestWakeupVerifiesWindowAndRetriesAfterMiss(t *testing.T) {
 	waitWakeupIdle(t, e)
 	if sends != 2 {
 		t.Fatalf("verified window must stop retries: sends=%d", sends)
+	}
+}
+
+func TestWakeupKnownWindowIsExisting(t *testing.T) {
+	at := time.Date(2026, 11, 26, 9, 3, 12, 0, time.UTC)
+	claudeReset := at.Truncate(time.Hour).Add(5*time.Hour - time.Second)
+	codexReset := at.Add(4*time.Hour + 57*time.Minute)
+	soon := at.Add(10 * time.Second)
+	for _, tc := range []struct {
+		name, provider          string
+		beforeUsed              float64
+		beforeReset, afterReset time.Time
+		wantExisting, wantRetry bool
+	}{
+		{"same-claude-window", "claude", 4, claudeReset, claudeReset, true, false},
+		{"no-active-evidence", "claude", 0, claudeReset, claudeReset, false, false},
+		{"same-codex-window", "codex", 4, codexReset, codexReset, true, false},
+		{"changed-reset", "codex", 4, codexReset, at.Add(5 * time.Hour), false, false},
+		{"same-gemini-window", "antigravity", 4, codexReset, codexReset, true, false},
+		{"expiring-window", "codex", 4, soon, soon, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEngine()
+			entry := AuthEntry{ID: "acct", Provider: tc.provider}
+			cfg := defaultWakeupConfig()
+			cfg.Models[wakeupGeminiKey] = "gemini-3.5-flash-lite"
+			quota := func(used float64, reset time.Time) AccountQuota {
+				q := AccountQuota{AuthID: entry.ID, Provider: entry.Provider, FetchedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+				win := &QuotaWindow{Used: used, ResetAt: reset.Format(time.RFC3339Nano)}
+				if entry.Provider == "antigravity" {
+					q.Groups = []QuotaGroup{{Key: wakeupGeminiGroup, Five: win}}
+				} else {
+					q.Five = win
+				}
+				return q
+			}
+			e.quotas[entry.ID] = quota(tc.beforeUsed, tc.beforeReset)
+			res := e.wakeupEntry(entry, cfg, "schedule", "slot", func() time.Time { return at }, wakeupSentRecord{}, nil,
+				func(_ AuthEntry, model, _ string, _ func(string, any) (any, error)) (string, string) {
+					return model, ""
+				})
+			if res.Status != "sent" {
+				t.Fatalf("expected a successful send: %+v", res)
+			}
+			e.recordWakeupResult(res, false)
+			e.refreshAfterWakeup(entry, func(AuthEntry) bool {
+				e.mu.Lock()
+				defer e.mu.Unlock()
+				q := quota(5, tc.afterReset)
+				e.quotas[entry.ID] = q
+				// Production quota refresh records the observed reset before verification.
+				e.updateWakeupObservedResetLocked(q)
+				return true
+			}, func() time.Time { return at.Add(time.Second) })
+			res = e.wakeupResults[entry.ID]
+			wantReset, wantRetryAt := tc.afterReset.Format(time.RFC3339Nano), ""
+			if tc.wantRetry {
+				wantReset, wantRetryAt = "", tc.afterReset.Add(wakeupResetMargin).Format(time.RFC3339Nano)
+			}
+			if res.WindowExisting != tc.wantExisting || res.WindowResetAt != wantReset || res.RetryAt != wantRetryAt {
+				t.Fatalf("wrong verification: %+v, want existing=%v reset=%q retry=%q", res, tc.wantExisting, wantReset, wantRetryAt)
+			}
+			if tc.provider == "antigravity" && (len(res.Groups) != 1 || res.Groups[0].WindowResetAt != wantReset) {
+				t.Fatalf("Gemini group disagrees with the account: %+v", res)
+			}
+		})
+	}
+}
+
+func TestWakeupUsesSuccessfulCandidateSendTime(t *testing.T) {
+	at := time.Date(2026, 11, 26, 8, 59, 58, 0, time.UTC)
+	fallbackAt := at.Add(4 * time.Second) // 09:00:02
+	now := at
+	attempts := 0
+	e := newEngine()
+	entry := AuthEntry{ID: "cl", Provider: "claude"}
+	// The worker claimed this scheduled follow-up just before its deadline.
+	claimed := newWakeupSentRecord(wakeupSentRecord{}, at.Add(-wakeupQuickRetryWindow+2*time.Second), "schedule", "original-slot")
+	claimed.RetryAt, claimed.Misses = at, 1
+	exec := func(_ AuthEntry, model, _ string, _ func(string, any) (any, error)) (string, string) {
+		attempts++
+		if attempts == 1 {
+			now = fallbackAt
+			return model, wakeupErrModelUnavail
+		}
+		now = fallbackAt.Add(time.Second)
+		return model, ""
+	}
+	res := e.wakeupEntry(entry, defaultWakeupConfig(), "reset", "", func() time.Time { return now }, claimed, nil, exec)
+	rec := e.wakeupLastSent[entry.ID]
+	if attempts != 2 || res.Status != "sent" || !rec.At.Equal(fallbackAt) || res.At != fallbackAt.Format(time.RFC3339Nano) {
+		t.Fatalf("must timestamp the successful candidate at dispatch: attempts=%d result=%+v record=%+v", attempts, res, rec)
+	}
+	if !rec.RetryUntil.Equal(claimed.RetryUntil) || rec.RetrySource != claimed.RetrySource || rec.RetrySlot != claimed.RetrySlot || rec.Misses != claimed.Misses {
+		t.Fatalf("fallback must not restart the claimed retry chain: %+v", rec)
+	}
+	oldReset := time.Date(2026, 11, 26, 12, 59, 59, 0, time.UTC)
+	_, reset, existing := verifyWakeupSentRecord(entry.Provider, rec, &QuotaWindow{Used: 1, ResetAt: oldReset.Format(time.RFC3339Nano)}, now)
+	if !existing || !reset.Equal(oldReset) {
+		t.Fatalf("prior-hour window must not be marked as new after fallback: existing=%v reset=%v", existing, reset)
+	}
+	if missed, _, _ := verifyWakeupSentRecord(entry.Provider, rec, &QuotaWindow{}, now); !missed.RetryAt.IsZero() {
+		t.Fatalf("miss after fallback must not queue past the original deadline: %+v", missed)
 	}
 }
 

@@ -383,7 +383,7 @@ tbody tr:focus-within>td{background:var(--hover)}
 <main id="dashboard">
 <header class="masthead">
   <div>
-    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.49</span></div>
+    <div class="brandline"><span>CPA Mini Usage</span><span class="version">v0.1.50</span></div>
     <h1 data-i18n="用量与额度">用量与额度</h1>
   </div>
 </header>
@@ -787,7 +787,7 @@ const translations={
   '该账户当前周期额度已用完。':'Account quota is exhausted for the current window.',
   '5 小时窗口已确认':'5-hour window confirmed','已有 5 小时窗口进行中':'5-hour window already running','新窗口未开启，{time} 自动重试':'No new window yet, retrying {time}','已有 5 小时窗口进行中，重置时间：{time}':'5-hour window already running; resets at {time}','即将重置，{time} 自动重试':'Resets soon, retrying {time}','已发送，窗口待确认':'Sent, window unconfirmed',
   '5 小时窗口已确认，重置时间：{time}':'5-hour window confirmed; resets at {time}',
-  '已发送唤醒消息，但刷新后尚未确认 5 小时窗口。':'Wakeup message sent, but a 5-hour window could not be confirmed.',
+  '已发送唤醒消息，但尚未确认 5 小时窗口。':'Wakeup message sent, but a 5-hour window could not be confirmed.',
   '已确认 Gemini 5 小时窗口，重置时间见唤醒记录。':'Gemini 5-hour window confirmed. See the wakeup result for its reset time.',
   'OK {sent} · 待确认 {unconfirmed} · 用完 {exhausted} · 跳过 {skipped} · 失败 {failed}':'OK {sent} · Unconfirmed {unconfirmed} · Exhausted {exhausted} · Skipped {skipped} · Failed {failed}',
   '该账户已被禁用，无法唤醒。':'Account is disabled and cannot be woken up.',
@@ -1427,7 +1427,9 @@ function wakeupLegacyGroupReset(res){
 const wakeupConfirmedReset=res=>res?.status!=='sent'?'':res.window_reset_at||wakeupLegacyGroupReset(res)||'';
 // A confirmed reset plus window_existing (or a legacy retry_at) means the wakeup joined a running window.
 const wakeupExistingWindow=res=>Boolean(wakeupConfirmedReset(res)&&(res.window_existing||res.retry_at));
-const pendingWakeupWindow=res=>res.status==='sent'&&!wakeupConfirmedReset(res)&&(Boolean(res.retry_at)||res.provider==='antigravity');
+// "sent" only proves the model request succeeded; without a confirmed reset the window is pending for every
+// provider, whether or not a retry is queued (429, busy refresh lock or no fresh quota read leave no retry_at).
+const pendingWakeupWindow=res=>res?.status==='sent'&&!wakeupConfirmedReset(res);
 const wakeupDisplayStatus=res=>pendingWakeupWindow(res)?'unconfirmed':res.status||'skipped';
 function wakeupGroupSummary(g,res){
   const reset=g.status==='sent'&&res?.provider==='antigravity'&&g.group==='gemini'&&res.status==='sent'?wakeupConfirmedReset(res):g.window_reset_at;
@@ -1926,7 +1928,7 @@ async function runAccountWakeup(id){
       const fallbackDone=!baselineAt&&Boolean(state?.last_run_finished_at&&state.last_run_finished_at!==baselineFinish);
       if(!running&&(accountDone||fallbackDone)){
         if(res?.status==='sent'){
-          const note=res.provider==='antigravity'?(pendingWakeupWindow(res)?'已发送唤醒消息，但刷新后尚未确认 5 小时窗口。':'已确认 Gemini 5 小时窗口，重置时间见唤醒记录。'):(res.model?{text:'已发送唤醒消息（{model}），额度已同步。',values:{model:res.model}}:'已发送唤醒消息，额度已同步。');
+          const note=pendingWakeupWindow(res)?'已发送唤醒消息，但尚未确认 5 小时窗口。':res.provider==='antigravity'?'已确认 Gemini 5 小时窗口，重置时间见唤醒记录。':(res.model?{text:'已发送唤醒消息（{model}），额度已同步。',values:{model:res.model}}:'已发送唤醒消息，额度已同步。');
           showAccountNote(id,note);if(tab==='wakeup'){wakeupForm.notice=note;wakeupForm.error=null;}
         }else if(res?.status==='exhausted'){
           const note=errorKey(res.reason,'该账户额度已用完（429 / 冷却中）。');

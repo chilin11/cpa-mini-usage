@@ -1817,7 +1817,7 @@ test('dedicated scheduled wakeup tab supports 5-hour cron presets, persistence s
       running = false;
       runningAuths = [];
       results = {
-        'claude-a': { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', status: 'sent', model: 'claude-haiku-4-5-20251001', at: finishedAt },
+        'claude-a': { auth_id: 'claude-a', provider: 'claude', name: 'alice@example.com', status: 'sent', model: 'claude-haiku-4-5-20251001', at: finishedAt, window_reset_at: '2026-11-25T11:00:00Z' },
         'codex-full': { auth_id: 'codex-full', provider: 'codex', name: 'full@example.com', status: 'exhausted', reason: 'quota_exhausted', at: finishedAt },
       };
       return { ok: true, status: 202, json: async () => ({ status: 'running', auth_id: body.auth_id || '', last_run_finished_at: '', account_result_at: '' }) };
@@ -2179,6 +2179,62 @@ test('wakeup: Antigravity existing windows never read as unconfirmed, and exhaus
   assert.match(accountStatus('cx-soon').textContent, /Resets soon, retrying .+$/);
   assert.match(meta('ag-soon'), /Resets soon, retrying /);
   assert(!/[\u4e00-\u9fff]/.test(accountStatus('cx-soon').textContent + meta('ag-soon')), 'English near-reset note must be fully translated');
+});
+
+test('wakeup: Claude/Codex sends without a confirmed reset read as pending even without retry_at', async () => {
+  const cfg = { enabled: true, mode: 'daily', cron: '0 6,11,16,21 * * *', timezone_offset_min: 480, providers: { claude: true, codex: true, antigravity: true }, models: {}, excluded_auth_ids: [], message: 'hi' };
+  const quota = (id, provider) => ({ auth_id: id, provider, name: id + '@example.com', five_hour: { used_percent: 0 } });
+  const sent = (id, provider, extra = {}) => ({ auth_id: id, provider, name: id + '@example.com', status: 'sent', model: 'm-' + provider, at: '2026-11-26T03:00:00Z', ...extra });
+  let results = {
+    'cl-busy': sent('cl-busy', 'claude'),
+    'cx-busy': sent('cx-busy', 'codex'),
+    'cl-retry': sent('cl-retry', 'claude', { retry_at: '2026-11-26T03:02:00Z' }),
+    'cx-new': sent('cx-new', 'codex', { window_reset_at: '2026-11-26T08:00:00Z' }),
+    'cl-run': sent('cl-run', 'claude', { window_reset_at: '2026-11-26T05:00:00Z', window_existing: true }),
+  };
+  const ids = Object.keys(results);
+  const snapshot = () => ({ quotas: ids.map(id => quota(id, results[id].provider)), wakeup: { persisted: true, config: cfg, results, last_run_at: '2026-11-26T03:00:00Z', last_run_finished_at: '2026-11-26T03:00:01Z' } });
+  const d = dashboard(login(), async url => {
+    if (url.endsWith('/wakeup/run')) {
+      results = { ...results, 'cl-busy': sent('cl-busy', 'claude', { at: '2026-11-26T03:10:00Z' }) };
+      return reply({ account_result_at: '' }, 202);
+    }
+    return reply(snapshot());
+  });
+  await d.api.load();
+  d.api.setTab('wakeup');
+  const accountStatus = id => descendants(panel(d.elements, id)).find(n => String(n.className || '').startsWith('account-wakeup-status'));
+  const resultRow = id => descendants(d.elements.get('wakeup-results')).find(n => n.className === 'wakeup-result-row' && descendants(n).some(c => c.className === 'wakeup-result-name' && c.textContent.startsWith(id + '@')));
+  const badge = id => descendants(resultRow(id)).find(n => String(n.className || '').startsWith('wakeup-badge '));
+  const badgeText = id => descendants(badge(id)).map(n => n.textContent).join('');
+
+  for (const id of ['cl-busy', 'cx-busy']) {
+    assert.equal(accountStatus(id).className, 'account-wakeup-status unconfirmed', id);
+    assert.match(accountStatus(id).textContent, /已发送，窗口待确认/, id);
+    assert(!/OK|已确认|自动重试|进行中/.test(accountStatus(id).textContent), `${id}: ${accountStatus(id).textContent}`);
+    assert.equal(badge(id).className, 'wakeup-badge unconfirmed', id);
+    assert.equal(badgeText(id), '已发送，窗口待确认', id);
+  }
+  // A queued retry stays pending and still names its retry time.
+  assert.equal(accountStatus('cl-retry').className, 'account-wakeup-status unconfirmed');
+  assert.match(accountStatus('cl-retry').textContent, /新窗口未开启，.+ 自动重试/);
+  // Confirmed new and running windows keep the plain OK.
+  for (const id of ['cx-new', 'cl-run']) {
+    assert.equal(accountStatus(id).className, 'account-wakeup-status sent', id);
+    assert.equal(badgeText(id), 'OK', id);
+  }
+  assert.match(accountStatus('cx-new').textContent, /5 小时窗口已确认，重置时间：/);
+  assert.match(accountStatus('cl-run').textContent, /已有 5 小时窗口进行中，重置时间：/);
+  const summary = descendants(d.elements.get('wakeup-summary')).map(n => n.textContent || '').find(s => s.includes('最近执行'));
+  assert.match(summary, /OK 2 · 待确认 3 ·/);
+
+  // The single-account notice must not claim the quota was synced.
+  await d.api.runAccountWakeup('cl-busy');
+  const msg = d.elements.get('wakeup-message-box').textContent;
+  assert.match(msg, /尚未确认 5 小时窗口/);
+  assert(!/额度已同步|自动重试/.test(msg), msg);
+  d.api.setLanguage('en');
+  assert.match(d.elements.get('wakeup-message-box').textContent, /could not be confirmed/);
 });
 
 test('wakeup: legacy Antigravity group time plus retry_at counts as a running window only under the old reset+30s queue formula', async () => {

@@ -321,6 +321,11 @@ Clear CPA routing cooldown automatically when reset cards are redeemed so reset 
 - **External reset reconciliation on quota refresh**: when a fresh official quota read confirms a reset occurred while CPA still holds a routing cooldown (remaining reset count decreased, or a previously 100%-exhausted window recovered before its old reset timestamp while neither window is exhausted), the plugin automatically clears the stale CPA cooldown without disturbing short-term RPM/529/403 backoffs.
 - **Live cooldown visibility, manual clear & legacy CPA fallback**: `/data` exposes live non-persisted `routing_cooling` and `next_retry_after` states; cards in active routing cooldown show a **Routing cooldown** badge and a **Clear cooldown** action calling `POST /plugins/cpa-mini-usage/clear-cooldown`, with an automatic same-origin fallback to CPA's management API (`/v8/management/routing/cooldown/reset` → `/v0/management/reset-quota`) on older CPA hosts without `host.routing.reset_cooldown`.
 
+### v0.1.50
+
+- **More accurate 5-hour wakeup verification**: a reset timestamp already observed on an active window no longer counts as a newly opened window. If the first model is unavailable, verification uses the send time of the successful fallback model. Cron alignment, retry limits, and quota request volume are unchanged.
+- **Honest wakeup status**: a successful Claude or Codex send without a confirmed window now shows **Sent, window unconfirmed**, even if no retry is queued.
+
 ## Optional CPA Plugin Store source
 
 Once this project is in your own GitHub account and a `v0.1.0` GitHub Release has completed,
